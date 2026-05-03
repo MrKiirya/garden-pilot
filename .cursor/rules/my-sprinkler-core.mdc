@@ -1,0 +1,49 @@
+---
+description: ESPHome irrigation project context, secrets policy, and agent scope
+alwaysApply: true
+---
+
+# My Sprinkler — project rules
+
+## What this repo is
+- **ESPHome** device configuration for smart home automation (Home Assistant–friendly).
+- Product direction: **greenhouse** controller and **lawn irrigation** controller over time.
+- **Lawn irrigation** on ESPHome must use the built-in **`sprinkler`** controller ([Sprinkler Controller](https://esphome.io/components/sprinkler/)), not ad-hoc GPIO toggling for normal operation.
+- Hardware path: prototype on **ESP32-S3 devkit** (`my-sprinkler.yaml` board); later migrate to **LILYGO T-Relay-S3** and relay-focused wiring when explicitly requested.
+
+## Language
+- **User-facing chat:** Russian when the user writes Russian.
+- **Comments in repo files (YAML, scripts, etc.):** **English** only.
+
+## Secrets and Git
+- **Never** commit `secrets.yaml` or real Wi‑Fi / API / OTA secrets.
+- Maintain **`secrets.example.yaml`** as a copy template with **obvious dummy values** (e.g. zero-style placeholders), not production-like random strings.
+- **`my-sprinkler.yaml`** is the only full ESPHome device config; `secrets*.yaml` are substitution files only (no `esphome:` block).
+- Per [ESPHome secrets guidance](https://esphome.io/guides/security_best_practices/#secrets-management): **unique** API encryption key and OTA password **per device** (Wi‑Fi credentials may be shared). If a secret ever hits git history, **rotate** it and scrub history.
+
+## Security (ESPHome)
+Follow [Security Best Practices](https://esphome.io/guides/security_best_practices/) and treat ESPHome as suited to a **trusted LAN** (segmentation / VLAN / firewall as needed); do not assume “hardened for the open Internet” out of the box.
+
+**Baseline (always):**
+- **`api:`** with **`encryption:`** and key from **`!secret`** (never plaintext in tracked YAML).
+- **`ota:`** with a **strong password** from **`!secret`** (never empty OTA on a shared network).
+- If **`web_server:`** is enabled, set **`auth:`** (username/password via secrets) or omit the web server and use HA + native API.
+
+**Operational hygiene:**
+- Prefer **`logger:`** at **`INFO`** (or stricter) in production; avoid **`DEBUG`/`VERBOSE`** where Wi‑Fi or sensitive data might appear in logs; optionally raise `logs:` levels for `wifi` / `api` per the guide.
+- Wi‑Fi: use at least **WPA2** (`min_auth_mode` where relevant); never open/WEP. **Fallback `ap:`** must have a **non-empty password** (prefer **`!secret`**); for maximum lock-down, removing `ap:` is a deliberate trade-off (no captive recovery).
+- **External components**: only from **trusted** sources; review code; expect no ESPHome maintainer security review.
+- **Updates**: keep ESPHome (and device firmware) reasonably current; verify device identity before OTA.
+
+## Build artifacts
+- **`.esphome/`** is local ESPHome/IDF cache — do not add to git or hand-edit.
+
+## Packages ([ESPHome Packages](https://esphome.io/components/packages/))
+- Use **`packages:`** with **`!include`** to share Wi‑Fi/API/logger patterns or repeat hardware templates across devices as the repo grows. Keep **`my-sprinkler.yaml`** as the device entrypoint with **`esphome:`** / board / **`packages:`** list.
+- **Merge semantics:** substitutions in the **main** file override same-name substitutions from packages; dicts merge by key; component **lists merge by `id`** where set; other lists concatenate; scalars are replaced by the **later** definition.
+- **Remote / Git packages** must **not** use `!secret` inside the remote YAML — use **`substitutions`** (with defaults in the package) and set real values from **local** `secrets.yaml` in the device entry file (per upstream docs).
+- Use **`!extend`** / **`!remove`** sparingly and only when intentionally overriding shared snippets; prefer clear small includes over deep override chains.
+
+## How to change the project
+- Make **small, task-scoped** edits; avoid unrelated refactors or new docs unless asked.
+- When validating or compiling, use an explicit config path, e.g. `esphome compile my-sprinkler.yaml` from the repo root.

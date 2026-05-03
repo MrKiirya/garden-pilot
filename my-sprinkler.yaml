@@ -1,3 +1,5 @@
+# ESPHome: device entrypoint. Split shared pieces into packages/ when the config grows.
+
 esphome:
   name: my-sprinkler
   friendly_name: My Sprinkler
@@ -23,8 +25,9 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  min_auth_mode: WPA2
 
-  # Fallback AP + captive portal if WiFi fails
+  # Fallback AP + captive portal if WiFi fails (password in secrets).
   ap:
     ssid: "My-Sprinkler"
     password: !secret wifi_ap_password

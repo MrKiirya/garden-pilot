@@ -1,6 +1,6 @@
 {
   "files.associations": {
     "**/secrets.yaml": "yaml",
-    "**/secrets.example.yaml": "yaml",
+    "**/secrets.example.yaml": "yaml"
   }
 }
