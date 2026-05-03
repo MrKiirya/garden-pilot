@@ -1,0 +1,4 @@
+secrets.yaml
+
+# ESPHome build cache and IDF artifacts (local only).
+.esphome/

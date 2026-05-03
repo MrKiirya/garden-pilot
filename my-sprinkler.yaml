@@ -1,0 +1,32 @@
+esphome:
+  name: my-sprinkler
+  friendly_name: My Sprinkler
+
+esp32:
+  board: esp32-s3-devkitc1-n16r8
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+
+# Home Assistant / ESPHome Dashboard connection.
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+# Wireless firmware updates.
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Fallback AP + captive portal if WiFi fails
+  ap:
+    ssid: "My-Sprinkler"
+    password: !secret wifi_ap_password
+
+captive_portal:
