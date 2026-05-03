@@ -1,0 +1,47 @@
+# Shared home (boot default when listed first under lvgl pages). Navigation only here; domain widgets use !extend from packages/greenhouse/, packages/lawn/, etc.
+
+lvgl:
+  pages:
+    - id: home_page
+      widgets:
+        - label:
+            x: 10
+            y: 8
+            text: "Home"
+        - button:
+            id: btn_open_greenhouse
+            x: 10
+            y: 130
+            width: 140
+            height: 36
+            on_click:
+              - script.execute: gh_sync_dur_spins
+              - lvgl.page.show: greenhouse_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Greenhouse"
+        - button:
+            id: btn_open_lawn
+            x: 170
+            y: 130
+            width: 140
+            height: 36
+            on_click:
+              - lvgl.page.show: lawn_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Lawn"
+        - button:
+            id: btn_open_touch_test
+            x: 10
+            y: 190
+            width: 140
+            height: 36
+            on_click:
+              - lvgl.page.show: touch_test_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Touch test"

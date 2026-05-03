@@ -1,10 +1,11 @@
 # SPI + ILI9341 (mipi_spi) + XPT2046. UI: packages/lvgl/; optional touch overlay: touch_dot_test.yaml.
+# tft_spi MISO = GPIO8 (not strapping like GPIO3); wire display/touch MISO to GPIO8 on the module.
 
 spi:
   - id: tft_spi
     clk_pin: GPIO9
     mosi_pin: GPIO10
-    miso_pin: GPIO3
+    miso_pin: GPIO8
 
 display:
   - platform: mipi_spi
@@ -15,7 +16,7 @@ display:
     dc_pin: GPIO11
     reset_pin: GPIO12
     invert_colors: false
-    data_rate: 40MHz
+    data_rate: 10MHz
     dimensions:
       width: 320
       height: 240
@@ -41,6 +42,11 @@ touchscreen:
       swap_xy: true
     on_touch:
       then:
+        - lambda: |-
+            // TouchPoint here is current for this event; get_touch() in a script is often empty by then.
+            ESP_LOGI("touch_dot", "tap xy=%u,%u raw=%d,%d z_raw=%d state=%d",
+                     (unsigned) touch.x, (unsigned) touch.y, (int) touch.x_raw, (int) touch.y_raw,
+                     (int) touch.z_raw, (int) touch.state);
         - script.execute: touch_ui
 
 script:

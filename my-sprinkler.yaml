@@ -3,6 +3,11 @@
 esphome:
   name: my-sprinkler
   friendly_name: My Sprinkler
+  # on_boot:
+  #   - priority: 610
+  #     then:
+  #       - delay: 3s
+  #       - script.execute: gh_sync_dur_spins
 
 esp32:
   board: esp32-s3-devkitc1-n16r8
@@ -15,9 +20,21 @@ logger:
 packages:
   network: !include packages/network.yaml
   display_touch: !include packages/display_touch.yaml
-  # LVGL: base first, then pages (order matters for default page = first merged page).
+
+  # LVGL: base first. First page package = boot screen (home).
   lvgl_base: !include packages/lvgl/base.yaml
+  lvgl_page_home: !include packages/lvgl/page_home.yaml
   lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
-  lvgl_page_app_shell: !include packages/lvgl/page_app_shell.yaml
+  lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
+
+  # Greenhouse (all under packages/greenhouse/ — include each fragment explicitly).
+  gh_substitutions: !include packages/greenhouse/substitutions.yaml
+  gh_irrigation: !include packages/greenhouse/irrigation.yaml
+  gh_lvgl_home_widgets: !include packages/greenhouse/lvgl_home_widgets.yaml
+  gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
+  gh_run_duration_ui: !include packages/greenhouse/run_duration_ui.yaml
+  gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml
+  gh_sprinkler_lvgl: !include packages/greenhouse/sprinkler_lvgl_status.yaml
+
   # Optional: touch dot / coord updates on press. Comment out to disable (overlay script stays no-op).
   touch_dot_test: !include packages/touch_dot_test.yaml

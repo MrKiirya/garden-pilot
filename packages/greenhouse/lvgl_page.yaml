@@ -1,0 +1,156 @@
+# Full-screen greenhouse page (beds + air + placeholders for soil).
+
+lvgl:
+  pages:
+    - id: greenhouse_page
+      widgets:
+        - label:
+            x: 10
+            y: 8
+            text: "Greenhouse"
+        - label:
+            id: gh_greenhouse_t_label
+            x: 10
+            y: 32
+            text: "Air: -- C"
+        - label:
+            id: gh_greenhouse_rh_label
+            x: 140
+            y: 32
+            text: "RH: -- %"
+        - label:
+            id: gh_greenhouse_irr_main
+            x: 10
+            y: 56
+            text: "Irrigation: idle"
+        - label:
+            id: gh_greenhouse_irr_modes
+            x: 10
+            y: 74
+            text: "AA:off  Q:off  Rev:off"
+        - label:
+            x: 10
+            y: 86
+            text: "Run (s):"
+        - spinbox:
+            id: gh_lvgl_bed1_dur_spin
+            x: 8
+            y: 100
+            width: 96
+            height: 28
+            range_from: 30
+            range_to: 1800
+            digits: 4
+            decimal_places: 0
+            rollover: false
+            value: 120
+            on_change:
+              then:
+                - number.set:
+                    id: gh_bed1_run_duration
+                    value: !lambda return x;
+        - spinbox:
+            id: gh_lvgl_bed2_dur_spin
+            x: 112
+            y: 100
+            width: 96
+            height: 28
+            range_from: 30
+            range_to: 1800
+            digits: 4
+            decimal_places: 0
+            rollover: false
+            value: 120
+            on_change:
+              then:
+                - number.set:
+                    id: gh_bed2_run_duration
+                    value: !lambda return x;
+        - spinbox:
+            id: gh_lvgl_bed3_dur_spin
+            x: 216
+            y: 100
+            width: 96
+            height: 28
+            range_from: 30
+            range_to: 1800
+            digits: 4
+            decimal_places: 0
+            rollover: false
+            value: 120
+            on_change:
+              then:
+                - number.set:
+                    id: gh_bed3_run_duration
+                    value: !lambda return x;
+        - label:
+            id: gh_greenhouse_soil_hint
+            x: 10
+            y: 132
+            text: "Soil: TBD (gh_soil_*)"
+        - button:
+            id: gh_btn_run_bed1
+            x: 10
+            y: 152
+            width: 92
+            height: 32
+            on_click:
+              - sprinkler.start_single_valve:
+                  id: gh_sprinkler
+                  valve_number: 0
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Bed 1"
+        - button:
+            id: gh_btn_run_bed2
+            x: 114
+            y: 152
+            width: 92
+            height: 32
+            on_click:
+              - sprinkler.start_single_valve:
+                  id: gh_sprinkler
+                  valve_number: 1
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Bed 2"
+        - button:
+            id: gh_btn_run_bed3
+            x: 218
+            y: 152
+            width: 92
+            height: 32
+            on_click:
+              - sprinkler.start_single_valve:
+                  id: gh_sprinkler
+                  valve_number: 2
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Bed 3"
+        - button:
+            id: gh_btn_stop
+            x: 10
+            y: 194
+            width: 100
+            height: 32
+            on_click:
+              - sprinkler.shutdown: gh_sprinkler
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Stop"
+        - button:
+            id: gh_btn_home
+            x: 210
+            y: 194
+            width: 100
+            height: 36
+            on_click:
+              - lvgl.page.show: home_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Home"

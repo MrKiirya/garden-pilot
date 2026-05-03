@@ -52,6 +52,8 @@ Generic merge rules: [Packages](https://esphome.io/components/packages/) — sub
 | `display_touch` | `packages/display_touch.yaml` | **`spi`** (`id: tft_spi`), **`display`** (`mipi_spi` / ILI9341, pins aligned with breadboard test), **`touchscreen`** (XPT2046, `id: touch`). **Touch dispatch:** `touchscreen.on_touch` → **`script.execute: touch_ui`**. **`script` `touch_ui`** → **`script.execute: touch_dot_overlay`**. **`script` `touch_dot_overlay`** — default **no-op** (`delay: 0ms`) when the optional touch overlay package is disabled. |
 | `lvgl_base` | `packages/lvgl/base.yaml` | **`lvgl`** shared head only: **`displays`**, **`touchscreens`**, **`buffer_size`** — **no `pages`**. |
 | `lvgl_page_*` | `packages/lvgl/page_<name>.yaml` | One LVGL **page** per file: top-level **`lvgl:`** → **`pages:`** with a single **`- id: …`** entry and its **`widgets`**. |
+| `packages/greenhouse/*` | Greenhouse domain | **`substitutions.yaml`**, **`sensors_air_dht.yaml`** (interim DHT; replace with I2C later), **`irrigation.yaml`** (3× GPIO + **`sprinkler`** `gh_sprinkler`, **`run_duration_number`** per bed, `restore_value`), **`run_duration_ui.yaml`** (`gh_sync_dur_spins` + LVGL spinbox ids), **`lvgl_page.yaml`** (`greenhouse_page`, spinboxes → `number.set`), **`lvgl_home_widgets.yaml`** (**`!extend home_page`**). |
+| `packages/lawn/*` | Lawn domain (future) | Add **`packages/lawn/page_*.yaml`** and hardware packages the same way as greenhouse. |
 | `touch_dot_test` (optional) | `packages/touch_dot_test.yaml` | Extends **`touch_dot_overlay`** via **`id: !extend touch_dot_overlay`** with **`lvgl.widget.update` / `lvgl.label.update`**. **Comment out** this line in `my-sprinkler.yaml` to disable dot/coord updates; base noop script remains. |
 
 ### `packages:` order (do not reorder lightly)
@@ -59,8 +61,16 @@ Generic merge rules: [Packages](https://esphome.io/components/packages/) — sub
 1. **`network`** — connectivity first.  
 2. **`display_touch`** — creates **`tft_spi`**, **`tft_display`**, **`touch`** (required by LVGL).  
 3. **`lvgl_base`** — LVGL bus wiring to those ids.  
-4. **`lvgl_page_touch_test`** then **`lvgl_page_app_shell`** — **first merged page stays the default home screen**; keep **`touch_test_page`** before **`app_shell_page`** so the touch-test UI boots first.  
-5. **`touch_dot_test`** last — **`!extend touch_dot_overlay`** must apply after the base **`touch_dot_overlay`** script exists.
+4. **`lvgl_page_home`** — **must come before** any **`!extend home_page`**; it defines **`home_page`** (boot default when listed first among pages).  
+5. **`lvgl_page_touch_test`**, **`lvgl_page_lawn`** — other full-screen routes.  
+6. **`gh_substitutions`** — greenhouse **`${…}`** pins / future keys before greenhouse hardware.  
+7. **`gh_irrigation`** — **before** **`gh_lvgl_page`** (greenhouse LVGL buttons call **`sprinkler.start_single_valve`** on **`gh_sprinkler`**).  
+8. **`gh_lvgl_home_widgets`** — **`!extend home_page`** (greenhouse summary strip).  
+9. **`gh_lvgl_page`** — **`greenhouse_page`** (spinbox ids for **`run_duration_number`** `on_value`).  
+10. **`gh_run_duration_ui`** — **`gh_sync_dur_spins`** script (**after** spinboxes exist; **`esphome.on_boot`** in **`my-sprinkler.yaml`** calls it).  
+11. **`gh_sensors_air`** — DHT **`on_value`** → labels.  
+12. **`gh_sprinkler_lvgl`** — interval → irrigation status labels.  
+13. **`touch_dot_test`** last — **`!extend touch_dot_overlay`** after base **`touch_dot_overlay`** in **`display_touch`**.
 
 ### Touch → LVGL script note
 

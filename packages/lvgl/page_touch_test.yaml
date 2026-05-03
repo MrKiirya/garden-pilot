@@ -1,4 +1,4 @@
-# Touch test page (default when listed before other page packages in my-sprinkler.yaml).
+# Touch test page. Menu returns to shared home.
 
 lvgl:
   pages:
@@ -18,14 +18,14 @@ lvgl:
             radius: 3
             bg_color: 0xff0000
         - button:
-            id: btn_open_app_shell
+            id: btn_touch_to_home
             x: 210
             y: 190
             width: 100
             height: 36
             on_click:
-              - lvgl.page.show: app_shell_page
+              - lvgl.page.show: home_page
             widgets:
               - label:
                   align: CENTER
-                  text: "Menu"
+                  text: "Home"

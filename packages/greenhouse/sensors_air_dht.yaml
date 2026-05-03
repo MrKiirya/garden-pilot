@@ -1,0 +1,47 @@
+# Interim air T/RH (DHT11). Keep sensor ids gh_air_temperature / gh_air_humidity when migrating to I2C so LVGL on_value targets stay valid.
+
+sensor:
+  - platform: dht
+    pin:
+      number: ${gh_dht_pin}
+      mode:
+        input: true
+        pullup: false
+    model: DHT11
+    update_interval: 30s
+    temperature:
+      id: gh_air_temperature
+      name: "Greenhouse air temperature"
+      accuracy_decimals: 1
+      on_value:
+        then:
+          - lvgl.label.update:
+              id: gh_home_air_t_label
+              text: !lambda |-
+                char buf[32];
+                sprintf(buf, "GH T: %.1f C", x);
+                return std::string(buf);
+          - lvgl.label.update:
+              id: gh_greenhouse_t_label
+              text: !lambda |-
+                char buf[32];
+                sprintf(buf, "Air: %.1f C", x);
+                return std::string(buf);
+    humidity:
+      id: gh_air_humidity
+      name: "Greenhouse air humidity"
+      accuracy_decimals: 1
+      on_value:
+        then:
+          - lvgl.label.update:
+              id: gh_home_air_rh_label
+              text: !lambda |-
+                char buf[32];
+                sprintf(buf, "GH RH: %.0f %%", x);
+                return std::string(buf);
+          - lvgl.label.update:
+              id: gh_greenhouse_rh_label
+              text: !lambda |-
+                char buf[32];
+                sprintf(buf, "RH: %.0f %%", x);
+                return std::string(buf);

@@ -15,7 +15,9 @@ alwaysApply: false
 | `packages/network.yaml` | `api`, `ota`, `wifi`, `captive_portal`. |
 | `packages/display_touch.yaml` | SPI, `mipi_spi` display, XPT2046 touch, `touch_ui` / `touch_dot_overlay` scripts. |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` (no `pages`). |
-| `packages/lvgl/page_*.yaml` | **One LVGL page per file** under `lvgl: pages:`. |
+| `packages/lvgl/page_*.yaml` | **One LVGL page per file** under `lvgl: pages:` (`home_page`, `touch_test_page`, `lawn_page`, …). |
+| `packages/greenhouse/*.yaml` | Greenhouse: substitutions, DHT (interim), irrigation + `sprinkler`, LVGL page + `!extend` home widgets. |
+| `packages/lawn/*.yaml` | Lawn (future), mirror the greenhouse split. |
 | `packages/touch_dot_test.yaml` | Optional: `!extend touch_dot_overlay` for dot + coord label updates. |
 | Other `packages/*.yaml` | Optional fragments; no top-level `esphome:` ([Packages](https://esphome.io/components/packages/)). |
 
@@ -41,7 +43,7 @@ Full **package order**, touch pipeline, and “how to add a page” — see **al
 ## Packages (`packages:` + `!include`)
 - Official: [Packages](https://esphome.io/components/packages/) and [`!include`](https://esphome.io/guides/yaml#yaml-include).
 - In the entry YAML: **`packages:`** as a **list** (`- !include common/wifi.yaml`) or a **mapping** of labels to includes; mapping keys are labels only.
-- **This repo:** LVGL is split as **`packages/lvgl/base.yaml`** + **`packages/lvgl/page_<name>.yaml`** (one page per file); optional touch drawing uses **`!extend touch_dot_overlay`** in `packages/touch_dot_test.yaml` (see `my-sprinkler-core.mdc`).
+- **This repo:** LVGL = **`packages/lvgl/base.yaml`** + **`packages/lvgl/page_<name>.yaml`**. **Greenhouse** UI/hardware under **`packages/greenhouse/`** (explicit includes in `my-sprinkler.yaml`); home summary uses **`!extend home_page`** in **`lvgl_home_widgets.yaml`**. **Lawn** will use **`packages/lawn/`** the same way. Touch test overlay: **`!extend touch_dot_overlay`** in `packages/touch_dot_test.yaml` (see `my-sprinkler-core.mdc`).
 - **Local includes:** shared `wifi` / `api` / `logger` blocks, or templated snippets with **`!include`** + **`vars:`** / package **`defaults:`** for repeated hardware.
 - **Remote Git packages:** no **`!secret`** in remote files — expose **`substitutions`** and assign secrets from **`my-sprinkler.yaml`** / local includes only.
 - **Advanced:** **`!extend`** / **`!remove`** to tweak or drop nodes from an included tree; Jinja in **`substitutions:`** for conditional includes (see upstream examples).

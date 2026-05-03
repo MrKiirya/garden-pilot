@@ -1,10 +1,12 @@
 # Optional: extends touch_dot_overlay to move the dot and update coords on touch.
 # Comment out this package in my-sprinkler.yaml to disable (touch_dot_overlay stays a no-op).
 # Requires LVGL pages (widget ids touch_dot, coord_label on touch_test_page).
+# Touch xy/raw logs: packages/display_touch.yaml → touchscreen on_touch (tag touch_dot).
 
 script:
   - id: !extend touch_dot_overlay
     then:
+      # Touch logs: see display_touch.yaml on_touch (touch arg); get_touch() here is unreliable.
       - lvgl.widget.update:
           id: touch_dot
           x: !lambda |-

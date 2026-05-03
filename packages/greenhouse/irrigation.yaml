@@ -1,0 +1,73 @@
+# Three gravity-fed bed zones from a shared barrel — no master/pump switch (self-drain barrel line).
+# Do not call lvgl.* from run_duration_number on_value — restore/HA can fire before or outside LVGL-safe
+# context and crash (LoadProhibited in lv_spinbox_set_value). Sync spinboxes via gh_sync_dur_spins only.
+
+switch:
+  - platform: gpio
+    id: gh_valve_zone1_sw
+    internal: true
+    pin:
+      number: ${gh_valve_zone1_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: gh_valve_zone2_sw
+    internal: true
+    pin:
+      number: ${gh_valve_zone2_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: gh_valve_zone3_sw
+    internal: true
+    pin:
+      number: ${gh_valve_zone3_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+sprinkler:
+  - id: gh_sprinkler
+    main_switch: "Greenhouse irrigation"
+    auto_advance_switch: "Greenhouse auto advance"
+    valves:
+      - valve_switch: "Greenhouse bed 1"
+        enable_switch: "Greenhouse enable bed 1"
+        run_duration_number:
+          id: gh_bed1_run_duration
+          name: "Greenhouse bed 1 run duration"
+          initial_value: 120
+          min_value: 30
+          max_value: 1800
+          step: 10
+          unit_of_measurement: "s"
+          restore_value: true
+        valve_switch_id: gh_valve_zone1_sw
+      - valve_switch: "Greenhouse bed 2"
+        enable_switch: "Greenhouse enable bed 2"
+        run_duration_number:
+          id: gh_bed2_run_duration
+          name: "Greenhouse bed 2 run duration"
+          initial_value: 120
+          min_value: 30
+          max_value: 1800
+          step: 10
+          unit_of_measurement: "s"
+          restore_value: true
+        valve_switch_id: gh_valve_zone2_sw
+      - valve_switch: "Greenhouse bed 3"
+        enable_switch: "Greenhouse enable bed 3"
+        run_duration_number:
+          id: gh_bed3_run_duration
+          name: "Greenhouse bed 3 run duration"
+          initial_value: 120
+          min_value: 30
+          max_value: 1800
+          step: 10
+          unit_of_measurement: "s"
+          restore_value: true
+        valve_switch_id: gh_valve_zone3_sw
