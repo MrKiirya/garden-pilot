@@ -1,0 +1,8 @@
+# Shared LVGL setup (no pages). Pages live in packages/lvgl/page_*.yaml.
+
+lvgl:
+  displays:
+    - tft_display
+  touchscreens:
+    - touch
+  buffer_size: 25%

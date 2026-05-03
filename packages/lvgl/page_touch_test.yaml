@@ -1,0 +1,31 @@
+# Touch test page (default when listed before other page packages in my-sprinkler.yaml).
+
+lvgl:
+  pages:
+    - id: touch_test_page
+      widgets:
+        - label:
+            id: coord_label
+            x: 10
+            y: 10
+            text: "X:0 Y:0"
+        - obj:
+            id: touch_dot
+            width: 6
+            height: 6
+            x: 160
+            y: 120
+            radius: 3
+            bg_color: 0xff0000
+        - button:
+            id: btn_open_app_shell
+            x: 210
+            y: 190
+            width: 100
+            height: 36
+            on_click:
+              - lvgl.page.show: app_shell_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Menu"

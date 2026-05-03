@@ -1,0 +1,26 @@
+# App shell placeholder page.
+
+lvgl:
+  pages:
+    - id: app_shell_page
+      widgets:
+        - label:
+            x: 10
+            y: 10
+            text: "App shell"
+        - label:
+            x: 10
+            y: 36
+            text: "(placeholder)"
+        - button:
+            id: btn_back_touch_test
+            x: 10
+            y: 190
+            width: 120
+            height: 36
+            on_click:
+              - lvgl.page.show: touch_test_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Touch test"

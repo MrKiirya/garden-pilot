@@ -1,0 +1,54 @@
+# SPI + ILI9341 (mipi_spi) + XPT2046. UI: packages/lvgl/; optional touch overlay: touch_dot_test.yaml.
+
+spi:
+  - id: tft_spi
+    clk_pin: GPIO9
+    mosi_pin: GPIO10
+    miso_pin: GPIO3
+
+display:
+  - platform: mipi_spi
+    id: tft_display
+    model: ILI9341
+    spi_id: tft_spi
+    cs_pin: GPIO13
+    dc_pin: GPIO11
+    reset_pin: GPIO12
+    invert_colors: false
+    data_rate: 40MHz
+    dimensions:
+      width: 320
+      height: 240
+    transform:
+      swap_xy: true
+      mirror_x: false
+      mirror_y: false
+
+touchscreen:
+  - platform: xpt2046
+    id: touch
+    spi_id: tft_spi
+    cs_pin: GPIO18
+    interrupt_pin: GPIO15
+    calibration:
+      x_min: 201
+      x_max: 3792
+      y_min: 371
+      y_max: 3789
+    transform:
+      mirror_x: true
+      mirror_y: true
+      swap_xy: true
+    on_touch:
+      then:
+        - script.execute: touch_ui
+
+script:
+  - id: touch_ui
+    then:
+      - script.execute: touch_dot_overlay
+
+  # Default no-op when touch_dot_test package is not included.
+  - id: touch_dot_overlay
+    then:
+      - delay: 0ms

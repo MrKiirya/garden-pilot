@@ -12,24 +12,12 @@ esp32:
 logger:
   level: INFO
 
-# Home Assistant / ESPHome Dashboard connection.
-api:
-  encryption:
-    key: !secret api_encryption_key
-
-# Wireless firmware updates.
-ota:
-  - platform: esphome
-    password: !secret ota_password
-
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-  min_auth_mode: WPA2
-
-  # Fallback AP + captive portal if WiFi fails (password in secrets).
-  ap:
-    ssid: "My-Sprinkler"
-    password: !secret wifi_ap_password
-
-captive_portal:
+packages:
+  network: !include packages/network.yaml
+  display_touch: !include packages/display_touch.yaml
+  # LVGL: base first, then pages (order matters for default page = first merged page).
+  lvgl_base: !include packages/lvgl/base.yaml
+  lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
+  lvgl_page_app_shell: !include packages/lvgl/page_app_shell.yaml
+  # Optional: touch dot / coord updates on press. Comment out to disable (overlay script stays no-op).
+  touch_dot_test: !include packages/touch_dot_test.yaml

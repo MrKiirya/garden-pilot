@@ -38,11 +38,39 @@ Follow [Security Best Practices](https://esphome.io/guides/security_best_practic
 ## Build artifacts
 - **`.esphome/`** is local ESPHome/IDF cache — do not add to git or hand-edit.
 
-## Packages ([ESPHome Packages](https://esphome.io/components/packages/))
-- Use **`packages:`** with **`!include`** to share Wi‑Fi/API/logger patterns or repeat hardware templates across devices as the repo grows. Keep **`my-sprinkler.yaml`** as the device entrypoint with **`esphome:`** / board / **`packages:`** list.
-- **Merge semantics:** substitutions in the **main** file override same-name substitutions from packages; dicts merge by key; component **lists merge by `id`** where set; other lists concatenate; scalars are replaced by the **later** definition.
-- **Remote / Git packages** must **not** use `!secret` inside the remote YAML — use **`substitutions`** (with defaults in the package) and set real values from **local** `secrets.yaml` in the device entry file (per upstream docs).
-- Use **`!extend`** / **`!remove`** sparingly and only when intentionally overriding shared snippets; prefer clear small includes over deep override chains.
+## ESPHome packages layout (this repo)
+
+**Entry file:** `my-sprinkler.yaml` — only **`esphome:`**, **`esp32:`**, **`logger:`**, and an ordered **`packages:`** mapping. Do not duplicate board, SPI, display, or network blocks here; add them via includes.
+
+Generic merge rules: [Packages](https://esphome.io/components/packages/) — substitutions in the entry file win over packages; dicts merge by key; lists of components often merge by **`id`**; remote packages must not use **`!secret`** (use **`substitutions`** + local secrets). Prefer small focused includes over deep **`!extend`** / **`!remove`** chains unless needed.
+
+### Package map (keys → files)
+
+| `packages:` key | Path | Role |
+|-----------------|------|------|
+| `network` | `packages/network.yaml` | **`api`** (encryption), **`ota`**, **`wifi`** (`min_auth_mode`, **`ap`** via `!secret wifi_ap_password`), **`captive_portal`**. |
+| `display_touch` | `packages/display_touch.yaml` | **`spi`** (`id: tft_spi`), **`display`** (`mipi_spi` / ILI9341, pins aligned with breadboard test), **`touchscreen`** (XPT2046, `id: touch`). **Touch dispatch:** `touchscreen.on_touch` → **`script.execute: touch_ui`**. **`script` `touch_ui`** → **`script.execute: touch_dot_overlay`**. **`script` `touch_dot_overlay`** — default **no-op** (`delay: 0ms`) when the optional touch overlay package is disabled. |
+| `lvgl_base` | `packages/lvgl/base.yaml` | **`lvgl`** shared head only: **`displays`**, **`touchscreens`**, **`buffer_size`** — **no `pages`**. |
+| `lvgl_page_*` | `packages/lvgl/page_<name>.yaml` | One LVGL **page** per file: top-level **`lvgl:`** → **`pages:`** with a single **`- id: …`** entry and its **`widgets`**. |
+| `touch_dot_test` (optional) | `packages/touch_dot_test.yaml` | Extends **`touch_dot_overlay`** via **`id: !extend touch_dot_overlay`** with **`lvgl.widget.update` / `lvgl.label.update`**. **Comment out** this line in `my-sprinkler.yaml` to disable dot/coord updates; base noop script remains. |
+
+### `packages:` order (do not reorder lightly)
+
+1. **`network`** — connectivity first.  
+2. **`display_touch`** — creates **`tft_spi`**, **`tft_display`**, **`touch`** (required by LVGL).  
+3. **`lvgl_base`** — LVGL bus wiring to those ids.  
+4. **`lvgl_page_touch_test`** then **`lvgl_page_app_shell`** — **first merged page stays the default home screen**; keep **`touch_test_page`** before **`app_shell_page`** so the touch-test UI boots first.  
+5. **`touch_dot_test`** last — **`!extend touch_dot_overlay`** must apply after the base **`touch_dot_overlay`** script exists.
+
+### Touch → LVGL script note
+
+Extended actions run in **`script.execute`**, not inside the **`on_touch`** trigger body, so lambdas **must not** rely on the trigger-only **`touch`** variable. Use **`id(touch)->get_touch()`** (optional / `has_value()` / `value().x` / `y`) as in `packages/touch_dot_test.yaml`.
+
+### Adding a new LVGL page
+
+1. Add **`packages/lvgl/page_<short_name>.yaml`** with **`lvgl: pages: [ { id: <page_id>, widgets: … } ]`**.  
+2. Add a **`packages:`** entry in **`my-sprinkler.yaml`** after **`lvgl_base`**; set **order** relative to other pages if the **default visible page** matters.  
+3. Navigate with **`lvgl.page.show: <page_id>`** from buttons or automations.
 
 ## How to change the project
 - Make **small, task-scoped** edits; avoid unrelated refactors or new docs unless asked.

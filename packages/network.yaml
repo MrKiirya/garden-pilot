@@ -1,0 +1,21 @@
+# Home Assistant / ESPHome Dashboard (native API).
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+# Wireless firmware updates.
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+
+  # Fallback AP when station WiFi fails; password from secrets.
+  ap:
+    ssid: "My-Sprinkler"
+    password: !secret wifi_ap_password
+
+captive_portal:
