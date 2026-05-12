@@ -15,7 +15,7 @@ wifi:
 
   # Fallback AP when station WiFi fails; password from secrets.
   ap:
-    ssid: "My-Sprinkler"
+    ssid: "GardenPilot-AP"
     password: !secret wifi_ap_password
 
 captive_portal:

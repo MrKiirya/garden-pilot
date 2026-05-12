@@ -3,13 +3,13 @@ description: ESPHome irrigation project context, secrets policy, and agent scope
 alwaysApply: true
 ---
 
-# My Sprinkler — project rules
+# GardenPilot — project rules
 
 ## What this repo is
 - **ESPHome** device configuration for smart home automation (Home Assistant–friendly).
 - Product direction: **greenhouse** controller and **lawn irrigation** controller over time.
 - **Lawn irrigation** on ESPHome must use the built-in **`sprinkler`** controller ([Sprinkler Controller](https://esphome.io/components/sprinkler/)), not ad-hoc GPIO toggling for normal operation.
-- Hardware path: prototype on **ESP32-S3 devkit** (`my-sprinkler.yaml` board); later migrate to **LILYGO T-Relay-S3** and relay-focused wiring when explicitly requested.
+- Hardware path: prototype on **ESP32-S3 devkit** (`garden-pilot.yaml` board); later migrate to **LILYGO T-Relay-S3** and relay-focused wiring when explicitly requested.
 
 ## Language
 - **User-facing chat:** Russian when the user writes Russian.
@@ -18,7 +18,7 @@ alwaysApply: true
 ## Secrets and Git
 - **Never** commit `secrets.yaml` or real Wi‑Fi / API / OTA secrets.
 - Maintain **`secrets.example.yaml`** as a copy template with **obvious dummy values** (e.g. zero-style placeholders), not production-like random strings.
-- **`my-sprinkler.yaml`** is the only full ESPHome device config; `secrets*.yaml` are substitution files only (no `esphome:` block).
+- **`garden-pilot.yaml`** is the only full ESPHome device config; `secrets*.yaml` are substitution files only (no `esphome:` block).
 - Per [ESPHome secrets guidance](https://esphome.io/guides/security_best_practices/#secrets-management): **unique** API encryption key and OTA password **per device** (Wi‑Fi credentials may be shared). If a secret ever hits git history, **rotate** it and scrub history.
 
 ## Security (ESPHome)
@@ -40,7 +40,7 @@ Follow [Security Best Practices](https://esphome.io/guides/security_best_practic
 
 ## ESPHome packages layout (this repo)
 
-**Entry file:** `my-sprinkler.yaml` — only **`esphome:`**, **`esp32:`**, **`logger:`**, and an ordered **`packages:`** mapping. Do not duplicate board, SPI, display, or network blocks here; add them via includes.
+**Entry file:** `garden-pilot.yaml` — only **`esphome:`**, **`esp32:`**, **`logger:`**, and an ordered **`packages:`** mapping. Do not duplicate board, SPI, display, or network blocks here; add them via includes.
 
 Generic merge rules: [Packages](https://esphome.io/components/packages/) — substitutions in the entry file win over packages; dicts merge by key; lists of components often merge by **`id`**; remote packages must not use **`!secret`** (use **`substitutions`** + local secrets). Prefer small focused includes over deep **`!extend`** / **`!remove`** chains unless needed.
 
@@ -54,7 +54,7 @@ Generic merge rules: [Packages](https://esphome.io/components/packages/) — sub
 | `lvgl_page_*` | `packages/lvgl/page_<name>.yaml` | One LVGL **page** per file: top-level **`lvgl:`** → **`pages:`** with a single **`- id: …`** entry and its **`widgets`**. |
 | `packages/greenhouse/*` | Greenhouse domain | **`substitutions.yaml`**, **`sensors_air_dht.yaml`** (interim DHT; replace with I2C later), **`irrigation.yaml`** (3× GPIO + **`sprinkler`** `gh_sprinkler`, **`run_duration_number`** per bed, `restore_value`), **`run_duration_ui.yaml`** (`gh_sync_dur_spins` + LVGL spinbox ids), **`lvgl_page.yaml`** (`greenhouse_page`, spinboxes → `number.set`), **`lvgl_home_widgets.yaml`** (**`!extend home_page`**). |
 | `packages/lawn/*` | Lawn domain (future) | Add **`packages/lawn/page_*.yaml`** and hardware packages the same way as greenhouse. |
-| `touch_dot_test` (optional) | `packages/touch_dot_test.yaml` | Extends **`touch_dot_overlay`** via **`id: !extend touch_dot_overlay`** with **`lvgl.widget.update` / `lvgl.label.update`**. **Comment out** this line in `my-sprinkler.yaml` to disable dot/coord updates; base noop script remains. |
+| `touch_dot_test` (optional) | `packages/touch_dot_test.yaml` | Extends **`touch_dot_overlay`** via **`id: !extend touch_dot_overlay`** with **`lvgl.widget.update` / `lvgl.label.update`**. **Comment out** this line in `garden-pilot.yaml` to disable dot/coord updates; base noop script remains. |
 
 ### `packages:` order (do not reorder lightly)
 
@@ -67,7 +67,7 @@ Generic merge rules: [Packages](https://esphome.io/components/packages/) — sub
 7. **`gh_irrigation`** — **before** **`gh_lvgl_page`** (greenhouse LVGL buttons call **`sprinkler.start_single_valve`** on **`gh_sprinkler`**).  
 8. **`gh_lvgl_home_widgets`** — **`!extend home_page`** (greenhouse summary strip).  
 9. **`gh_lvgl_page`** — **`greenhouse_page`** (spinbox ids for **`run_duration_number`** `on_value`).  
-10. **`gh_run_duration_ui`** — **`gh_sync_dur_spins`** script (**after** spinboxes exist; **`esphome.on_boot`** in **`my-sprinkler.yaml`** calls it).  
+10. **`gh_run_duration_ui`** — **`gh_sync_dur_spins`** script (**after** spinboxes exist; **`esphome.on_boot`** in **`garden-pilot.yaml`** calls it).  
 11. **`gh_sensors_air`** — DHT **`on_value`** → labels.  
 12. **`gh_sprinkler_lvgl`** — interval → irrigation status labels.  
 13. **`touch_dot_test`** last — **`!extend touch_dot_overlay`** after base **`touch_dot_overlay`** in **`display_touch`**.
@@ -79,9 +79,9 @@ Extended actions run in **`script.execute`**, not inside the **`on_touch`** trig
 ### Adding a new LVGL page
 
 1. Add **`packages/lvgl/page_<short_name>.yaml`** with **`lvgl: pages: [ { id: <page_id>, widgets: … } ]`**.  
-2. Add a **`packages:`** entry in **`my-sprinkler.yaml`** after **`lvgl_base`**; set **order** relative to other pages if the **default visible page** matters.  
+2. Add a **`packages:`** entry in **`garden-pilot.yaml`** after **`lvgl_base`**; set **order** relative to other pages if the **default visible page** matters.  
 3. Navigate with **`lvgl.page.show: <page_id>`** from buttons or automations.
 
 ## How to change the project
 - Make **small, task-scoped** edits; avoid unrelated refactors or new docs unless asked.
-- When validating or compiling, use an explicit config path, e.g. `esphome compile my-sprinkler.yaml` from the repo root.
+- When validating or compiling, use an explicit config path, e.g. `esphome compile garden-pilot.yaml` from the repo root.

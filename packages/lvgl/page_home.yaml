@@ -15,7 +15,6 @@ lvgl:
             width: 140
             height: 36
             on_click:
-              - script.execute: gh_sync_dur_spins
               - lvgl.page.show: greenhouse_page
             widgets:
               - label:

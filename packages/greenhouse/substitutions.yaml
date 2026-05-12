@@ -9,4 +9,10 @@ substitutions:
   gh_valve_zone2_pin: GPIO47
   gh_valve_zone3_pin: GPIO48
 
-  # Future soil inputs (document only until wired): gh_soil_bed1 .. gh_soil_bed3
+  # Soil moisture module (AO = analog, DO = comparator after on-board pot). Change pins if needed.
+  gh_soil_ao_pin: GPIO6
+  gh_soil_do_pin: GPIO7
+  # AO calibration (Volts): dry probe vs wet probe — read old "raw" in logs/HA once, then set here.
+  # Typical FC-28 on 3V3: dry ~higher V, wet ~lower V. Tune until 0% = dry, 100% = soaked.
+  gh_soil_cal_dry_v: "3.16"
+  gh_soil_cal_wet_v: "0.80"

@@ -1,4 +1,4 @@
-# Poll gh_sprinkler state for LVGL (no built-in sprinkler text_sensor; use C++ API from docs).
+# Poll gh_sprinkler + run duration numbers for LVGL (sprinkler has no text_sensor; use C++ API).
 
 interval:
   - interval: 1s
@@ -19,10 +19,7 @@ interval:
             }
             if (s->active_valve().has_value()) {
               unsigned zn = (unsigned) (s->active_valve().value() + 1);
-              unsigned sec = 0;
-              if (s->time_remaining_active_valve().has_value())
-                sec = (unsigned) s->time_remaining_active_valve().value();
-              snprintf(buf, sizeof(buf), "Bed%u · %us left", zn, sec);
+              snprintf(buf, sizeof(buf), "Running: Bed%u", zn);
               return std::string(buf);
             }
             snprintf(buf, sizeof(buf), "Irrigation: idle");
@@ -38,6 +35,72 @@ interval:
                      s->reverse() ? "on" : "off");
             return std::string(buf);
       - lvgl.label.update:
+          id: gh_greenhouse_run_dur_hint
+          text: !lambda |-
+            char buf[64];
+            if (!id(gh_bed1_run_duration).has_state() || !id(gh_bed2_run_duration).has_state() ||
+                !id(gh_bed3_run_duration).has_state()) {
+              snprintf(buf, sizeof(buf), "Dur: B1 --  B2 --  B3 --");
+            } else {
+              snprintf(buf, sizeof(buf), "Dur: B1 %.0f  B2 %.0f  B3 %.0f min",
+                       id(gh_bed1_run_duration).state, id(gh_bed2_run_duration).state,
+                       id(gh_bed3_run_duration).state);
+            }
+            return std::string(buf);
+      - lvgl.label.update:
+          id: gh_greenhouse_t_left_zone
+          text: !lambda |-
+            auto *s = id(gh_sprinkler);
+            char buf[36];
+            auto tr = s->time_remaining_active_valve();
+            if (!tr.has_value()) {
+              snprintf(buf, sizeof(buf), "Zone left: --:--:--");
+            } else {
+              uint32_t t = tr.value();
+              unsigned h = (unsigned) (t / 3600U);
+              unsigned m = (unsigned) ((t % 3600U) / 60U);
+              unsigned sec = (unsigned) (t % 60U);
+              snprintf(buf, sizeof(buf), "Zone left: %02u:%02u:%02u", h, m, sec);
+            }
+            return std::string(buf);
+      - lvgl.label.update:
+          id: gh_greenhouse_t_left_total
+          text: !lambda |-
+            auto *s = id(gh_sprinkler);
+            char buf[36];
+            auto tr = s->time_remaining_current_operation();
+            if (!tr.has_value()) {
+              snprintf(buf, sizeof(buf), "Total left: --:--:--");
+            } else {
+              uint32_t t = tr.value();
+              unsigned h = (unsigned) (t / 3600U);
+              unsigned m = (unsigned) ((t % 3600U) / 60U);
+              unsigned sec = (unsigned) (t % 60U);
+              snprintf(buf, sizeof(buf), "Total left: %02u:%02u:%02u", h, m, sec);
+            }
+            return std::string(buf);
+      - lvgl.label.update:
+          id: gh_greenhouse_queue_hint
+          text: !lambda |-
+            auto *s = id(gh_sprinkler);
+            char buf[56];
+            uint32_t qt = s->total_queue_time();
+            auto qv = s->queued_valve();
+            if (qt == 0 && !qv.has_value()) {
+              snprintf(buf, sizeof(buf), "Queue: (empty)");
+            } else {
+              unsigned h = (unsigned) (qt / 3600U);
+              unsigned m = (unsigned) ((qt % 3600U) / 60U);
+              unsigned sec = (unsigned) (qt % 60U);
+              if (qv.has_value()) {
+                snprintf(buf, sizeof(buf), "Queue: %02u:%02u:%02u next B%u", h, m, sec,
+                         (unsigned) qv.value() + 1);
+              } else {
+                snprintf(buf, sizeof(buf), "Queue: %02u:%02u:%02u", h, m, sec);
+              }
+            }
+            return std::string(buf);
+      - lvgl.label.update:
           id: gh_home_irr_status
           text: !lambda |-
             auto *s = id(gh_sprinkler);
@@ -51,10 +114,7 @@ interval:
             }
             if (s->active_valve().has_value()) {
               unsigned zn = (unsigned) (s->active_valve().value() + 1);
-              unsigned sec = 0;
-              if (s->time_remaining_active_valve().has_value())
-                sec = (unsigned) s->time_remaining_active_valve().value();
-              snprintf(buf, sizeof(buf), "GH irr: B%u %us", zn, sec);
+              snprintf(buf, sizeof(buf), "GH irr: B%u", zn);
               return std::string(buf);
             }
             return std::string("GH irr: idle");

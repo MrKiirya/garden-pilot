@@ -1,0 +1,51 @@
+# Resistive soil probe: VCC→3V3 (preferred) or 5V; GND→GND; AO→gh_soil_ao_pin (ADC); DO→gh_soil_do_pin (optional digital).
+# If VCC=5V, AO can exceed 3.3V — use a resistor divider (~10k/20k) before the ESP ADC pin.
+# On-board pot sets DO threshold only. AO → % via calibrate_linear (gh_soil_cal_*_v); not absolute soil science, just a useful scale.
+# Calibrate: note V at air-dry probe and at waterlogged (or glass of water), put into substitutions.
+
+sensor:
+  - platform: adc
+    pin: ${gh_soil_ao_pin}
+    id: gh_soil_moisture_pct
+    name: "Greenhouse soil moisture"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: moisture
+    update_interval: 5s
+    attenuation: 12db
+    samples: 8
+    filters:
+      - median:
+          window_size: 5
+          send_every: 5
+          send_first_at: 1
+      - calibrate_linear:
+          - ${gh_soil_cal_dry_v} -> 0.0
+          - ${gh_soil_cal_wet_v} -> 100.0
+      - clamp:
+          min_value: 0.0
+          max_value: 100.0
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: gh_greenhouse_soil_hint
+            text: !lambda |-
+              char buf[40];
+              snprintf(buf, sizeof(buf), "Soil: %.0f %%", x);
+              return std::string(buf);
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: ${gh_soil_do_pin}
+      mode:
+        input: true
+        pullup: true
+    id: gh_soil_moisture_do
+    name: "Greenhouse soil moisture DO"
+    device_class: moisture
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 200ms
+      # Module DO is active-low for "wet"; invert so ON = wet (matches device_class moisture).
+      - invert:

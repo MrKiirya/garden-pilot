@@ -1,4 +1,5 @@
-# Full-screen greenhouse page (beds + air + placeholders for soil).
+# Full-screen greenhouse page (beds + air + soil + irrigation).
+# Run durations are shown as text from number entities (HA); do not sync LVGL spinboxes — wrong ranges overwrite HA.
 
 lvgl:
   pages:
@@ -11,89 +12,54 @@ lvgl:
         - label:
             id: gh_greenhouse_t_label
             x: 10
-            y: 32
+            y: 26
             text: "Air: -- C"
         - label:
             id: gh_greenhouse_rh_label
             x: 140
-            y: 32
+            y: 26
             text: "RH: -- %"
         - label:
             id: gh_greenhouse_irr_main
             x: 10
-            y: 56
+            y: 44
             text: "Irrigation: idle"
         - label:
             id: gh_greenhouse_irr_modes
             x: 10
-            y: 74
+            y: 58
             text: "AA:off  Q:off  Rev:off"
         - label:
+            id: gh_greenhouse_run_dur_hint
+            x: 10
+            y: 72
+            text: "Dur: B1 -- B2 -- B3 --"
+        - label:
+            id: gh_greenhouse_t_left_zone
             x: 10
             y: 86
-            text: "Run (s):"
-        - spinbox:
-            id: gh_lvgl_bed1_dur_spin
-            x: 8
+            text: "Zone left: --:--:--"
+        - label:
+            id: gh_greenhouse_t_left_total
+            x: 10
             y: 100
-            width: 96
-            height: 28
-            range_from: 30
-            range_to: 1800
-            digits: 4
-            decimal_places: 0
-            rollover: false
-            value: 120
-            on_change:
-              then:
-                - number.set:
-                    id: gh_bed1_run_duration
-                    value: !lambda return x;
-        - spinbox:
-            id: gh_lvgl_bed2_dur_spin
-            x: 112
-            y: 100
-            width: 96
-            height: 28
-            range_from: 30
-            range_to: 1800
-            digits: 4
-            decimal_places: 0
-            rollover: false
-            value: 120
-            on_change:
-              then:
-                - number.set:
-                    id: gh_bed2_run_duration
-                    value: !lambda return x;
-        - spinbox:
-            id: gh_lvgl_bed3_dur_spin
-            x: 216
-            y: 100
-            width: 96
-            height: 28
-            range_from: 30
-            range_to: 1800
-            digits: 4
-            decimal_places: 0
-            rollover: false
-            value: 120
-            on_change:
-              then:
-                - number.set:
-                    id: gh_bed3_run_duration
-                    value: !lambda return x;
+            text: "Total left: --:--:--"
+        - label:
+            id: gh_greenhouse_queue_hint
+            x: 10
+            y: 114
+            text: "Queue: (empty)"
         - label:
             id: gh_greenhouse_soil_hint
             x: 10
-            y: 132
-            text: "Soil: TBD (gh_soil_*)"
+            y: 128
+            text: "Soil: --"
         - button:
             id: gh_btn_run_bed1
             x: 10
-            y: 152
+            y: 146
             width: 92
-            height: 32
+            height: 30
             on_click:
               - sprinkler.start_single_valve:
                   id: gh_sprinkler
@@ -105,9 +71,9 @@ lvgl:
         - button:
             id: gh_btn_run_bed2
             x: 114
-            y: 152
+            y: 146
             width: 92
-            height: 32
+            height: 30
             on_click:
               - sprinkler.start_single_valve:
                   id: gh_sprinkler
@@ -119,9 +85,9 @@ lvgl:
         - button:
             id: gh_btn_run_bed3
             x: 218
-            y: 152
+            y: 146
             width: 92
-            height: 32
+            height: 30
             on_click:
               - sprinkler.start_single_valve:
                   id: gh_sprinkler
@@ -131,11 +97,53 @@ lvgl:
                   align: CENTER
                   text: "Bed 3"
         - button:
+            id: gh_btn_queue_bed1
+            x: 10
+            y: 180
+            width: 92
+            height: 28
+            on_click:
+              - sprinkler.queue_valve:
+                  id: gh_sprinkler
+                  valve_number: 0
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "+Q B1"
+        - button:
+            id: gh_btn_queue_bed2
+            x: 114
+            y: 180
+            width: 92
+            height: 28
+            on_click:
+              - sprinkler.queue_valve:
+                  id: gh_sprinkler
+                  valve_number: 1
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "+Q B2"
+        - button:
+            id: gh_btn_queue_bed3
+            x: 218
+            y: 180
+            width: 92
+            height: 28
+            on_click:
+              - sprinkler.queue_valve:
+                  id: gh_sprinkler
+                  valve_number: 2
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "+Q B3"
+        - button:
             id: gh_btn_stop
             x: 10
-            y: 194
-            width: 100
-            height: 32
+            y: 212
+            width: 92
+            height: 28
             on_click:
               - sprinkler.shutdown: gh_sprinkler
             widgets:
@@ -143,11 +151,24 @@ lvgl:
                   align: CENTER
                   text: "Stop"
         - button:
+            id: gh_btn_start_queue
+            x: 114
+            y: 212
+            width: 92
+            height: 28
+            on_click:
+              - sprinkler.start_from_queue:
+                  id: gh_sprinkler
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "Run Q"
+        - button:
             id: gh_btn_home
-            x: 210
-            y: 194
-            width: 100
-            height: 36
+            x: 218
+            y: 212
+            width: 92
+            height: 28
             on_click:
               - lvgl.page.show: home_page
             widgets:
