@@ -1,0 +1,6 @@
+# Wall clock from Home Assistant (sets local time when the API is connected).
+# Triggers that update a display live with the display (see packages/lvgl/page_home.yaml).
+
+time:
+  - platform: homeassistant
+    id: ha_time

@@ -1,0 +1,25 @@
+# Connectivity: Home Assistant API, OTA, Wi-Fi, captive portal. No LVGL, no secrets in this file:
+# the entry file assigns the substitutions below from its own secrets (none has a default on purpose,
+# so a missing value fails validation).
+#   api_encryption_key, ota_password, wifi_ssid, wifi_password, wifi_ap_password
+
+api:
+  encryption:
+    key: ${api_encryption_key}
+
+# Wireless firmware updates.
+ota:
+  - platform: esphome
+    password: ${ota_password}
+
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  min_auth_mode: WPA2
+
+  # Fallback AP when station WiFi fails.
+  ap:
+    ssid: "GardenPilot-AP"
+    password: ${wifi_ap_password}
+
+captive_portal:
