@@ -1,0 +1,35 @@
+#!/bin/sh
+# Compile the firmware: `script/compile [CONFIG]` (default garden-pilot.yaml).
+#
+# ESPHome version: GP_ESPHOME (pinned | minimum | latest | YYYY.M.P), see script/_esphome.
+# Uses the real secrets.yaml when it exists, otherwise (or with GP_SECRETS=example) the config is staged with
+# secrets.example.yaml into the git-ignored .esphome/example-build/ and compiled there, so no secrets.yaml is
+# ever created in the checkout. The staging dir is fixed so reruns are incremental.
+set -eu
+cd "$(dirname "$0")/.."
+
+CONFIG="${1:-garden-pilot.yaml}"
+if [ ! -f "$CONFIG" ]; then
+    echo "config file not found: $CONFIG" >&2
+    exit 1
+fi
+
+echo "ESPHome $(sh script/_esphome version | sed 's/^Version: //')"
+
+if [ "${GP_SECRETS:-}" != "example" ] && [ -f secrets.yaml ]; then
+    exec sh script/_esphome compile "$CONFIG"
+fi
+
+STAGE=".esphome/example-build"
+mkdir -p "$STAGE/.esphome"
+# Refresh the staged sources; keep the nested .esphome/ build dir.
+find "$STAGE" -mindepth 1 -maxdepth 1 ! -name .esphome -exec rm -r -f {} +
+# Everything an entry file may include; keep in sync with script/config.
+for path in "$CONFIG" packages hardware components; do
+    if [ -e "$path" ]; then
+        cp -R "$path" "$STAGE/"
+    fi
+done
+cp secrets.example.yaml "$STAGE/secrets.yaml"
+echo "Built with example secrets: do not flash this firmware."
+exec sh script/_esphome compile "$STAGE/$(basename "$CONFIG")"
