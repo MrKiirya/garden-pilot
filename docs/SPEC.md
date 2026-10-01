@@ -139,8 +139,10 @@ external_components:
   **Verify with a first test build** that lists from different packages merge as expected.
 - **Screens:** LVGL YAML has no loops. Bed layouts as fixed variants (1 / 2 / 3 / 6 beds, see design drafts
   D03–D05) or generated YAML — **open**.
-- Hardware is a separate package: `hardware/<board>.yaml` with real pins and `hardware/sim.yaml` for tests
-  (template switches and sensors instead of GPIO).
+- Hardware is a separate package: `hardware/<board>.yaml` with real pins (also `esp32:` and the display/touch
+  orientation and calibration) and `hardware/sim.yaml` for tests (template switches and sensors instead of GPIO).
+  Exists after task 004: `hardware/esp32-s3-devkitc1-breadboard.yaml` and `packages/core/` (network, time).
+  Task 005 adds `bed.yaml` with `vars` and `hardware/sim.yaml`.
 
 Target layout:
 ```
@@ -166,7 +168,8 @@ tests/
   `canary-failure` issue.
 
 ## 7. Testing without hardware
-1. `esphome config` for every module combination (CI job `checks` via `script/lint`; one entry file until stage 4).
+1. `esphome config` for every module combination: the matrix in `tests/test_config_matrix.py` (variants built from
+   the real entry file) runs in CI job `checks` via `script/test`; more variants come with task 005.
 2. `esphome compile` for ESP32 (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary).
 3. Unit tests of the `garden_zones` core (GoogleTest or Catch2).
 4. **`host` platform:** firmware runs on Linux/macOS, the API works and HA can connect by IP; no GPIO, hence
@@ -187,9 +190,9 @@ tests/
   use the default LVGL theme. Bottom nav is a placeholder (ZONES → greenhouse, WATER → lawn, SETUP → touch test).
 - Known UI defects: the Home "NEXT" label shows the remaining queue time (hours dropped), not the next scheduled
   run — there are no schedules yet.
-- `packages/network.yaml` updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
-  ready (same pattern as the `number.on_value` gotcha in `CLAUDE.md`), and makes `network` depend on the Home
-  page package.
+- The Home clock updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
+  ready (same pattern as the `number.on_value` gotcha in `CLAUDE.md`). Since task 004 this code lives in
+  `packages/lvgl/page_home.yaml` (`!extend ha_time`), so `packages/core/` no longer depends on the Home page.
 
 ## 9. Roadmap
 1. **Process scaffold** (task 001): agent guide, agents, task templates, this spec, uv + pinned ESPHome,
@@ -203,8 +206,9 @@ tests/
    `compile (pinned|minimum)` in the devcontainer on every PR and push to `master`; `canary.yml` builds the latest
    ESPHome weekly and reports through one `canary-failure` issue; Dependabot covers actions, uv and devcontainer
    images. The `master` ruleset lives in `.github/rulesets/master.json` (required checks `checks`,
-   `compile (pinned)`, `compile (minimum)`; squash-only PRs) and is applied by a repo admin with `gh api`. The `config` matrix over module combinations waits for stage 4.
-4. **Modular layout:** `hardware/`, `packages/core/`, `bed.yaml` with `vars`, `hardware/sim.yaml`.
+   `compile (pinned)`, `compile (minimum)`; squash-only PRs) and is applied by a repo admin with `gh api`. The `config` matrix over module combinations arrived with task 004 (`tests/test_config_matrix.py`).
+4. **Modular layout**, two tasks. Task 004: `hardware/` board profile, `packages/core/`, secrets as entry-file
+   substitutions, config matrix. Task 005: `bed.yaml` with `vars`, `hardware/sim.yaml`, more matrix rows.
 5. **Lightweight end-user path:** ESPHome Device Builder (HA add-on or the `ghcr.io/esphome/esphome`
    container) + remote packages from this repo + first flash via web.esphome.io, then OTA; no devcontainer
    needed. Depends on stage 4.
