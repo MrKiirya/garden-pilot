@@ -89,7 +89,7 @@ jobs:
     steps:
       - name: Open, update or close the canary issue
         run: |
-          title="Canary: firmware build fails with the latest ESPHome"
+          title="Canary: firmware build fails with ESPHome $VERSION"
           gh label create canary-failure --force --color B60205 \
             --description "Weekly canary build against the latest ESPHome failed"
           existing="$(gh issue list --label canary-failure --state open --json number --jq '.[0].number // empty')"

@@ -47,7 +47,7 @@ jobs:
           push: never
           # If Docker on the runner rejects the committed runArgs, set the host env vars read by
           # devcontainer.json (GP_SERIAL_DEVICE, GP_SERIAL_GROUP) on this step instead of editing it.
-          runCmd: script/lint && script/test
+          runCmd: script/lint && script/test && uv cache prune --ci
           env: |
             GP_SECRETS=example
 

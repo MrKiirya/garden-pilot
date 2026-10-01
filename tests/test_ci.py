@@ -254,7 +254,10 @@ def test_workflows_use_no_secrets() -> None:
 
 def test_no_untrusted_interpolation_in_run() -> None:
     for path in workflow_files():
-        for script in run_scripts(load_yaml(path)):
+        wf = load_yaml(path)
+        # devcontainers/ci `runCmd` is a shell script too.
+        run_cmds = [str(s.get("with", {}).get("runCmd", "")) for s in uses_steps(wf)]
+        for script in run_scripts(wf) + run_cmds:
             for needle in ("${{ github.event.", "${{ github.head_ref", "${{ inputs."):
                 assert needle not in script, (path, needle)
 
