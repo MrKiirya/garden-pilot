@@ -29,7 +29,6 @@ packages:
   # Greenhouse (all under packages/greenhouse/ — include each fragment explicitly).
   gh_substitutions: !include packages/greenhouse/substitutions.yaml
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
-  gh_lvgl_home_widgets: !include packages/greenhouse/lvgl_home_widgets.yaml
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
   gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml
   gh_sensors_soil: !include packages/greenhouse/sensors_soil.yaml

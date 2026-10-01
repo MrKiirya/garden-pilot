@@ -12,11 +12,11 @@ alwaysApply: false
 | `garden-pilot.yaml` | Device **entrypoint** only: `esphome:`, `esp32:`, `logger:`, ordered `packages:` — no inlined network/display/LVGL (those live under `packages/`). |
 | `secrets.yaml` | Local `!secret` values; gitignored. |
 | `secrets.example.yaml` | Checked-in template; dummy values only. |
-| `packages/network.yaml` | `api`, `ota`, `wifi`, `captive_portal`. |
+| `packages/network.yaml` | `api`, `ota`, `wifi`, `captive_portal`, **`time`** (`homeassistant` for header clock). |
 | `packages/display_touch.yaml` | SPI, `mipi_spi` display, XPT2046 touch, `touch_ui` / `touch_dot_overlay` scripts. |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` (no `pages`). |
 | `packages/lvgl/page_*.yaml` | **One LVGL page per file** under `lvgl: pages:` (`home_page`, `touch_test_page`, `lawn_page`, …). |
-| `packages/greenhouse/*.yaml` | Greenhouse: substitutions, DHT (interim), irrigation + `sprinkler`, LVGL page + `!extend` home widgets. |
+| `packages/greenhouse/*.yaml` | Greenhouse: substitutions, DHT (interim), irrigation + `sprinkler`, LVGL greenhouse page; home dashboard is `packages/lvgl/page_home.yaml`. |
 | `packages/lawn/*.yaml` | Lawn (future), mirror the greenhouse split. |
 | `packages/touch_dot_test.yaml` | Optional: `!extend touch_dot_overlay` for dot + coord label updates. |
 | Other `packages/*.yaml` | Optional fragments; no top-level `esphome:` ([Packages](https://esphome.io/components/packages/)). |
@@ -43,7 +43,7 @@ Full **package order**, touch pipeline, and “how to add a page” — see **al
 ## Packages (`packages:` + `!include`)
 - Official: [Packages](https://esphome.io/components/packages/) and [`!include`](https://esphome.io/guides/yaml#yaml-include).
 - In the entry YAML: **`packages:`** as a **list** (`- !include common/wifi.yaml`) or a **mapping** of labels to includes; mapping keys are labels only.
-- **This repo:** LVGL = **`packages/lvgl/base.yaml`** + **`packages/lvgl/page_<name>.yaml`**. **Greenhouse** UI/hardware under **`packages/greenhouse/`** (explicit includes in `garden-pilot.yaml`); home summary uses **`!extend home_page`** in **`lvgl_home_widgets.yaml`**. **Lawn** will use **`packages/lawn/`** the same way. Touch test overlay: **`!extend touch_dot_overlay`** in `packages/touch_dot_test.yaml` (see `garden-pilot-core.mdc`).
+- **This repo:** LVGL = **`packages/lvgl/base.yaml`** + **`packages/lvgl/page_<name>.yaml`** (including **`home_page`** dashboard in **`page_home.yaml`**). **Greenhouse** hardware/sensors under **`packages/greenhouse/`**. **Lawn** will use **`packages/lawn/`** when added. Touch test overlay: **`!extend touch_dot_overlay`** in `packages/touch_dot_test.yaml` (see `garden-pilot-core.mdc`).
 - **Local includes:** shared `wifi` / `api` / `logger` blocks, or templated snippets with **`!include`** + **`vars:`** / package **`defaults:`** for repeated hardware.
 - **Remote Git packages:** no **`!secret`** in remote files — expose **`substitutions`** and assign secrets from **`garden-pilot.yaml`** / local includes only.
 - **Advanced:** **`!extend`** / **`!remove`** to tweak or drop nodes from an included tree; Jinja in **`substitutions:`** for conditional includes (see upstream examples).

@@ -16,7 +16,7 @@ display:
     dc_pin: GPIO11
     reset_pin: GPIO12
     invert_colors: false
-    data_rate: 10MHz
+    data_rate: 40MHz
     dimensions:
       width: 320
       height: 240

@@ -1,46 +1,332 @@
-# Shared home (boot default when listed first under lvgl pages). Navigation only here; domain widgets use !extend from packages/greenhouse/, packages/lawn/, etc.
+# Dashboard home (320x240). Layout scaled from 440x330 reference (factor 320/440 x, 240/330 y).
 
 lvgl:
   pages:
     - id: home_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
       widgets:
+        # --- Header (ref h 32 -> 23 px) ---
+        - label:
+            x: 6
+            y: 4
+            text: "GardenPilot"
+            text_font: montserrat_10
+            text_color: 0x78dc77
+        - label:
+            id: home_clock_label
+            x: 252
+            y: 4
+            text: "--:--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            border_width: 0
+            scrollable: false
+            clickable: false
+
+        # --- Greenhouse card (left) ---
+        - obj:
+            x: 6
+            y: 26
+            width: 152
+            height: 172
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 9
+            y: 29
+            text: "GREENHOUSE"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: gh_home_air_t_label
+            x: 10
+            y: 44
+            text: "--C"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            id: gh_home_air_rh_label
+            x: 82
+            y: 44
+            text: "--%"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
         - label:
             x: 10
-            y: 8
-            text: "Home"
-        - button:
-            id: btn_open_greenhouse
+            y: 60
+            text: "SOIL MOISTURE"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - bar:
+            id: gh_home_soil_bar
             x: 10
-            y: 130
-            width: 140
-            height: 36
+            y: 71
+            width: 132
+            height: 5
+            min_value: 0
+            max_value: 100
+            value: 0
+            bg_color: 0x353534
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            indicator:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+        - obj:
+            x: 10
+            y: 128
+            width: 132
+            height: 64
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            scrollable: false
+            clickable: false
+        - label:
+            x: 14
+            y: 132
+            text: "STATUS"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: gh_home_irr_status
+            x: 14
+            y: 144
+            text: "Idle"
+            text_font: montserrat_10
+            text_color: 0x78dc77
+        - label:
+            x: 14
+            y: 158
+            text: "NEXT"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: gh_home_next_label
+            x: 14
+            y: 170
+            text: "--:--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+
+        # --- Lawn card (right, placeholders) ---
+        - obj:
+            x: 161
+            y: 26
+            width: 153
+            height: 172
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 164
+            y: 29
+            text: "LAWN"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            x: 165
+            y: 46
+            text: "SOIL MOISTURE"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - bar:
+            id: lawn_home_soil_bar
+            x: 165
+            y: 57
+            width: 133
+            height: 5
+            min_value: 0
+            max_value: 100
+            value: 45
+            bg_color: 0x353534
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            indicator:
+              bg_color: 0x9ecaff
+              bg_opa: COVER
+        - label:
+            x: 165
+            y: 68
+            text: "Drainage: Optimal"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - obj:
+            x: 165
+            y: 128
+            width: 133
+            height: 64
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            scrollable: false
+            clickable: false
+        - label:
+            x: 169
+            y: 132
+            text: "STATUS"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: lawn_home_status_label
+            x: 169
+            y: 144
+            text: "Idle"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - label:
+            x: 169
+            y: 158
+            text: "NEXT"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: lawn_home_next_label
+            x: 169
+            y: 170
+            text: "--:--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+
+        # --- Bottom nav (ref h 54 -> 39 px) ---
+        - obj:
+            x: 0
+            y: 201
+            width: 320
+            height: 39
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            border_side: [TOP]
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - button:
+            id: nav_btn_dash
+            x: 4
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x4caf50
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF015"
+                  text_font: montserrat_14
+                  text_color: 0x003c0b
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "DASH"
+                  text_font: montserrat_8
+                  text_color: 0x003c0b
+            on_click:
+              - lvgl.page.show: home_page
+        - button:
+            id: nav_btn_zones
+            x: 84
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF06C"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "ZONES"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
             on_click:
               - lvgl.page.show: greenhouse_page
+        - button:
+            id: nav_btn_water
+            x: 164
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
             widgets:
               - label:
                   align: CENTER
-                  text: "Greenhouse"
-        - button:
-            id: btn_open_lawn
-            x: 170
-            y: 130
-            width: 140
-            height: 36
+                  y: -3
+                  text: "\uF043"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "WATER"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
             on_click:
               - lvgl.page.show: lawn_page
+        - button:
+            id: nav_btn_setup
+            x: 244
+            y: 204
+            width: 72
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
             widgets:
               - label:
                   align: CENTER
-                  text: "Lawn"
-        - button:
-            id: btn_open_touch_test
-            x: 10
-            y: 190
-            width: 140
-            height: 36
+                  y: -3
+                  text: "\uF013"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "SETUP"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
             on_click:
               - lvgl.page.show: touch_test_page
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "Touch test"

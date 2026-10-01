@@ -104,17 +104,27 @@ interval:
           id: gh_home_irr_status
           text: !lambda |-
             auto *s = id(gh_sprinkler);
-            char buf[40];
+            char buf[24];
             if (s->standby())
-              return std::string("GH irr: standby");
+              return std::string("Standby");
             if (s->paused_valve().has_value()) {
               unsigned zn = (unsigned) (s->paused_valve().value() + 1);
-              snprintf(buf, sizeof(buf), "GH irr: p%u", zn);
+              snprintf(buf, sizeof(buf), "Paused B%u", zn);
               return std::string(buf);
             }
-            if (s->active_valve().has_value()) {
-              unsigned zn = (unsigned) (s->active_valve().value() + 1);
-              snprintf(buf, sizeof(buf), "GH irr: B%u", zn);
-              return std::string(buf);
-            }
-            return std::string("GH irr: idle");
+            if (s->active_valve().has_value())
+              return std::string("Watering");
+            return std::string("Idle");
+      - lvgl.label.update:
+          id: gh_home_next_label
+          text: !lambda |-
+            auto *s = id(gh_sprinkler);
+            char buf[16];
+            uint32_t qt = s->total_queue_time();
+            auto qv = s->queued_valve();
+            if (qt == 0 && !qv.has_value())
+              return std::string("--:--");
+            unsigned m = (unsigned) ((qt % 3600U) / 60U);
+            unsigned sec = (unsigned) (qt % 60U);
+            snprintf(buf, sizeof(buf), "%02u:%02u", m, sec);
+            return std::string(buf);

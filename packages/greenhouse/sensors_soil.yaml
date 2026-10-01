@@ -27,6 +27,15 @@ sensor:
           max_value: 100.0
     on_value:
       then:
+        - lvgl.bar.update:
+            id: gh_home_soil_bar
+            value: !lambda |-
+              int v = (int) (x + 0.5f);
+              if (v < 0)
+                v = 0;
+              if (v > 100)
+                v = 100;
+              return v;
         - lvgl.label.update:
             id: gh_greenhouse_soil_hint
             text: !lambda |-

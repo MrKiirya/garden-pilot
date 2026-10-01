@@ -19,3 +19,23 @@ wifi:
     password: !secret wifi_ap_password
 
 captive_portal:
+
+# Wall clock for LVGL header (Home Assistant sets local time when API is connected).
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time_sync:
+      - lvgl.label.update:
+          id: home_clock_label
+          text:
+            time_format: "%H:%M"
+            time: ha_time
+
+interval:
+  - interval: 30s
+    then:
+      - lvgl.label.update:
+          id: home_clock_label
+          text:
+            time_format: "%H:%M"
+            time: ha_time

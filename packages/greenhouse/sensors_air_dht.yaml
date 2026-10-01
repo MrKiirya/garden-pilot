@@ -18,8 +18,8 @@ sensor:
           - lvgl.label.update:
               id: gh_home_air_t_label
               text: !lambda |-
-                char buf[32];
-                sprintf(buf, "GH T: %.1f C", x);
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%.0f C", x);
                 return std::string(buf);
           - lvgl.label.update:
               id: gh_greenhouse_t_label
@@ -36,8 +36,8 @@ sensor:
           - lvgl.label.update:
               id: gh_home_air_rh_label
               text: !lambda |-
-                char buf[32];
-                sprintf(buf, "GH RH: %.0f %%", x);
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%.0f%%", x);
                 return std::string(buf);
           - lvgl.label.update:
               id: gh_greenhouse_rh_label

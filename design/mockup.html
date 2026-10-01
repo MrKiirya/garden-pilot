@@ -1,0 +1,574 @@
+<style>
+  /*
+    GardenPilot screen reference sheet.
+    Single fixed dark "workbench" theme by deliberate choice: the subject is a
+    fixed dark-mode embedded display, viewed here next to code at a bench, not
+    a document meant to sit on a bright page. Device-frame tokens below are not
+    a free palette choice — they are copied from packages/lvgl/page_home.yaml
+    and the Stitch DESIGN.md exports, so the frames stay truthful to the real
+    firmware colors.
+  */
+  :root {
+    --sheet-bg: #0f1210;
+    --sheet-panel: #161a16;
+    --sheet-panel-2: #1a1f1a;
+    --sheet-line: #262e24;
+    --ink: #e7ede4;
+    --ink-dim: #8fa08a;
+    --ink-faint: #57614f;
+    --accent: #78dc77;
+
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Roboto Mono", monospace;
+    --sans: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+    /* Device tokens -- fixed, sourced from the real firmware / Stitch DESIGN.md. */
+    --dev-bg: #131313;
+    --dev-card: #1c1b1b;
+    --dev-status: #201f1f;
+    --dev-border: #3f4a3c;
+    --dev-text: #e5e2e1;
+    --dev-text-dim: #becab9;
+    --dev-track: #353534;
+    --dev-green: #78dc77;
+    --dev-green-fill: #4caf50;
+    --dev-on-green: #003c0b;
+    --dev-blue: #9ecaff;
+    --dev-blue-fill: #1e95f2;
+    --dev-on-blue: #002b4d;
+    --dev-amber: #ffb870;
+    --dev-amber-fill: #e18500;
+    --dev-error-fill: #93000a;
+    --dev-on-error: #ffdad6;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--sheet-bg);
+    background-image: radial-gradient(var(--sheet-line) 1px, transparent 1px);
+    background-size: 18px 18px;
+    color: var(--ink);
+    font-family: var(--sans);
+    margin: 0;
+    padding: 28px 24px 60px;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  header.page h1 {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+
+  header.page p {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+    max-width: 66ch;
+    margin: 0 0 4px;
+  }
+
+  header.page code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--accent);
+    background: var(--sheet-panel);
+    border: 1px solid var(--sheet-line);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+
+  .key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin: 18px 0 34px;
+    padding: 12px 14px;
+    background: var(--sheet-panel);
+    border: 1px solid var(--sheet-line);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--ink-dim);
+    align-items: center;
+  }
+
+  .key strong { color: var(--ink); font-weight: 600; }
+
+  .pill {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    display: inline-block;
+    line-height: 1.6;
+  }
+  .pill-built     { color: #bfe8c0; background: rgba(76,175,80,.16); border: 1px solid #4caf50; }
+  .pill-proposal  { color: #bcdcfb; background: rgba(30,149,242,.16); border: 1px solid #1e95f2; }
+  .pill-concept   { color: var(--ink-dim); background: transparent; border: 1px dashed var(--ink-faint); }
+
+  .screens {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    align-items: flex-start;
+  }
+
+  .screen {
+    background: var(--sheet-panel);
+    border: 1px solid var(--sheet-line);
+    border-radius: 8px;
+    padding: 16px;
+    width: 100%;
+    max-width: 680px;
+  }
+
+  .screen-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+
+  .screen-head h2 {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0;
+  }
+
+  .screen-head .lvgl-id {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-dim);
+  }
+
+  .screen-note {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--ink-dim);
+    margin: 0 0 14px;
+    max-width: 60ch;
+  }
+
+  .stage-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    padding-bottom: 4px;
+  }
+
+  .stage {
+    width: 640px;
+    height: 480px;
+    position: relative;
+  }
+
+  .bezel {
+    position: absolute;
+    inset: 0;
+    background: #05130a;
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: inset 0 0 0 1px #1c2a1e;
+  }
+
+  .frame {
+    width: 320px;
+    height: 240px;
+    position: relative;
+    background: var(--dev-bg);
+    border: 1px solid var(--dev-border);
+    overflow: hidden;
+    transform: scale(2);
+    transform-origin: top left;
+  }
+
+  .wgt { position: absolute; box-sizing: border-box; }
+  .lbl { font-family: var(--sans); white-space: nowrap; }
+  .f8  { font-size: 8px;  line-height: 9px; }
+  .f10 { font-size: 10px; line-height: 11px; font-weight: 600; }
+  .f12 { font-size: 12px; line-height: 13px; font-weight: 700; }
+  .f14 { font-size: 14px; line-height: 15px; font-weight: 700; }
+
+  .divider { background: var(--dev-border); }
+
+  .card { background: var(--dev-card); border: 1px solid var(--dev-border); border-radius: 2px; }
+  .statuscard { background: var(--dev-status); border: 1px solid var(--dev-border); border-radius: 2px; }
+
+  .bar-track { background: var(--dev-track); border-radius: 3px; overflow: hidden; }
+  .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
+
+  .btn {
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    text-align: center;
+  }
+  .btn-ghost { background: transparent; border: 1px solid var(--dev-text-dim); color: var(--dev-text-dim); }
+
+  .icon { position: absolute; color: var(--dev-text-dim); }
+  .icon svg { display: block; width: 100%; height: 100%; }
+
+  table.legend {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 14px;
+  }
+  table.legend th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--sheet-line);
+    padding: 6px 8px 6px 0;
+  }
+  table.legend td {
+    padding: 6px 8px 6px 0;
+    border-bottom: 1px solid var(--sheet-line);
+    color: var(--ink-dim);
+    vertical-align: top;
+  }
+  table.legend td:first-child { color: var(--ink); }
+  table.legend code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .legend-wrap { overflow-x: auto; }
+
+  footer.page {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--sheet-line);
+    font-size: 12px;
+    color: var(--ink-faint);
+    line-height: 1.6;
+    max-width: 70ch;
+  }
+</style>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-house" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" />
+    </symbol>
+    <symbol id="i-leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 20c8 0 16-6 16-16C10 4 4 12 4 20Z" /><path d="M4 20c4-6 8-9 13-12" />
+    </symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2.7s7 7.2 7 12.3a7 7 0 1 1-14 0c0-5.1 7-12.3 7-12.3Z" />
+    </symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.9-1.5-2-3.4-2.3.7a7.6 7.6 0 0 0-2.6-1.5L14 2.4h-4l-.4 2.4a7.6 7.6 0 0 0-2.6 1.5l-2.3-.7-2 3.4L4.6 10.5a7.6 7.6 0 0 0 0 3L2.7 15l2 3.4 2.3-.7c.75.65 1.63 1.16 2.6 1.5l.4 2.4h4l.4-2.4a7.6 7.6 0 0 0 2.6-1.5l2.3.7 2-3.4-1.9-1.5Z" />
+    </symbol>
+    <symbol id="i-thermo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0Z" />
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+  <header class="page">
+    <h1>GardenPilot — screen reference sheet</h1>
+    <p>
+      Three <code>320&times;240</code> screens at 2&times; scale, positioned with the same
+      absolute x/y an LVGL <code>widgets:</code> list uses, so a box here maps directly
+      to a page in <code>packages/lvgl/</code>. Colors and type sizes are pulled from
+      <code>packages/lvgl/page_home.yaml</code> and the Stitch export tokens &mdash;
+      nothing here invents a new palette.
+    </p>
+  </header>
+
+  <div class="key">
+    <span><strong>Status:</strong></span>
+    <span class="pill pill-built">BUILT</span> <span>already in the repo, shown here as-is for comparison</span>
+    <span class="pill pill-proposal">PROPOSAL</span> <span>redesign of an existing page, same entities/ids</span>
+    <span class="pill pill-concept">CONCEPT</span> <span>sketch for hardware that doesn't exist yet</span>
+  </div>
+
+  <div class="screens">
+
+    <!-- ============================================================ HOME ============================================================ -->
+    <section class="screen">
+      <div class="screen-head">
+        <h2>Home</h2>
+        <span class="lvgl-id">home_page</span>
+        <span class="pill pill-built">BUILT</span>
+      </div>
+      <p class="screen-note">
+        Mirrors <code>packages/lvgl/page_home.yaml</code> exactly &mdash; reproduced here
+        as the visual baseline the other two screens are designed to sit alongside.
+      </p>
+
+      <div class="stage-scroll">
+        <div class="stage">
+          <div class="bezel">
+            <div class="frame">
+
+              <div class="wgt lbl f10" style="left:6px;top:4px;color:var(--dev-green);" title="label: brand title">GardenPilot</div>
+              <div class="wgt lbl f10" style="left:252px;top:4px;color:var(--dev-text);" title="id: home_clock_label">--:--</div>
+              <div class="wgt divider" style="left:0;top:22px;width:320px;height:1px;"></div>
+
+              <!-- Greenhouse card -->
+              <div class="wgt card" style="left:6px;top:26px;width:152px;height:172px;"></div>
+              <div class="wgt lbl f8" style="left:9px;top:29px;color:var(--dev-text-dim);">GREENHOUSE</div>
+              <div class="wgt lbl f12" style="left:10px;top:44px;color:var(--dev-text);" title="id: gh_home_air_t_label">24C</div>
+              <div class="wgt lbl f12" style="left:82px;top:44px;color:var(--dev-text);" title="id: gh_home_air_rh_label">65%</div>
+              <div class="wgt lbl f8" style="left:10px;top:60px;color:var(--dev-text-dim);">SOIL MOISTURE</div>
+              <div class="wgt bar-track" style="left:10px;top:71px;width:132px;height:5px;" title="id: gh_home_soil_bar">
+                <div class="bar-fill" style="width:58%;background:var(--dev-green-fill);"></div>
+              </div>
+              <div class="wgt statuscard" style="left:10px;top:128px;width:132px;height:64px;"></div>
+              <div class="wgt lbl f8" style="left:14px;top:132px;color:var(--dev-text-dim);">STATUS</div>
+              <div class="wgt lbl f10" style="left:14px;top:144px;color:var(--dev-green);" title="id: gh_home_irr_status">Watering</div>
+              <div class="wgt lbl f8" style="left:14px;top:158px;color:var(--dev-text-dim);">NEXT</div>
+              <div class="wgt lbl f10" style="left:14px;top:170px;color:var(--dev-text);" title="id: gh_home_next_label">18:00</div>
+
+              <!-- Lawn card -->
+              <div class="wgt card" style="left:161px;top:26px;width:153px;height:172px;"></div>
+              <div class="wgt lbl f8" style="left:164px;top:29px;color:var(--dev-text-dim);">LAWN</div>
+              <div class="wgt lbl f8" style="left:165px;top:46px;color:var(--dev-text-dim);">SOIL MOISTURE</div>
+              <div class="wgt bar-track" style="left:165px;top:57px;width:133px;height:5px;" title="id: lawn_home_soil_bar (placeholder value)">
+                <div class="bar-fill" style="width:45%;background:var(--dev-blue);"></div>
+              </div>
+              <div class="wgt lbl f10" style="left:165px;top:68px;color:var(--dev-text);">Drainage: Optimal</div>
+              <div class="wgt statuscard" style="left:165px;top:128px;width:133px;height:64px;"></div>
+              <div class="wgt lbl f8" style="left:169px;top:132px;color:var(--dev-text-dim);">STATUS</div>
+              <div class="wgt lbl f10" style="left:169px;top:144px;color:var(--dev-text-dim);" title="id: lawn_home_status_label (dim on purpose -- no live data yet)">Idle</div>
+              <div class="wgt lbl f8" style="left:169px;top:158px;color:var(--dev-text-dim);">NEXT</div>
+              <div class="wgt lbl f10" style="left:169px;top:170px;color:var(--dev-text);" title="id: lawn_home_next_label">--:--</div>
+
+              <!-- Bottom nav -->
+              <div class="wgt" style="left:0;top:201px;width:320px;height:39px;background:var(--dev-status);border-top:1px solid var(--dev-border);"></div>
+              <div class="wgt btn" style="left:4px;top:204px;width:76px;height:32px;background:var(--dev-green-fill);color:var(--dev-on-green);flex-direction:column;gap:2px;" title="id: nav_btn_dash (active)">
+                <span class="icon" style="position:static;width:12px;height:12px;color:var(--dev-on-green);"><svg><use href="#i-house"/></svg></span>
+                <span class="lbl f8">DASH</span>
+              </div>
+              <div class="wgt btn" style="left:84px;top:204px;width:76px;height:32px;background:var(--dev-status);color:var(--dev-text-dim);flex-direction:column;gap:2px;" title="id: nav_btn_zones">
+                <span class="icon" style="position:static;width:12px;height:12px;"><svg><use href="#i-leaf"/></svg></span>
+                <span class="lbl f8">ZONES</span>
+              </div>
+              <div class="wgt btn" style="left:164px;top:204px;width:76px;height:32px;background:var(--dev-status);color:var(--dev-text-dim);flex-direction:column;gap:2px;" title="id: nav_btn_water">
+                <span class="icon" style="position:static;width:12px;height:12px;"><svg><use href="#i-drop"/></svg></span>
+                <span class="lbl f8">WATER</span>
+              </div>
+              <div class="wgt btn" style="left:244px;top:204px;width:72px;height:32px;background:var(--dev-status);color:var(--dev-text-dim);flex-direction:column;gap:2px;" title="id: nav_btn_setup">
+                <span class="icon" style="position:static;width:12px;height:12px;"><svg><use href="#i-gear"/></svg></span>
+                <span class="lbl f8">SETUP</span>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend-wrap">
+        <table class="legend">
+          <tr><th>Widget</th><th>LVGL id / type</th><th>Note</th></tr>
+          <tr><td>Clock</td><td><code>home_clock_label</code></td><td>set by <code>network.yaml</code> time sync + 30s interval</td></tr>
+          <tr><td>Greenhouse status</td><td><code>gh_home_irr_status</code></td><td>text from the 1s sprinkler poller</td></tr>
+          <tr><td>Lawn card</td><td><code>lawn_home_*</code></td><td>hardcoded placeholder &mdash; no lawn sensors exist yet</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============================================================ GREENHOUSE ============================================================ -->
+    <section class="screen">
+      <div class="screen-head">
+        <h2>Greenhouse</h2>
+        <span class="lvgl-id">greenhouse_page</span>
+        <span class="pill pill-proposal">PROPOSAL</span>
+      </div>
+      <p class="screen-note">
+        Same 9 entities/actions as today's <code>packages/greenhouse/lvgl_page.yaml</code>
+        (a flat list of 9 identical buttons), regrouped into per-bed cards with a
+        state-colored top edge, and two enlarged transport buttons instead of Stop/Run Queue
+        being the same size as "+Q Bed 1".
+      </p>
+
+      <div class="stage-scroll">
+        <div class="stage">
+          <div class="bezel">
+            <div class="frame">
+
+              <div class="wgt lbl f10" style="left:8px;top:4px;color:var(--dev-text);">Greenhouse</div>
+              <div class="wgt divider" style="left:0;top:21px;width:320px;height:1px;"></div>
+
+              <!-- stats strip -->
+              <span class="icon" style="left:8px;top:27px;width:12px;height:12px;"><svg><use href="#i-thermo"/></svg></span>
+              <div class="wgt lbl f12" style="left:24px;top:25px;color:var(--dev-text);" title="id: gh_greenhouse_t_label (value only, unit dropped)">24C</div>
+              <div class="wgt lbl f8" style="left:8px;top:48px;color:var(--dev-text-dim);">AIR TEMP</div>
+
+              <span class="icon" style="left:111px;top:27px;width:12px;height:12px;color:var(--dev-blue);"><svg><use href="#i-drop"/></svg></span>
+              <div class="wgt lbl f12" style="left:127px;top:25px;color:var(--dev-text);" title="id: gh_greenhouse_rh_label (value only)">65%</div>
+              <div class="wgt lbl f8" style="left:111px;top:48px;color:var(--dev-text-dim);">HUMIDITY</div>
+
+              <span class="icon" style="left:214px;top:27px;width:12px;height:12px;color:var(--dev-green);"><svg><use href="#i-leaf"/></svg></span>
+              <div class="wgt lbl f12" style="left:230px;top:25px;color:var(--dev-text);" title="id: gh_greenhouse_soil_hint (reformatted to a bare number)">58%</div>
+              <div class="wgt lbl f8" style="left:214px;top:48px;color:var(--dev-text-dim);">SOIL</div>
+
+              <div class="wgt divider" style="left:0;top:70px;width:320px;height:1px;"></div>
+              <div class="wgt lbl f8" style="left:8px;top:74px;color:var(--dev-text-dim);">IRRIGATION BEDS</div>
+
+              <!-- Bed 1 -- idle -->
+              <div class="wgt" style="left:8px;top:88px;width:97px;height:3px;background:var(--dev-border);"></div>
+              <div class="wgt card" style="left:8px;top:91px;width:97px;height:77px;border-top:none;"></div>
+              <div class="wgt lbl f8" style="left:14px;top:94px;color:var(--dev-text-dim);">BED 1</div>
+              <div class="wgt lbl f12" style="left:14px;top:106px;color:var(--dev-text);" title="new id: gh_greenhouse_bed1_dur_label -- split off the existing combined run_dur_hint string, same source data">5 min</div>
+              <div class="wgt btn" style="left:14px;top:142px;width:40px;height:20px;background:var(--dev-green-fill);color:var(--dev-on-green);" title="id: gh_btn_run_bed1 (unchanged)">
+                <span class="lbl f8">RUN</span>
+              </div>
+              <div class="wgt btn btn-ghost" style="left:57px;top:142px;width:40px;height:20px;" title="id: gh_btn_queue_bed1 (unchanged)">
+                <span class="lbl f8">+Q</span>
+              </div>
+
+              <!-- Bed 2 -- running -->
+              <div class="wgt" style="left:111px;top:88px;width:97px;height:3px;background:var(--dev-green-fill);" title="state border: active_valve() == 1"></div>
+              <div class="wgt card" style="left:111px;top:91px;width:97px;height:77px;border-top:none;border-color:var(--dev-green-fill);"></div>
+              <div class="wgt lbl f8" style="left:117px;top:94px;color:var(--dev-text-dim);">BED 2</div>
+              <div class="wgt lbl f12" style="left:117px;top:106px;color:var(--dev-text);" title="new id: gh_greenhouse_bed2_dur_label">5 min</div>
+              <div class="wgt btn" style="left:117px;top:142px;width:40px;height:20px;background:var(--dev-green-fill);color:var(--dev-on-green);" title="id: gh_btn_run_bed2">
+                <span class="lbl f8">RUN</span>
+              </div>
+              <div class="wgt btn btn-ghost" style="left:160px;top:142px;width:40px;height:20px;" title="id: gh_btn_queue_bed2">
+                <span class="lbl f8">+Q</span>
+              </div>
+
+              <!-- Bed 3 -- queued -->
+              <div class="wgt" style="left:214px;top:88px;width:97px;height:3px;background:var(--dev-blue-fill);" title="state border: queued_valve() == 2"></div>
+              <div class="wgt card" style="left:214px;top:91px;width:97px;height:77px;border-top:none;border-color:var(--dev-blue-fill);"></div>
+              <div class="wgt lbl f8" style="left:220px;top:94px;color:var(--dev-text-dim);">BED 3</div>
+              <div class="wgt lbl f12" style="left:220px;top:106px;color:var(--dev-text);" title="new id: gh_greenhouse_bed3_dur_label">5 min</div>
+              <div class="wgt btn" style="left:220px;top:142px;width:40px;height:20px;background:var(--dev-green-fill);color:var(--dev-on-green);" title="id: gh_btn_run_bed3">
+                <span class="lbl f8">RUN</span>
+              </div>
+              <div class="wgt btn btn-ghost" style="left:263px;top:142px;width:40px;height:20px;" title="id: gh_btn_queue_bed3">
+                <span class="lbl f8">+Q</span>
+              </div>
+
+              <div class="wgt divider" style="left:0;top:172px;width:320px;height:1px;"></div>
+
+              <div class="wgt lbl f10" style="left:8px;top:178px;color:var(--dev-green);" title="id: gh_greenhouse_irr_main">Running: Bed 2</div>
+              <div class="wgt lbl f10" style="left:270px;top:178px;color:var(--dev-text);" title="id: gh_greenhouse_t_left_zone (repositioned, same id)">04:12</div>
+              <div class="wgt lbl f8" style="left:8px;top:194px;color:var(--dev-text-dim);" title="ids: gh_greenhouse_irr_modes + gh_greenhouse_queue_hint on one row">AA:on  Q:off  Rev:off  &middot;  Queue: empty</div>
+
+              <div class="wgt btn" style="left:8px;top:210px;width:92px;height:26px;background:var(--dev-error-fill);color:var(--dev-on-error);" title="id: gh_btn_stop (unchanged action, resized)">
+                <span class="lbl f10">STOP</span>
+              </div>
+              <div class="wgt btn" style="left:104px;top:210px;width:124px;height:26px;background:var(--dev-blue-fill);color:var(--dev-on-blue);" title="id: gh_btn_start_queue (unchanged action, resized)">
+                <span class="lbl f10">RUN QUEUE</span>
+              </div>
+              <div class="wgt btn btn-ghost" style="left:232px;top:210px;width:80px;height:26px;" title="id: gh_btn_home (unchanged)">
+                <span class="lbl f10">HOME</span>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend-wrap">
+        <table class="legend">
+          <tr><th>Widget</th><th>LVGL id / type</th><th>Note</th></tr>
+          <tr><td>Bed duration</td><td><code>gh_greenhouse_bed{1,2,3}_dur_label</code></td><td>new labels; split from the existing concatenated string in <code>sprinkler_lvgl_status.yaml</code>, same <code>id(gh_bedN_run_duration).state</code> reads</td></tr>
+          <tr><td>Bed state border</td><td><code>lvgl.obj.update</code> on each card</td><td>new: extend the 1s interval to set <code>border_color</code> from <code>active_valve()</code> / <code>queued_valve()</code> / <code>paused_valve()</code></td></tr>
+          <tr><td>Run / Queue</td><td><code>gh_btn_run_bedN</code> / <code>gh_btn_queue_bedN</code></td><td>unchanged actions, regrouped visually per bed</td></tr>
+          <tr><td>Stop / Run queue</td><td><code>gh_btn_stop</code> / <code>gh_btn_start_queue</code></td><td>unchanged actions, enlarged so they read as the primary controls</td></tr>
+          <tr><td>Dropped from default view</td><td><code>gh_greenhouse_t_left_total</code></td><td>still available as an id/action &mdash; just not surfaced here; six stacked status lines felt like more than a glance needs</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============================================================ LAWN ============================================================ -->
+    <section class="screen">
+      <div class="screen-head">
+        <h2>Lawn</h2>
+        <span class="lvgl-id">lawn_page</span>
+        <span class="pill pill-concept">CONCEPT</span>
+      </div>
+      <p class="screen-note">
+        Today <code>packages/lvgl/page_lawn.yaml</code> is a single placeholder label.
+        This sketches the same visual language as Greenhouse for when
+        <code>packages/lawn/</code> exists &mdash; a manual run + auto-mode toggle, the
+        same shape as the greenhouse <code>sprinkler:</code> controller, not a new concept.
+      </p>
+
+      <div class="stage-scroll">
+        <div class="stage">
+          <div class="bezel">
+            <div class="frame">
+
+              <div class="wgt lbl f10" style="left:8px;top:4px;color:var(--dev-text);">Lawn</div>
+              <div class="wgt divider" style="left:0;top:21px;width:320px;height:1px;"></div>
+
+              <span class="icon" style="left:8px;top:28px;width:16px;height:16px;color:var(--dev-blue);"><svg><use href="#i-drop"/></svg></span>
+              <div class="wgt lbl f14" style="left:28px;top:25px;color:var(--dev-text);">52%</div>
+              <div class="wgt lbl f8" style="left:8px;top:52px;color:var(--dev-text-dim);">SOIL MOISTURE</div>
+              <div class="wgt bar-track" style="left:8px;top:66px;width:304px;height:6px;">
+                <div class="bar-fill" style="width:52%;background:var(--dev-blue-fill);"></div>
+              </div>
+              <div class="wgt lbl f10" style="left:8px;top:78px;color:var(--dev-text);">Drainage: Optimal</div>
+
+              <div class="wgt divider" style="left:0;top:96px;width:320px;height:1px;"></div>
+
+              <div class="wgt statuscard" style="left:8px;top:102px;width:304px;height:60px;"></div>
+              <div class="wgt lbl f8" style="left:16px;top:108px;color:var(--dev-text-dim);">STATUS</div>
+              <div class="wgt lbl f12" style="left:16px;top:120px;color:var(--dev-text-dim);" title="dim on purpose, mirrors lawn_home_status_label -- no live schedule yet">Idle</div>
+              <div class="wgt lbl f8" style="left:180px;top:108px;color:var(--dev-text-dim);">NEXT</div>
+              <div class="wgt lbl f12" style="left:180px;top:120px;color:var(--dev-text);">--:--</div>
+              <div class="wgt lbl f8" style="left:16px;top:144px;color:var(--dev-text-dim);">AUTO-MODE</div>
+              <div class="wgt" style="left:150px;top:141px;width:28px;height:14px;background:var(--dev-green-fill);border-radius:7px;" title="lvgl switch widget, concept only">
+                <div style="position:absolute;right:1px;top:1px;width:12px;height:12px;border-radius:50%;background:var(--dev-on-green);"></div>
+              </div>
+
+              <div class="wgt divider" style="left:0;top:168px;width:320px;height:1px;"></div>
+
+              <div class="wgt btn" style="left:8px;top:204px;width:200px;height:26px;background:var(--dev-blue-fill);color:var(--dev-on-blue);">
+                <span class="lbl f10">WATER NOW</span>
+              </div>
+              <div class="wgt btn btn-ghost" style="left:216px;top:204px;width:96px;height:26px;">
+                <span class="lbl f10">HOME</span>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend-wrap">
+        <table class="legend">
+          <tr><th>Widget</th><th>LVGL id / type</th><th>Note</th></tr>
+          <tr><td>Everything on this screen</td><td>&mdash;</td><td>no backing entities exist; this is a layout sketch, not a build spec</td></tr>
+          <tr><td>Water now / Auto-mode</td><td><code>sprinkler:</code> pattern</td><td>would map to the same <code>start_single_valve</code> / main-switch shape already used in <code>packages/greenhouse/irrigation.yaml</code></td></tr>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <footer class="page">
+    Palette and type sizes are copied from <code>packages/lvgl/page_home.yaml</code> (already-built colors)
+    and the Stitch <code>DESIGN.md</code> token exports (same palette, confirming the two agree). Body text
+    here approximates the real Montserrat LVGL bitmap font with a system sans &mdash; check actual legibility
+    on hardware before trusting a font size from this page. Proportions are a porting reference, not
+    pixel-final; treat every coordinate as a starting value to adjust once it's on the display.
+  </footer>
+
+</div>
