@@ -83,7 +83,25 @@ and the external context draft are folded in and removed.
   into a temp dir with `secrets.example.yaml` as `secrets.yaml`, so validation never touches real secrets.
 - yamllint uses `truthy: check-keys: false` (ESPHome keys such as `on:` style triggers) and 120 columns.
 
+### Review round 1 fixes
+- Required 1: IP matcher now catches sentence-final and zero-padded addresses and CGNAT; matcher unit tests
+  added; hygiene checks also scan untracked, non-ignored files. Concrete examples in `001-review.md` replaced
+  with descriptions (the new check flagged them).
+- Required 2: `CLAUDE.md` gains "ESPHome YAML conventions" (board, secrets files, remote packages, sprinkler
+  usage, adding a page, touch overlay, small edits), more security baseline items and the
+  "secret reached git history" procedure.
+- Required 3: the ESPHome bump rule now names `pyproject.toml` and SPEC §6 and the verification scripts.
+- Suggestions done: legacy-code note under the principles (1); untracked files, CGNAT and more path patterns (2);
+  `script/config` traps and early failure for a missing config (4); `unit` marker on the entry-file test (5);
+  `secrets.yaml` checked at any depth (7); settings: bare script entries, more force-push denies, Edit/Write
+  denies for `secrets.yaml` (8); the LVGL-from-time-sync defect recorded in SPEC §8 (9); `test-esp32` removed
+  from a comment (3, partly).
+- Not done: suggestion 6 (non-hex colours on tokenized pages) — follow-up; per-agent git restrictions (8) —
+  agents keep the rule-only restriction for now; artifact links in `design/` (3) — waiting for the human.
+
 ## Follow-ups
 - ESPHome 2026.9 warns that the OTA password wastes ~3.5 KB flash/RAM and recommends `ota: encryption` using
   the API key instead. Decide and change in a small task (affects `secrets.example.yaml` too).
+- `tests/test_design_tokens.py`: also reject `#rrggbb` strings and named colours on tokenized pages.
+- Move the clock update out of `time.on_time_sync` (SPEC §8).
 - ESPHome warns `transparency_key` redaction heuristic will be removed in 2026.12.0 (upstream, informational).

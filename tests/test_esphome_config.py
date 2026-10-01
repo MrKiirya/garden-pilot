@@ -9,15 +9,15 @@ import pytest
 
 from conftest import REPO_ROOT, load_esphome_yaml
 
-pytestmark = pytest.mark.config
 
-
+@pytest.mark.unit
 def test_entry_file_is_a_package_list() -> None:
     config = load_esphome_yaml(REPO_ROOT / "garden-pilot.yaml")
     assert isinstance(config, dict)
     assert set(config) == {"esphome", "esp32", "logger", "packages"}, "keep the entry file to these sections"
 
 
+@pytest.mark.config
 def test_esphome_config_passes_with_example_secrets() -> None:
     result = subprocess.run(
         ["sh", "script/config"],

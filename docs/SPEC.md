@@ -144,6 +144,9 @@ tests/
   use the default LVGL theme. Bottom nav is a placeholder (ZONES → greenhouse, WATER → lawn, SETUP → touch test).
 - Known UI defects: the Home "NEXT" label shows the remaining queue time (hours dropped), not the next scheduled
   run — there are no schedules yet.
+- `packages/network.yaml` updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
+  ready (same pattern as the `number.on_value` gotcha in `CLAUDE.md`), and makes `network` depend on the Home
+  page package.
 
 ## 9. Roadmap
 1. **Process scaffold** (task 001): agent guide, agents, task templates, this spec, uv + pinned ESPHome,

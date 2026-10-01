@@ -8,9 +8,17 @@
 set -eu
 cd "$(dirname "$0")/.."
 
+# Entry files live in the repo root: the temp copy keeps only the basename, so relative !include paths
+# from a config in a subdirectory would break.
 CONFIG="${1:-garden-pilot.yaml}"
+if [ ! -f "$CONFIG" ]; then
+    echo "config file not found: $CONFIG" >&2
+    exit 1
+fi
+
 TMP_DIR="$(mktemp -d)"
-trap 'rm -r "$TMP_DIR"' EXIT INT TERM
+trap 'rm -r -f "$TMP_DIR"' EXIT
+trap 'exit 130' INT TERM
 
 if [ "${GP_SECRETS:-}" != "example" ] && [ -f secrets.yaml ]; then
     WORK_CONFIG="$CONFIG"

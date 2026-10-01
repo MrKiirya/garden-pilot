@@ -21,6 +21,11 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
 6. **Secrets only via `!secret`.** Never in tracked YAML; remote packages must not use `!secret`.
 7. **Tests first** where code is testable (Python checks now, C++ core of `garden_zones` later).
 
+These principles apply to **new and changed code**. Existing greenhouse packages predate them (the greenhouse
+page calls `sprinkler.*` directly, pins live in `packages/greenhouse/substitutions.yaml`, valves have no on-time
+guard beyond `run_duration_number`); they migrate in roadmap stages 4–5. Don't "fix" legacy code outside a
+task's scope, and don't block a review on it — list it as a follow-up.
+
 ## Repository layout
 | Path | Role |
 |---|---|
@@ -48,6 +53,23 @@ introduced by roadmap tasks, not ad hoc.
 5. `gh_substitutions` → `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) →
    `gh_lvgl_page` → `gh_sensors_air` → `gh_sensors_soil` → `gh_sprinkler_lvgl`.
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
+
+### ESPHome YAML conventions
+- **Board:** match the board declared in `garden-pilot.yaml` until a migration task changes it.
+- **Secrets files:** `secrets.yaml` / `secrets.example.yaml` are substitution files only (no `esphome:` block);
+  `.vscode/settings.json` maps them to plain YAML so the ESPHome extension doesn't validate them as devices.
+- **Remote packages** must not use `!secret`: expose `substitutions` and assign secrets from the entry file or a
+  local include.
+- **`sprinkler`** ([docs](https://esphome.io/components/sprinkler/)): every valve has `valve_switch_id`
+  pointing at a real switch; with more than one valve `main_switch` and `auto_advance_switch` are required. Home
+  Assistant and automations use the controller's zone switches and actions (`sprinkler.start_full_cycle`,
+  `start_single_valve`, `shutdown`, queue actions) — never the raw GPIO switches, which stay `internal: true`.
+- **Adding an LVGL page:** create `packages/lvgl/page_<name>.yaml` with `lvgl: pages: [{id: <page_id>,
+  widgets: …}]`, add it to `packages:` after `lvgl_base` (order matters only for the boot page), navigate with
+  `lvgl.page.show: <page_id>`.
+- **Touch debug overlay:** comment out `touch_dot_test` in `garden-pilot.yaml` to disable it; the no-op
+  `touch_dot_overlay` script in `display_touch.yaml` stays.
+- **Small, task-scoped edits;** no unrelated refactors.
 
 ### ESPHome gotchas (learned the hard way)
 - Actions extended into a `script` run outside the `on_touch` trigger: don't use the trigger-only `touch`
@@ -92,11 +114,19 @@ Per [Security Best Practices](https://esphome.io/guides/security_best_practices/
 - `web_server:` only with `auth:` — otherwise omit it and use Home Assistant.
 - `logger:` at `INFO` or stricter in committed configs; raise it only while debugging.
 - External components only from trusted sources, pinned to a tag or commit.
+- Optionally raise `logger: logs:` levels for `wifi` / `api` so they never log sensitive data.
+- Verify the device identity before an OTA upload. Removing the fallback `ap:` is a deliberate trade-off
+  (no captive-portal recovery), not a default.
 
 ## Public repo hygiene
 Never commit: `secrets.yaml`, real Wi‑Fi SSIDs/passwords, API keys, OTA passwords, IPs/hostnames of the author's
 network, real entity ids or device names from the author's home, local absolute paths, build caches.
-`secrets.example.yaml` holds obviously fake values only. Task and review files are public too — use generic
+`secrets.example.yaml` holds obviously fake values only.
+**If a secret ever reaches git history** (even on a branch that was pushed): rotate it on the device and in HA
+first, then scrub the history — tell the human, never rewrite history on your own.
+The `deny` rules in `.claude/settings.json` are speed bumps, not protection: the real safeguards are these
+rules and `.gitignore`. Task and review files are public too
+— use generic
 examples (`192.168.x.x`, `[SSID]`).
 
 ## Definition of done
@@ -111,11 +141,14 @@ examples (`192.168.x.x`, `[SSID]`).
 - Only the main session runs git write operations; subagents never commit, push or open PRs.
 - Never rewrite published history (`push --force`, `rebase`/`reset` of pushed commits) without being asked.
 - Commit messages: Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `ci:`, `refactor:`).
+- **No AI attribution:** no `Co-Authored-By: Claude …` trailers in commits and no "Generated with Claude Code"
+  lines in PR descriptions; the author is `MrKiirya`.
 - Split a task branch into **several logical commits** so the PR reads commit by commit.
 - No local git pre-commit hooks; checks are enforced by `script/*` and CI.
 - Personal, machine-local instructions go to the git-ignored `CLAUDE.local.md`.
-- **Bumping ESPHome:** edit the pin in `pyproject.toml`, `uv lock`, `script/test`, then a `chore(deps):` PR
-  (light path). The weekly canary (roadmap task 003) warns before a new release breaks us.
+- **Bumping ESPHome:** edit the pin in `pyproject.toml` and the version in `docs/SPEC.md` §6, run `uv lock`,
+  then verify with `script/setup`, `script/lint` and `script/test`; open a `chore(deps):` PR (light path). The weekly
+  canary (roadmap task 003) warns before a new release breaks us.
 
 ## Language
 - Everything in the repo — YAML, code, comments, docs, task files, commit messages, PRs — is **English**.

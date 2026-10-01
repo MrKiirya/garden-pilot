@@ -1,4 +1,4 @@
-# Greenhouse hardware names. DHT is interim (same wiring as test-esp32);
+# Greenhouse hardware names. DHT is interim (breadboard test wiring);
 # add I2C air sensor later and remove DHT package include.
 
 substitutions:

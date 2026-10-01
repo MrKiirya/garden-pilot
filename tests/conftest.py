@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -37,7 +36,3 @@ def tracked_files() -> list[Path]:
     ).stdout
     return [REPO_ROOT / name for name in out.split("\0") if name]
 
-
-@pytest.fixture(scope="session")
-def repo_root() -> Path:
-    return REPO_ROOT

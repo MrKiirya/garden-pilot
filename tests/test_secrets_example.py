@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import re
-from pathlib import Path
 
 import pytest
 import yaml
@@ -50,7 +49,8 @@ def test_example_values_are_obvious_placeholders(key: str) -> None:
         assert set(value) == {"0"}, f"{key} must be a zero-only placeholder"
 
 
-def test_real_secrets_file_is_not_tracked(repo_root: Path) -> None:
+def test_real_secrets_file_is_not_tracked() -> None:
     from conftest import tracked_files
 
-    assert repo_root / "secrets.yaml" not in tracked_files()
+    tracked = [p for p in tracked_files() if p.name == "secrets.yaml"]
+    assert not tracked, f"secrets.yaml must never be committed: {tracked}"
