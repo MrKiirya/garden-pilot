@@ -1,5 +1,24 @@
+# Secrets (copy secrets.example.yaml to secrets.yaml)
 secrets.yaml
+.env
+.env.*
+
+# ESPHome build cache and IDF/PlatformIO artifacts (local only)
+.esphome/
 *.backup
 
-# ESPHome build cache and IDF artifacts (local only).
-.esphome/
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Claude Code: personal, machine-local settings
+.claude/settings.local.json
+CLAUDE.local.md
+
+# IDE / OS
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
