@@ -202,8 +202,8 @@ tests/
 3. **CI** (task 003): `.github/workflows/ci.yml` runs `checks` (yamllint, `esphome config`, pytest) and
    `compile (pinned|minimum)` in the devcontainer on every PR and push to `master`; `canary.yml` builds the latest
    ESPHome weekly and reports through one `canary-failure` issue; Dependabot covers actions, uv and devcontainer
-   images. The `master` ruleset is applied by hand (required checks `checks`, `compile (pinned)`,
-   `compile (minimum)`). The `config` matrix over module combinations waits for stage 4.
+   images. The `master` ruleset lives in `.github/rulesets/master.json` (required checks `checks`,
+   `compile (pinned)`, `compile (minimum)`; squash-only PRs) and is applied by a repo admin with `gh api`. The `config` matrix over module combinations waits for stage 4.
 4. **Modular layout:** `hardware/`, `packages/core/`, `bed.yaml` with `vars`, `hardware/sim.yaml`.
 5. **Lightweight end-user path:** ESPHome Device Builder (HA add-on or the `ghcr.io/esphome/esphome`
    container) + remote packages from this repo + first flash via web.esphome.io, then OTA; no devcontainer
