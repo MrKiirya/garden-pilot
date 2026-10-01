@@ -1,5 +1,7 @@
 # GardenPilot
 
+[![CI](https://github.com/MrKiirya/garden-pilot/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MrKiirya/garden-pilot/actions/workflows/ci.yml)
+
 [English version](README.md)
 
 Контроллер для дачного участка на ESPHome: полив грядок в теплице и газона, обогрев грядок, датчики почвы и
@@ -73,10 +75,20 @@ Flatpak VS Code нужен обходной путь из апстрима дл�
 ставиться заново при каждой пересборке. Если расширение сломалось, удалите контейнер и выполните
 `podman volume rm garden-pilot-vscode-extensions` (`docker volume rm ...` для Docker), затем пересоберите.
 
-**Обновление базового образа или uv:** правьте тег и digest в `.devcontainer/Dockerfile` (`skopeo inspect` или
-`docker buildx imagetools inspect`) и версию uv отдельным PR.
+**Обновление базового образа или uv:** теги и digest в `.devcontainer/Dockerfile` предлагает обновлять Dependabot; после слияния такого PR пересоберите контейнер.
 
 Лёгкий путь для конечных пользователей (ESPHome Device Builder + удалённые пакеты, без devcontainer) в планах.
+
+## CI
+Каждый pull request и каждый push в `master` внутри образа devcontainer запускают `script/lint` и `script/test`
+(задача `checks`) и настоящую сборку прошивки для ESP32 с закреплённой и с самой старой поддерживаемой версией
+ESPHome (`compile (pinned)`, `compile (minimum)`; минимум задан как `esphome-minimum` в `pyproject.toml`).
+Еженедельный canary собирает прошивку с новейшим стабильным ESPHome и открывает (или закрывает) issue
+`canary-failure`. Dependabot предлагает обновления actions, Python-зависимостей (включая ESPHome) и образов
+devcontainer. CI проверяет только Docker Engine на Linux в неинтерактивном режиме.
+
+Воспроизвести локально: `script/lint`, `script/test`, `GP_SECRETS=example script/compile` и
+`GP_ESPHOME=minimum GP_SECRETS=example script/compile` для самой старой поддерживаемой версии ESPHome.
 
 ## Репозиторий
 - `garden-pilot.yaml` — входной файл устройства: список пакетов.

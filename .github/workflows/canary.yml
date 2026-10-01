@@ -1,0 +1,110 @@
+name: Canary
+
+# Weekly build against the newest stable ESPHome. Opens (or updates) one `canary-failure` issue when the
+# build breaks and closes it when the build passes again. Never commits anything.
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      esphome:
+        description: "ESPHome version to build: latest or YYYY.M.P (a known-bad one tests the issue path)"
+        type: string
+        default: latest
+
+permissions: {}
+
+concurrency:
+  group: canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: canary
+    if: github.repository == 'MrKiirya/garden-pilot'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prepare cache volumes
+        run: |
+          mkdir -p "$RUNNER_TEMP/gp-cache" "$RUNNER_TEMP/gp-platformio"
+          docker volume create --driver local --opt type=none --opt o=bind \
+            --opt device="$RUNNER_TEMP/gp-cache" garden-pilot-cache
+          docker volume create --driver local --opt type=none --opt o=bind \
+            --opt device="$RUNNER_TEMP/gp-platformio" garden-pilot-platformio
+
+      # Restore only, with the pinned compile key: the canary must not save entries for unpinned versions.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/gp-cache/uv
+            ${{ runner.temp }}/gp-cache/esphome
+            ${{ runner.temp }}/gp-platformio
+          key: gp-toolchain-v1-${{ runner.os }}-pinned-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+      - name: Compile firmware in the devcontainer
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
+        with:
+          imageName: garden-pilot-devcontainer
+          push: never
+          runCmd: mkdir -p .esphome && sh script/_esphome version > .esphome/canary-version && script/compile
+          # script/_esphome validates the value; never interpolate it into a shell script.
+          env: |
+            GP_SECRETS=example
+            GP_ESPHOME=${{ inputs.esphome || 'latest' }}
+
+      - name: Record the ESPHome version
+        id: version
+        if: always()
+        run: |
+          version="unknown"
+          if [ -s .esphome/canary-version ]; then
+            version="$(tail -n 1 .esphome/canary-version | sed 's/^Version: //' | tr -cd '0-9a-zA-Z. -')"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Canary built with: $version" >> "$GITHUB_STEP_SUMMARY"
+
+  report:
+    name: report
+    needs: canary
+    if: github.repository == 'MrKiirya/garden-pilot' && always() && needs.canary.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RESULT: ${{ needs.canary.result }}
+      VERSION: ${{ needs.canary.outputs.version }}
+    steps:
+      - name: Open, update or close the canary issue
+        run: |
+          title="Canary: firmware build fails with ESPHome $VERSION"
+          gh label create canary-failure --force --color B60205 \
+            --description "Weekly canary build against the latest ESPHome failed"
+          existing="$(gh issue list --label canary-failure --state open --json number --jq '.[0].number // empty')"
+          if [ "$RESULT" = "success" ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "Passes again with ESPHome $VERSION. Run: $RUN_URL"
+              gh issue close "$existing" --reason completed
+            fi
+          elif [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing with ESPHome $VERSION. Run: $RUN_URL"
+          else
+            gh issue create --label canary-failure --title "$title" --body "The weekly canary build failed.
+
+          - ESPHome version: $VERSION
+          - Run: $RUN_URL
+
+          Fix this before the next ESPHome bump: see CLAUDE.md, section Bumping ESPHome."
+          fi

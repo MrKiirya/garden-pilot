@@ -1,5 +1,7 @@
 # GardenPilot
 
+[![CI](https://github.com/MrKiirya/garden-pilot/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MrKiirya/garden-pilot/actions/workflows/ci.yml)
+
 [Русская версия](README.ru.md)
 
 ESPHome controller for a garden plot: irrigation of greenhouse beds and lawn, bed heating, soil and air
@@ -73,10 +75,20 @@ the setting; reset that volume (below) to drop it.
 are not reinstalled on every rebuild. If an extension breaks, remove the container and run
 `podman volume rm garden-pilot-vscode-extensions` (`docker volume rm ...` for Docker), then rebuild.
 
-**Updating the base image or uv:** edit the tag and digest in `.devcontainer/Dockerfile` (`skopeo inspect` or
-`docker buildx imagetools inspect`) and the uv version, in a separate PR.
+**Updating the base image or uv:** Dependabot proposes tag and digest bumps for `.devcontainer/Dockerfile`; after merging one, rebuild the container.
 
 A lightweight path for end users (ESPHome Device Builder + remote packages, no devcontainer) is planned.
+
+## CI
+Every pull request and every push to `master` runs, inside the devcontainer image: `script/lint` and `script/test`
+(job `checks`), and a real ESP32 firmware compile with the pinned ESPHome and with the lowest supported one
+(`compile (pinned)`, `compile (minimum)`; the minimum is `esphome-minimum` in `pyproject.toml`). A weekly canary
+builds against the newest stable ESPHome and opens (or closes) a `canary-failure` issue. Dependabot proposes
+updates for actions, Python dev dependencies (incl. ESPHome) and devcontainer images. CI covers Docker Engine on
+Linux for the non-interactive path only.
+
+Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/compile`, and
+`GP_ESPHOME=minimum GP_SECRETS=example script/compile` for the lowest supported ESPHome.
 
 ## Repository
 - `garden-pilot.yaml` — device entry file: a list of packages.

@@ -33,7 +33,7 @@ else
     WORK_CONFIG="$TMP_DIR/$(basename "$CONFIG")"
 fi
 
-if uv run --no-sync esphome config "$WORK_CONFIG" >"$TMP_DIR/esphome-config.log" 2>&1; then
+if sh script/_esphome config "$WORK_CONFIG" >"$TMP_DIR/esphome-config.log" 2>&1; then
     if [ "${GP_VERBOSE:-0}" = "1" ]; then
         cat "$TMP_DIR/esphome-config.log"
     fi

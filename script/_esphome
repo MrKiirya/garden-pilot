@@ -1,0 +1,58 @@
+#!/bin/sh
+# Run ESPHome in the version selected by GP_ESPHOME (default: pinned). Used by script/config and script/compile.
+#   pinned     the version in uv.lock (project venv)
+#   minimum    [tool.garden-pilot] esphome-minimum in pyproject.toml
+#   latest     newest stable release on PyPI
+#   YYYY.M.P   that exact release (handy for bisecting)
+# `script/_esphome --resolve` prints the resolved version (or `latest`) and runs nothing.
+set -eu
+cd "$(dirname "$0")/.."
+
+TARGET="${GP_ESPHOME:-pinned}"
+
+usage() {
+    echo "GP_ESPHOME must be pinned, minimum, latest or a version like 2026.5.0 (got: $TARGET)" >&2
+    exit 2
+}
+
+case "$TARGET" in
+    pinned)
+        VERSION="$(sed -n 's/^[[:space:]]*"esphome==\([0-9.]*\)",.*/\1/p' pyproject.toml | head -n 1)"
+        ;;
+    minimum)
+        VERSION="$(sed -n 's/^esphome-minimum[[:space:]]*=[[:space:]]*"\([0-9.]*\)".*/\1/p' pyproject.toml | head -n 1)"
+        ;;
+    latest)
+        VERSION=latest
+        ;;
+    *)
+        if printf '%s\n' "$TARGET" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$'; then
+            VERSION="$TARGET"
+        else
+            usage
+        fi
+        ;;
+esac
+
+if [ -z "$VERSION" ]; then
+    echo "could not resolve ESPHome version for GP_ESPHOME=$TARGET from pyproject.toml" >&2
+    exit 2
+fi
+
+if [ "${1:-}" = "--resolve" ]; then
+    echo "$VERSION"
+    exit 0
+fi
+
+# uv must use the image's Python (UV_PYTHON_DOWNLOADS=never in the devcontainer); uvx envs live in the uv cache.
+case "$TARGET" in
+    pinned)
+        exec uv run --no-sync esphome "$@"
+        ;;
+    latest)
+        exec uvx --isolated --refresh-package esphome --from esphome esphome "$@"
+        ;;
+    *)
+        exec uvx --isolated --from "esphome==$VERSION" esphome "$@"
+        ;;
+esac
