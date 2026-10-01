@@ -151,16 +151,23 @@ tests/
 ## 9. Roadmap
 1. **Process scaffold** (task 001): agent guide, agents, task templates, this spec, uv + pinned ESPHome,
    scripts, repo checks.
-2. **Devcontainer** (task 002): reference environment for Linux/Windows/macOS, USB flashing, SDL window.
+2. **Devcontainer** (task 002): `.devcontainer/` with one Dockerfile and two configs (default; opt-in `sdl/` that
+   forwards the host X11 display). Docker and rootless Podman; Python 3.13 + uv + the ESPHome pinned in
+   `uv.lock`; ESP-IDF / PlatformIO caches in named volumes. USB passthrough on Linux only (env-driven); on
+   Windows/macOS flash the first time from the host or web.esphome.io, then OTA by IP. `script/sdl-smoke` proves
+   a window opens. Verified by the author on Linux with rootless Podman in VS Code (incl. USB flash and OTA); Windows not verified yet; Docker Engine and macOS untested.
 3. **CI** (task 003): lint, `config` matrix, `compile` (min + pinned ESPHome), canary, Dependabot, `master`
    ruleset.
 4. **Modular layout:** `hardware/`, `packages/core/`, `bed.yaml` with `vars`, `hardware/sim.yaml`.
-5. **`gp_*` layer** on top of `sprinkler` (MVP), screens switched to it.
-6. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants.
-7. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
-8. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
-9. **`garden_zones` component:** open queue, parallel groups, watchdog, threshold watering, history.
-10. **Host + SDL** test harness and screenshot checks.
+5. **Lightweight end-user path:** ESPHome Device Builder (HA add-on or the `ghcr.io/esphome/esphome`
+   container) + remote packages from this repo + first flash via web.esphome.io, then OTA; no devcontainer
+   needed. Depends on stage 4.
+6. **`gp_*` layer** on top of `sprinkler` (MVP), screens switched to it.
+7. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants.
+8. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
+9. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
+10. **`garden_zones` component:** open queue, parallel groups, watchdog, threshold watering, history.
+11. **Host + SDL** test harness and screenshot checks.
 
 ## 10. Open questions
 **Hardware**
@@ -196,3 +203,8 @@ tests/
 - https://esphome.io/components/host/
 - https://esphome.io/components/display/sdl/
 - https://docs.wokwi.com/wokwi-ci/github-actions
+- https://containers.dev/implementors/spec/
+- https://docs.astral.sh/uv/guides/integration/docker/
+- https://code.claude.com/docs/en/devcontainer
+- https://github.com/microsoft/wslg/blob/main/samples/container/Containers.md
+- https://docs.podman.io/en/latest/markdown/podman-run.1.html
