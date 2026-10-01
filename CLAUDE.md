@@ -22,15 +22,17 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
 7. **Tests first** where code is testable (Python checks now, C++ core of `garden_zones` later).
 
 These principles apply to **new and changed code**. Existing greenhouse packages predate them (the greenhouse
-page calls `sprinkler.*` directly, pins live in `packages/greenhouse/substitutions.yaml`, valves have no on-time
+page calls `sprinkler.*` directly, bed N is hard-wired to relay N in `greenhouse/irrigation.yaml`, valves have no on-time
 guard beyond `run_duration_number`); they migrate in roadmap stages 4 and 7. Don't "fix" legacy code outside a
 task's scope, and don't block a review on it — list it as a follow-up.
 
 ## Repository layout
 | Path | Role |
 |---|---|
-| `garden-pilot.yaml` | Device entry point only: `esphome:`, `esp32:`, `logger:`, ordered `packages:`. |
-| `packages/network.yaml` | `api` (encryption), `ota`, `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`, `time`. |
+| `garden-pilot.yaml` | Device entry point only: secret substitutions, `esphome:`, `logger:`, ordered `packages:`. |
+| `hardware/<board>.yaml` | Board profile: `esp32:` block and every GPIO pin plus display/touch orientation and calibration, as substitutions. |
+| `packages/core/network.yaml` | `api` (encryption), `ota`, `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`; secrets arrive as substitutions. |
+| `packages/core/time.yaml` | `time: homeassistant` (`ha_time`), no triggers. |
 | `packages/display_touch.yaml` | SPI, `mipi_spi` ILI9341 display, XPT2046 touch, `touch_ui` / `touch_dot_overlay` scripts. |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`. |
 | `packages/lvgl/page_*.yaml` | One LVGL page per file under `lvgl: pages:`. |
@@ -44,20 +46,22 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `tasks/` | Task specs and reviews (see `tasks/README.md`). |
 | `tests/` | pytest repo checks; `script/*` wraps all commands. |
 
-The target layout (`hardware/`, `packages/core/`, `bed.yaml`, `components/garden_zones/`) is in SPEC §5; it is
+The target layout (`bed.yaml`, `hardware/sim.yaml`, `components/garden_zones/`) is in SPEC §5; it is
 introduced by roadmap tasks, not ad hoc.
 
 ### `packages:` order in `garden-pilot.yaml` (do not reorder lightly)
-1. `network` — connectivity first.
+1. `hardware` (board profile; exactly one), then `core_network`, `core_time` — connectivity first.
 2. `display_touch` — creates `tft_spi`, `tft_display`, `touch` (required by LVGL).
 3. `lvgl_base` — LVGL wiring to those ids.
 4. `lvgl_page_home` — first page = boot screen; other `lvgl_page_*` after it.
-5. `gh_substitutions` → `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) →
+5. `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) →
    `gh_lvgl_page` → `gh_sensors_air` → `gh_sensors_soil` → `gh_sprinkler_lvgl`.
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 ### ESPHome YAML conventions
-- **Board:** match the board declared in `garden-pilot.yaml` until a migration task changes it.
+- **Pins only in `hardware/`, secrets only as entry-file substitutions** (`substitutions: x: !secret x`);
+  packages use `${x}`. `tests/test_layout.py` enforces both.
+- **Board:** match the `esp32:` board declared in the `hardware/` profile until a migration task changes it.
 - **Secrets files:** `secrets.yaml` / `secrets.example.yaml` are substitution files only (no `esphome:` block);
   `.vscode/settings.json` maps them to plain YAML so the ESPHome extension doesn't validate them as devices.
 - **Remote packages** must not use `!secret`: expose `substitutions` and assign secrets from the entry file or a

@@ -1,3 +1,4 @@
+# Bed N uses board relay N (relay_N_pin from the hardware profile).
 # Three gravity-fed bed zones from a shared barrel — no master/pump switch (self-drain barrel line).
 # Do not call lvgl.* from run_duration_number on_value — restore/HA can fire outside LVGL-safe context and crash.
 # Greenhouse page shows run durations as text only (no LVGL spinbox ↔ number sync).
@@ -7,7 +8,7 @@ switch:
     id: gh_valve_zone1_sw
     internal: true
     pin:
-      number: ${gh_valve_zone1_pin}
+      number: ${relay_1_pin}
       mode:
         output: true
     restore_mode: RESTORE_DEFAULT_OFF
@@ -16,7 +17,7 @@ switch:
     id: gh_valve_zone2_sw
     internal: true
     pin:
-      number: ${gh_valve_zone2_pin}
+      number: ${relay_2_pin}
       mode:
         output: true
     restore_mode: RESTORE_DEFAULT_OFF
@@ -25,7 +26,7 @@ switch:
     id: gh_valve_zone3_sw
     internal: true
     pin:
-      number: ${gh_valve_zone3_pin}
+      number: ${relay_3_pin}
       mode:
         output: true
     restore_mode: RESTORE_DEFAULT_OFF

@@ -330,3 +330,23 @@ lvgl:
                   text_color: 0xbecab9
             on_click:
               - lvgl.page.show: touch_test_page
+
+# Clock in the header. Adds the trigger to the core clock (packages/core/time.yaml).
+# Risk: on_time_sync can fire before LVGL is ready (SPEC §8); the 30 s interval keeps the label fresh.
+time:
+  - id: !extend ha_time
+    on_time_sync:
+      - lvgl.label.update:
+          id: home_clock_label
+          text:
+            time_format: "%H:%M"
+            time: ha_time
+
+interval:
+  - interval: 30s
+    then:
+      - lvgl.label.update:
+          id: home_clock_label
+          text:
+            time_format: "%H:%M"
+            time: ha_time

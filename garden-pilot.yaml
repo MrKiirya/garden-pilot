@@ -1,4 +1,12 @@
-# ESPHome: device entrypoint. Split shared pieces into packages/ when the config grows.
+# ESPHome: device entry point. One line per module; pins live only in hardware/.
+# Secrets are assigned here (never inside packages) so packages can be used as remote packages.
+
+substitutions:
+  api_encryption_key: !secret api_encryption_key
+  ota_password: !secret ota_password
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  wifi_ap_password: !secret wifi_ap_password
 
 esphome:
   name: garden-pilot
@@ -8,26 +16,29 @@ esphome:
   #     then:
   #       - delay: 3s
 
-esp32:
-  board: esp32-s3-devkitc1-n16r8
-  framework:
-    type: esp-idf
-
 logger:
   level: INFO
 
 packages:
-  network: !include packages/network.yaml
+  # Board profile: pins, display/touch orientation and calibration, esp32:. Pick exactly one.
+  hardware: !include hardware/esp32-s3-devkitc1-breadboard.yaml
+
+  # Core: connectivity and clock. Need nothing else (no display, no LVGL).
+  core_network: !include packages/core/network.yaml
+  core_time: !include packages/core/time.yaml
+
+  # Display + touch: creates tft_spi, tft_display, touch (required by LVGL).
   display_touch: !include packages/display_touch.yaml
 
-  # LVGL: base first. First page package = boot screen (home).
+  # LVGL: base first. First page package = boot screen (home). The home page also adds the clock trigger
+  # to core_time, so it requires core_time.
   lvgl_base: !include packages/lvgl/base.yaml
   lvgl_page_home: !include packages/lvgl/page_home.yaml
   lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
   lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
 
   # Greenhouse (all under packages/greenhouse/ — include each fragment explicitly).
-  gh_substitutions: !include packages/greenhouse/substitutions.yaml
+  # Needs display_touch + the LVGL pages above until stage 7; irrigation must come before its page.
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
   gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml

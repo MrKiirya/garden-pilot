@@ -14,7 +14,11 @@ from conftest import REPO_ROOT, load_esphome_yaml
 def test_entry_file_is_a_package_list() -> None:
     config = load_esphome_yaml(REPO_ROOT / "garden-pilot.yaml")
     assert isinstance(config, dict)
-    assert set(config) == {"esphome", "esp32", "logger", "packages"}, "keep the entry file to these sections"
+    assert set(config) == {"substitutions", "esphome", "logger", "packages"}, "keep the entry file to these sections"
+    keys = list(config["packages"])
+    assert keys[:3] == ["hardware", "core_network", "core_time"]
+    hardware = config["packages"]["hardware"]
+    assert hardware["__tag__"] == "include" and hardware["value"].startswith("hardware/")
 
 
 @pytest.mark.config

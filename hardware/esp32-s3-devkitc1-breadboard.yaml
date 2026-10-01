@@ -1,0 +1,60 @@
+# Board profile: breadboard build.
+# ESP32-S3 DevKitC-1 N16R8 + ILI9341 320x240 SPI display + XPT2046 touch + 3-channel relay module,
+# DHT11 and a resistive soil probe module.
+#
+# This is the ONLY place with GPIO numbers and with settings that depend on the exact screen and how it is
+# mounted (orientation, touch calibration). Packages refer to them as ${...} substitutions.
+# Pin names describe the board function (relay_1_pin, soil_ao_pin, ...); which relay a bed uses is decided
+# in the feature module, not here.
+#
+# To add a board: copy this file, keep every *_pin key (a test checks that each profile defines all pins the
+# packages use), change the values and the esp32: block, and !include the new file as the `hardware` package
+# in garden-pilot.yaml. Pick exactly one profile.
+#
+# Wiring notes:
+# - The shared SPI MISO uses GPIO8 (not the strapping GPIO3); wire display and touch MISO to it.
+# - Relay and sensor pins avoid the SPI and touch pins.
+
+esp32:
+  board: esp32-s3-devkitc1-n16r8
+  framework:
+    type: esp-idf
+
+substitutions:
+  # Shared SPI bus (display + touch).
+  spi_clk_pin: GPIO9
+  spi_mosi_pin: GPIO10
+  spi_miso_pin: GPIO8
+
+  # Display (ILI9341).
+  display_cs_pin: GPIO13
+  display_dc_pin: GPIO11
+  display_reset_pin: GPIO12
+  # Orientation of the picture for this module and mounting.
+  display_swap_xy: "true"
+  display_mirror_x: "false"
+  display_mirror_y: "false"
+
+  # Touch controller (XPT2046).
+  touch_cs_pin: GPIO18
+  touch_irq_pin: GPIO15
+  # Touch calibration and orientation for this screen module and mounting.
+  touch_cal_x_min: "201"
+  touch_cal_x_max: "3792"
+  touch_cal_y_min: "371"
+  touch_cal_y_max: "3789"
+  touch_swap_xy: "true"
+  touch_mirror_x: "true"
+  touch_mirror_y: "true"
+
+  # Relay outputs (valves).
+  relay_1_pin: GPIO21
+  relay_2_pin: GPIO47
+  relay_3_pin: GPIO48
+
+  # Air sensor, interim single-wire DHT11 (replace with an I2C sensor later).
+  air_dht_pin: GPIO4
+
+  # Soil moisture module: AO = analog, DO = comparator output.
+  soil_ao_pin: GPIO6
+  soil_do_pin: GPIO7

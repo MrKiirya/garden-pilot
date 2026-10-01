@@ -4,7 +4,7 @@
 sensor:
   - platform: dht
     pin:
-      number: ${gh_dht_pin}
+      number: ${air_dht_pin}
       mode:
         input: true
         pullup: false

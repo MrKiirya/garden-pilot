@@ -1,13 +1,19 @@
-# Resistive soil probe: VCC→3V3 (preferred) or 5V; GND→GND; AO→gh_soil_ao_pin (ADC);
-# DO→gh_soil_do_pin (optional digital).
+# Resistive soil probe: VCC→3V3 (preferred) or 5V; GND→GND; AO→soil_ao_pin (ADC);
+# DO→soil_do_pin (optional digital).
 # If VCC=5V, AO can exceed 3.3V — use a resistor divider (~10k/20k) before the ESP ADC pin.
-# On-board pot sets DO threshold only. AO → % via calibrate_linear (gh_soil_cal_*_v);
+# On-board pot sets DO threshold only. AO → % via calibrate_linear (soil_cal_*_v);
 # not absolute soil science, just a useful scale.
-# Calibrate: note V at air-dry probe and at waterlogged (or glass of water), put into substitutions.
+# Calibrate: note V at air-dry probe and at waterlogged (or glass of water), put into the substitutions
+# below (or override them in the entry file).
+
+substitutions:
+  # AO calibration (Volts): dry probe vs wet probe. Typical FC-28 on 3V3: dry ~higher V, wet ~lower V.
+  soil_cal_dry_v: "3.16"
+  soil_cal_wet_v: "0.80"
 
 sensor:
   - platform: adc
-    pin: ${gh_soil_ao_pin}
+    pin: ${soil_ao_pin}
     id: gh_soil_moisture_pct
     name: "Greenhouse soil moisture"
     unit_of_measurement: "%"
@@ -22,8 +28,8 @@ sensor:
           send_every: 5
           send_first_at: 1
       - calibrate_linear:
-          - ${gh_soil_cal_dry_v} -> 0.0
-          - ${gh_soil_cal_wet_v} -> 100.0
+          - ${soil_cal_dry_v} -> 0.0
+          - ${soil_cal_wet_v} -> 100.0
       - clamp:
           min_value: 0.0
           max_value: 100.0
@@ -48,7 +54,7 @@ sensor:
 binary_sensor:
   - platform: gpio
     pin:
-      number: ${gh_soil_do_pin}
+      number: ${soil_do_pin}
       mode:
         input: true
         pullup: true
