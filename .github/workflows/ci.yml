@@ -83,6 +83,12 @@ jobs:
             ${{ runner.temp }}/gp-platformio
           key: gp-toolchain-v1-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
 
+      - name: Show the ESPHome version
+        env:
+          GP_ESPHOME: ${{ matrix.target }}
+        run: |
+          echo "ESPHome ($GP_ESPHOME): $(sh script/_esphome --resolve)" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Compile firmware in the devcontainer
         uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
         with:
