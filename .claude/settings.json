@@ -10,6 +10,7 @@
       "Bash(script/test *)",
       "Bash(script/config)",
       "Bash(script/config *)",
+      "Bash(script/sdl-smoke)",
       "Bash(uv sync)",
       "Bash(uv sync *)",
       "Bash(uv lock)",

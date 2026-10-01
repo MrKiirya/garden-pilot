@@ -23,7 +23,7 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
 
 These principles apply to **new and changed code**. Existing greenhouse packages predate them (the greenhouse
 page calls `sprinkler.*` directly, pins live in `packages/greenhouse/substitutions.yaml`, valves have no on-time
-guard beyond `run_duration_number`); they migrate in roadmap stages 4–5. Don't "fix" legacy code outside a
+guard beyond `run_duration_number`); they migrate in roadmap stages 4 and 6. Don't "fix" legacy code outside a
 task's scope, and don't block a review on it — list it as a follow-up.
 
 ## Repository layout
@@ -37,6 +37,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`sprinkler`), LVGL page. |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
 | `secrets.example.yaml` | Template with obvious dummy values; copy to git-ignored `secrets.yaml`. |
+| `.devcontainer/` | Reference dev environment: shared `Dockerfile`, default config, opt-in `sdl/` config (host display). |
 | `design/` | Snapshot of the design system (rules, tokens, icons); the live design lives in claude.ai artifacts. |
 | `docs/SPEC.md` | Product spec, architecture, roadmap, open questions. |
 | `tasks/` | Task specs and reviews (see `tasks/README.md`). |
@@ -82,8 +83,8 @@ introduced by roadmap tasks, not ad hoc.
   queue, queued zones run even when disabled): SPEC §3.
 
 ## Environment
-- **Devcontainer** is the reference environment (Linux, Windows, macOS) — roadmap task 002. Until then any Linux
-  shell with [uv](https://docs.astral.sh/uv/) works.
+- **Devcontainer** (`.devcontainer/`, Docker or rootless Podman) is the reference environment. Verified by the author on
+  Linux with rootless Podman in VS Code (incl. USB flash and OTA); Windows not verified yet; Docker Engine and macOS untested. Plain Linux shell with [uv](https://docs.astral.sh/uv/) also works.
 - Python and ESPHome via **uv**: `pyproject.toml` pins `esphome==<version>` exactly; `uv.lock` is committed.
   Python version in `.python-version`.
 - `.esphome/` is the local ESPHome/PlatformIO build cache — never commit or hand-edit it.
@@ -97,6 +98,8 @@ introduced by roadmap tasks, not ad hoc.
 | Fast checks only | `uv run pytest -m unit` |
 | Validate config by hand | `script/config` (uses `secrets.yaml`, or `secrets.example.yaml` if absent) |
 | Compile firmware | `uv run esphome compile garden-pilot.yaml` (needs a real `secrets.yaml`) |
+| SDL window smoke check | `script/sdl-smoke` (needs a display: SDL devcontainer config or a desktop host) |
+| Devcontainer from CLI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . script/test` (add `--docker-path podman` and `PODMAN_USERNS=keep-id` for Podman; `--config .devcontainer/sdl/devcontainer.json` for SDL) |
 | Flash / logs | `uv run esphome run garden-pilot.yaml` / `uv run esphome logs garden-pilot.yaml` |
 
 Always pass the config path explicitly; run from the repo root.

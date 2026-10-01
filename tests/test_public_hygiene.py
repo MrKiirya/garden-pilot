@@ -16,7 +16,7 @@ pytestmark = pytest.mark.unit
 # A trailing dot is fine (end of a sentence); a trailing ".digit" means a longer version number.
 IPV4 = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?!\.?\d)")
 LOCAL_PATH = re.compile(
-    r"(?<![\w.:/])(/var/mnt/|/var/home/|/run/media/[^/\s]+/|/home/[a-z_][a-z0-9_-]*/|/root/|/Users/[^/\s]+/"
+    r"(?<![\w.:/])(/var/mnt/|/var/home/|/run/media/[^/\s]+/|/home/(?!vscode/)[a-z_][a-z0-9_-]*/|/root/|/Users/[^/\s]+/"
     r"|[A-Za-z]:[\\/]Users[\\/])"
 )
 # Shared address space (RFC 6598): Tailscale and carrier-grade NAT. Not covered by `is_private`.
@@ -86,6 +86,17 @@ def test_ip_matcher(text: str, expected: list[str]) -> None:
     ["/var/mnt/disk/x", "/home/alice/x", "/Users/alice/x", "C:\\Users\\bob", "C:/Users/bob", "/run/media/al/usb"],
 )
 def test_local_path_matcher(text: str) -> None:
+    assert LOCAL_PATH.search(text)
+
+
+@pytest.mark.parametrize("text", ["/home/vscode/.cache", "/home/vscode/"])
+def test_container_user_home_is_allowed(text: str) -> None:
+    # The devcontainer base image's fixed, generic user; not a local path.
+    assert not LOCAL_PATH.search(text)
+
+
+@pytest.mark.parametrize("text", ["/home/vscodex/.cache", "/home/alice/.cache", "/home/myvscode/x"])
+def test_other_home_users_are_still_flagged(text: str) -> None:
     assert LOCAL_PATH.search(text)
 
 

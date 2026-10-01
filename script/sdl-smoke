@@ -1,0 +1,61 @@
+#!/bin/sh
+# Smoke check: ESPHome `host` build + SDL2 + display forwarding. Opens a 320x240 test-card window for
+# GP_SDL_SECONDS (default 10) seconds. Pass = the program is still running at the timeout.
+# Run from a devcontainer opened with the SDL config, or on a host with SDL2 dev libraries.
+set -eu
+cd "$(dirname "$0")/.."
+
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  echo "sdl-smoke: neither DISPLAY nor WAYLAND_DISPLAY is set. Open the repo with the SDL config" >&2
+  echo "           (.devcontainer/sdl, 'Reopen in Container' and pick it), or run this on a desktop host." >&2
+  exit 2
+fi
+
+seconds="${GP_SDL_SECONDS:-10}"
+dir=.esphome/sdl-smoke
+mkdir -p "$dir"
+cat > "$dir/sdl-smoke.yaml" <<'YAML'
+esphome:
+  name: sdl-smoke
+
+host:
+
+display:
+  - platform: sdl
+    show_test_card: true
+    dimensions:
+      width: 320
+      height: 240
+YAML
+
+uv run --no-sync esphome compile "$dir/sdl-smoke.yaml"
+program="$dir/.esphome/build/sdl-smoke/.pioenvs/sdl-smoke/program"
+[ -x "$program" ] || program="$(find "$dir/.esphome/build/sdl-smoke" -name program -type f 2>/dev/null | head -n 1)"
+if [ -z "$program" ] || [ ! -x "$program" ]; then
+  echo "sdl-smoke: the compiled program was not found under $dir/.esphome/build/sdl-smoke" >&2
+  exit 1
+fi
+
+log="$dir/run.log"
+"$program" >"$log" 2>&1 &
+pid=$!
+sleep "$seconds"
+if kill -0 "$pid" 2>/dev/null; then
+  # The SDL program may ignore SIGTERM while its window is open: escalate instead of waiting forever.
+  kill "$pid" 2>/dev/null || true
+  sleep 2
+  kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+else
+  cat "$log" >&2
+  echo "sdl-smoke: the program exited early (no window?)" >&2
+  exit 1
+fi
+# ESPHome keeps running when SDL cannot open a window, so also look for the usual display errors.
+if grep -q -i -E "authorization required|cannot open display|can't open display|XDG_RUNTIME_DIR is invalid|could not initialize sdl|sdl_createwindow|no available video device|unable to init(ialize)? sdl" "$log"; then
+  cat "$log" >&2
+  echo "sdl-smoke: the program is running but SDL could not open a window (see the log above)." >&2
+  echo "           X11 on the host: try 'xhost +SI:localuser:\$(id -un)'; see README, Development environment." >&2
+  exit 1
+fi
+echo "sdl-smoke: ok (window ran for ${seconds}s)"
