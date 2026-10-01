@@ -25,9 +25,14 @@ uncommenting one package) and **configurable** (pins, counts and names via subst
 - DHT11 for greenhouse air temperature/humidity (interim; an I2C sensor is planned).
 - No soil temperature probes and no heating hardware yet.
 
-### 2.2 Target hardware — **open**
-A ready-made board with a display connector, relays and free GPIOs is planned (earlier notes mention
-LILYGO T-Relay-S3; to be confirmed). Pins will move to `hardware/<board>.yaml` (§5).
+### 2.2 Target hardware
+Two kinds of builds are supported, each as a board profile `hardware/<board>.yaml` (§5) that holds all pins:
+- **Ready-made board:** an ESP32-S3 board with relays on board plus a display connector or free SPI pins
+  (the author's target is the LILYGO T-Relay-S3). Check which pins remain free for the SPI display and touch.
+- **Self-assembled ("breadboard") build:** a generic ESP32-S3 dev board + ILI9341/XPT2046 + a relay module,
+  as in §2.1.
+
+The project must not depend on one specific board.
 
 ## 3. The ESPHome `sprinkler` component: limits that shape the design
 Checked against `esphome/components/sprinkler/` on the `dev` branch, 2026-10-01:
@@ -47,22 +52,56 @@ Checked against `esphome/components/sprinkler/` on the `dev` branch, 2026-10-01:
 **YAML** — hardware and ready-made components: `switch: gpio` (valves, pump, heating relays), sensors, LVGL,
 `time`, API, OTA. Bed heating uses the stock `climate: thermostat` (or `bang_bang`), one per bed.
 
-**Own C++ component `garden_zones`** (later) — only the stateful irrigation logic:
-- an open queue that survives reboot;
-- parallel groups with an "N zones at once" limit;
-- a watchdog for maximum valve on-time;
-- watering by soil moisture threshold;
-- history.
+**Own component `garden_zones`, built from a fork of `sprinkler`** — only the stateful irrigation logic.
+Decision: no intermediate MVP on the stock `sprinkler`; we copy `esphome/components/sprinkler/` into
+`components/garden_zones/` (loaded via `external_components`) and change as little of it as possible:
+- **Queue (patched):** an open queue (list, "is zone N queued", remove one zone) that survives reboot; a manual
+  run of one zone does not break the queue; disabled zones are skipped.
+- **Parallelism without rewriting the state machine:** the stock one-valve-at-a-time controller stays; parallel
+  watering uses several controllers ("lanes"). Zones are grouped by water source; each group has
+  `max_parallel`:
+  - `max_parallel: 1` → one controller for the group, one shared queue (e.g. lawn on a pump);
+  - `max_parallel: all` → one controller per zone, all can run at once (e.g. greenhouse beds on a gravity barrel);
+  - in between → zones are assigned to lanes statically (documented limit: two zones of the same lane never run
+    together even if another lane is idle). Dynamic lanes are a later option.
+  The component's Python code generates the controllers from a `groups:` / `zones:` config, e.g.:
+  ```yaml
+  garden_zones:
+    groups:
+      - {id: greenhouse, max_parallel: all}
+      - {id: lawn, max_parallel: 1, pump: lawn_pump}
+    zones:
+      - {name: Bed 1, group: greenhouse, valve: valve_bed1}
+  ```
+  To verify when planning: how a pump shared by zones in different controllers behaves.
+- **Safety:** a watchdog for maximum valve on-time (principle 4).
+- **Soil moisture (optional per zone):** any ESPHome sensor; if present and the soil is wet, the zone's run is
+  skipped.
+- **History** of runs per zone (wanted; see the backlog in §9).
 
 It takes valves from YAML by id and exposes standard ESPHome entities (switch / number / sensor / text_sensor),
-actions and conditions, so everything shows up in Home Assistant. Its core is a plain C++ class without ESPHome
-dependencies (unit-testable); the ESPHome component is a thin wrapper.
+actions and conditions, so everything shows up in Home Assistant. New logic goes into plain C++ classes without
+ESPHome dependencies where practical (unit-testable).
+
+**Licence:** ESPHome's C++ runtime is GPLv3 (its Python code is MIT). The forked files keep their original
+copyright/licence headers, are marked as modified, and `components/garden_zones/` carries the GPLv3 text; the
+rest of this repository stays MIT. The README states this.
+
+**Cost:** every ESPHome update may need our patches re-ported; keeping the diff to the stock component small is
+a goal, and the weekly canary (task 003) warns early.
 
 **Rejected:** plain C++ without ESPHome (loses HA, OTA and easy repetition); one huge do-everything component;
-big logic in lambdas.
+big logic in lambdas; rewriting `sprinkler`'s one-valve state machine for parallel zones.
 
-**Alternative for an early stage:** a fork of `sprinkler` in `components/` via `external_components` with the
-missing queue methods. Downside: every ESPHome update means porting our changes. **Open** (§10, Q6).
+**Bed heating:** stock `climate: thermostat` (or `bang_bang`) per bed, one 230 V cable per bed, N beds
+configurable. The temperature input is any ESPHome sensor: the probes bundled with floor-heating kits are usually
+NTC thermistors (`adc` + `resistance` + `ntc`), DS18B20 also works. Main mode: keep the soil above a minimum so it
+does not freeze; a greenhouse air sensor can be an extra input. Firmware guards: maximum on-time and maximum soil
+temperature (principle 4). Electrical safety (RCD, contactor vs. relay, hardware over-temperature cut-off) is
+documented as recommendations, the builder decides; the author's own build is documented as an example.
+
+**Schedules** live on the device and run without Home Assistant or Wi-Fi; HA is optional (it can edit and
+trigger them).
 
 ### 4.1 The `gp_*` layer
 Screens, schedules and automations never call `sprinkler` / `garden_zones` directly, only `gp_*` scripts and
@@ -77,7 +116,8 @@ script:
 # entities: gp_bed1_state, gp_queue_text, ...
 ```
 
-So the MVP can run on `sprinkler` and later swap the engine for `garden_zones` without touching screens or HA.
+So screens and HA do not depend on the engine. The current greenhouse page still calls the stock `sprinkler`
+directly; it moves to `gp_*` when the layer is introduced.
 The full list of `gp_*` actions and entities is a roadmap task.
 
 ### 4.2 Loading our own component
@@ -140,6 +180,8 @@ tests/
 - The live design lives in claude.ai artifacts (author's account): the design system and the screens canvas
   (pages "Screens": Home / Greenhouse / Lawn, and "Drafts": D01–D25). The repo keeps a snapshot of what the
   firmware depends on; token changes are synced into the repo by PR.
+- **UI language** is chosen at build time (a substitution in the entry file, `en` / `ru`): only one language
+  and its glyphs are baked into flash.
 - Built today: `home_page` only follows the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still
   use the default LVGL theme. Bottom nav is a placeholder (ZONES → greenhouse, WATER → lawn, SETUP → touch test).
 - Known UI defects: the Home "NEXT" label shows the remaining queue time (hours dropped), not the next scheduled
@@ -162,39 +204,46 @@ tests/
 5. **Lightweight end-user path:** ESPHome Device Builder (HA add-on or the `ghcr.io/esphome/esphome`
    container) + remote packages from this repo + first flash via web.esphome.io, then OTA; no devcontainer
    needed. Depends on stage 4.
-6. **`gp_*` layer** on top of `sprinkler` (MVP), screens switched to it.
-7. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants.
-8. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
-9. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
-10. **`garden_zones` component:** open queue, parallel groups, watchdog, threshold watering, history.
+6. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
+   via lanes, watchdog, optional soil-moisture skip.
+7. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
+8. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
+   at build time.
+9. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
+10. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
 11. **Host + SDL** test harness and screenshot checks.
 
+### 9.1 Backlog (ideas, separate tasks once the base is ready)
+Optional modules; most can be built and tested without the physical sensors (`hardware/sim.yaml`):
+- **Watering history** per zone, on screen and in HA (wanted first).
+- Barrel water level sensor: don't water when empty, alert.
+- Pump dry-run protection (flow or pressure sensor).
+- Flow meter: litres per zone, watering by volume.
+- Global run-time multiplier (e.g. ×1.5 in hot weather).
+- Cycle and soak (water in several passes).
+- Rain delay (sensor or HA command; lawn).
+- Dynamic lanes for `max_parallel` between 1 and all.
+- Heating: night-tariff window and schedule modes.
+
 ## 10. Open questions
-**Hardware**
-1. Final board and display? Touch controller? How many relays, which GPIOs are free?
-2. Soil moisture sensors (capacitive analog? I2C?) — one per bed or one per greenhouse? Soil temperature probes
-   for heating (DS18B20)?
-3. Water source per zone: barrel (gravity), mains, pump? Flow meter or pressure sensor planned?
-
-**Irrigation**
-4. How many zones now and planned (greenhouse beds, lawn, drip)? How many may water at once (gravity feed may
-   not have the pressure for parallel zones)?
-5. Which `sprinkler` features are actually needed (repeat, multiplier, reverse, pump, valve overlap)?
-6. Start on `sprinkler` + `gp_*` (MVP) or go straight to `garden_zones` (or a `sprinkler` fork)?
-7. Where do schedules live: on the device, in HA, or both? Must it work without HA?
-
-**Heating**
-8. How many heated beds, cable power, relay vs. contactor, RCD and a hardware over-temperature cut-off?
-   Night-tariff binding?
-9. Which modes are needed: OFF / ALWAYS / NIGHT / FROST?
-
-**Screens**
-10. Which drafts from the canvas to keep?
-11. Bed layouts: fixed variants or generated YAML?
-12. UI language: English only, Russian, or selectable?
+**Screens** (decide with the design work, roadmap stage 8)
+1. Which drafts from the canvas to keep?
+2. Bed layouts: fixed variants or generated YAML?
 
 **Repository**
-13. Exact minimum ESPHome version (task 003).
+3. Exact minimum ESPHome version (task 003).
+
+### 10.1 Decided (2026-10-01)
+- **Board:** board profiles, ready-made (T-Relay-S3-like) and self-assembled builds (§2.2).
+- **Zones:** configurable N zones in groups by water source; the author has 3 greenhouse beds (gravity barrel,
+  all at once) and a planned lawn with several zones (pump, one at a time) (§4).
+- **Engine:** fork of `sprinkler` as `garden_zones`, no stock-`sprinkler` MVP; parallelism via lanes (§4).
+- **Soil moisture:** optional per zone, skips the run when wet (§4).
+- **Water-source sensors and extra watering features:** backlog (§9.1).
+- **Schedules:** on the device, HA optional (§4).
+- **Heating:** one cable per bed, any temperature sensor, frost protection first; safety documented as
+  recommendations (§4).
+- **UI language:** chosen at build time (§8).
 
 ## 11. Sources
 - ESPHome `esphome/components/sprinkler/` (`dev`, 2026-10-01) and its commit history.

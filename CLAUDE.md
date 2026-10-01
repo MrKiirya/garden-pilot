@@ -23,7 +23,7 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
 
 These principles apply to **new and changed code**. Existing greenhouse packages predate them (the greenhouse
 page calls `sprinkler.*` directly, pins live in `packages/greenhouse/substitutions.yaml`, valves have no on-time
-guard beyond `run_duration_number`); they migrate in roadmap stages 4 and 6. Don't "fix" legacy code outside a
+guard beyond `run_duration_number`); they migrate in roadmap stages 4 and 7. Don't "fix" legacy code outside a
 task's scope, and don't block a review on it — list it as a follow-up.
 
 ## Repository layout
