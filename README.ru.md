@@ -24,7 +24,7 @@ uv run esphome run garden-pilot.yaml  # сборка и прошивка (пер
 ```
 
 ## Среда разработки
-Эталонная среда: **devcontainer** (VS Code + расширение Dev Containers): Python 3.13, uv, версия ESPHome из
+Эталонная среда: **devcontainer** (VS Code + расширение Dev Containers): Python 3.14, uv, версия ESPHome из
 `uv.lock`, SDL2, кэши ESP-IDF / PlatformIO в именованных томах. Обычный `uv` на хосте (см. «Быстрый старт») тоже
 работает.
 

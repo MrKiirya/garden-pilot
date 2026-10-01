@@ -132,9 +132,12 @@ def _from_line() -> str:
 def test_base_image_matches_python_version() -> None:
     python = (REPO_ROOT / ".python-version").read_text().strip()
     line = _from_line()
-    match = re.match(r"FROM mcr\.microsoft\.com/devcontainers/python:(\d+)-(\d+\.\d+)-(\w+)@sha256:[0-9a-f]{64}", line)
+    # Tag: `<python>-<debian>` (the form Dependabot proposes) or `<image-major>-<python>-<debian>`.
+    match = re.match(
+        r"FROM mcr\.microsoft\.com/devcontainers/python:(?:\d+-)?(\d+\.\d+)-(\w+)@sha256:[0-9a-f]{64}", line
+    )
     assert match, line
-    assert match.group(2) == python
+    assert match.group(1) == python
 
 
 def test_uv_is_pinned() -> None:

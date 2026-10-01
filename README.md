@@ -24,7 +24,7 @@ uv run esphome run garden-pilot.yaml  # build and flash (USB the first time, the
 ```
 
 ## Development environment
-The reference environment is a **devcontainer** (VS Code + the Dev Containers extension): Python 3.13, uv, the
+The reference environment is a **devcontainer** (VS Code + the Dev Containers extension): Python 3.14, uv, the
 ESPHome version pinned in `uv.lock`, SDL2, and the ESP-IDF / PlatformIO caches in named volumes. Plain `uv` on the
 host (see Quick start) works too.
 

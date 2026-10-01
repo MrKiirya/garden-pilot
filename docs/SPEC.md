@@ -195,7 +195,7 @@ tests/
 1. **Process scaffold** (task 001): agent guide, agents, task templates, this spec, uv + pinned ESPHome,
    scripts, repo checks.
 2. **Devcontainer** (task 002): `.devcontainer/` with one Dockerfile and two configs (default; opt-in `sdl/` that
-   forwards the host X11 display). Docker and rootless Podman; Python 3.13 + uv + the ESPHome pinned in
+   forwards the host X11 display). Docker and rootless Podman; Python 3.14 + uv + the ESPHome pinned in
    `uv.lock`; ESP-IDF / PlatformIO caches in named volumes. USB passthrough on Linux only (env-driven); on
    Windows/macOS flash the first time from the host or web.esphome.io, then OTA by IP. `script/sdl-smoke` proves
    a window opens. Verified by the author on Linux with rootless Podman in VS Code (incl. USB flash and OTA); Windows not verified yet; Docker Engine and macOS untested.
