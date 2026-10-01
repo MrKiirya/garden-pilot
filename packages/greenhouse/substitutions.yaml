@@ -1,7 +1,9 @@
-# Greenhouse hardware names. DHT is interim (same wiring as test-esp32); add I2C air sensor later and remove DHT package include.
+# Greenhouse hardware names. DHT is interim (breadboard test wiring);
+# add I2C air sensor later and remove DHT package include.
 
 substitutions:
-  # Interim single-wire DHT11 data pin (breadboard test). Replace with I2C (e.g. AHT20) in sensors_air_i2c.yaml when ready.
+  # Interim single-wire DHT11 data pin (breadboard test).
+  # Replace with I2C (e.g. AHT20) in sensors_air_i2c.yaml when ready.
   gh_dht_pin: GPIO4
 
   # Three bed zone valves (relay GPIOs). Adjust for T-Relay / wiring (avoid SPI/touch pins).

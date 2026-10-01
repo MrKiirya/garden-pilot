@@ -1,0 +1,22 @@
+# yamllint config for ESPHome YAML. Custom tags (!secret, !include, !lambda, !extend) are fine for yamllint:
+# it checks syntax and style without constructing them.
+extends: default
+
+ignore: |
+  .venv/
+  .esphome/
+  secrets.yaml
+
+rules:
+  document-start: disable
+  line-length:
+    max: 120
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  indentation:
+    spaces: 2
+    indent-sequences: consistent

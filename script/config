@@ -1,0 +1,45 @@
+#!/bin/sh
+# Validate the device configuration with `esphome config`.
+#
+# Uses the real secrets.yaml when it exists, otherwise secrets.example.yaml. Set GP_SECRETS=example to
+# force the example secrets (script/lint, tests and CI do). With the example secrets the config is copied
+# into a temp dir, so no secrets.yaml is ever created in the checkout. Output is shown only on failure
+# unless GP_VERBOSE=1.
+set -eu
+cd "$(dirname "$0")/.."
+
+# Entry files live in the repo root: the temp copy keeps only the basename, so relative !include paths
+# from a config in a subdirectory would break.
+CONFIG="${1:-garden-pilot.yaml}"
+if [ ! -f "$CONFIG" ]; then
+    echo "config file not found: $CONFIG" >&2
+    exit 1
+fi
+
+TMP_DIR="$(mktemp -d)"
+trap 'rm -r -f "$TMP_DIR"' EXIT
+trap 'exit 130' INT TERM
+
+if [ "${GP_SECRETS:-}" != "example" ] && [ -f secrets.yaml ]; then
+    WORK_CONFIG="$CONFIG"
+else
+    # Everything an entry file may include; extend this list when new top-level folders appear.
+    for path in "$CONFIG" packages hardware components; do
+        if [ -e "$path" ]; then
+            cp -R "$path" "$TMP_DIR/"
+        fi
+    done
+    cp secrets.example.yaml "$TMP_DIR/secrets.yaml"
+    WORK_CONFIG="$TMP_DIR/$(basename "$CONFIG")"
+fi
+
+if uv run --no-sync esphome config "$WORK_CONFIG" >"$TMP_DIR/esphome-config.log" 2>&1; then
+    if [ "${GP_VERBOSE:-0}" = "1" ]; then
+        cat "$TMP_DIR/esphome-config.log"
+    fi
+    echo "esphome config OK: $CONFIG"
+else
+    cat "$TMP_DIR/esphome-config.log" >&2
+    echo "esphome config FAILED: $CONFIG" >&2
+    exit 1
+fi

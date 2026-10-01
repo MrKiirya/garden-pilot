@@ -1,0 +1,6 @@
+#!/bin/sh
+# All checks: pytest (unit repo checks + `esphome config`).
+set -eu
+cd "$(dirname "$0")/.."
+
+uv run --no-sync pytest "$@"

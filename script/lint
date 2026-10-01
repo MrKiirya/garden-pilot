@@ -1,0 +1,7 @@
+#!/bin/sh
+# Lint: yamllint over the repo, then `esphome config` with the example secrets.
+set -eu
+cd "$(dirname "$0")/.."
+
+uv run --no-sync yamllint --strict .
+GP_SECRETS=example sh script/config

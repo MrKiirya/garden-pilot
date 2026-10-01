@@ -1,4 +1,5 @@
-# Interim air T/RH (DHT11). Keep sensor ids gh_air_temperature / gh_air_humidity when migrating to I2C so LVGL on_value targets stay valid.
+# Interim air T/RH (DHT11). Keep sensor ids gh_air_temperature / gh_air_humidity when migrating to I2C
+# so LVGL on_value targets stay valid.
 
 sensor:
   - platform: dht

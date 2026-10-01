@@ -1,6 +1,8 @@
-# Resistive soil probe: VCC→3V3 (preferred) or 5V; GND→GND; AO→gh_soil_ao_pin (ADC); DO→gh_soil_do_pin (optional digital).
+# Resistive soil probe: VCC→3V3 (preferred) or 5V; GND→GND; AO→gh_soil_ao_pin (ADC);
+# DO→gh_soil_do_pin (optional digital).
 # If VCC=5V, AO can exceed 3.3V — use a resistor divider (~10k/20k) before the ESP ADC pin.
-# On-board pot sets DO threshold only. AO → % via calibrate_linear (gh_soil_cal_*_v); not absolute soil science, just a useful scale.
+# On-board pot sets DO threshold only. AO → % via calibrate_linear (gh_soil_cal_*_v);
+# not absolute soil science, just a useful scale.
 # Calibrate: note V at air-dry probe and at waterlogged (or glass of water), put into substitutions.
 
 sensor:
