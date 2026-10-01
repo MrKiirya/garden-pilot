@@ -153,6 +153,10 @@ examples (`192.168.x.x`, `[SSID]`).
 - Split a task branch into **several logical commits** so the PR reads commit by commit.
 - No local git pre-commit hooks; checks are enforced by `script/*` and CI.
 - Personal, machine-local instructions go to the git-ignored `CLAUDE.local.md`.
+- **Branch protection:** the `master` ruleset is versioned in `.github/rulesets/master.json`; a test keeps its
+  required checks equal to the `ci.yml` job names. Renaming a CI job means updating the ruleset file and
+  re-applying it (repo admin): `gh api --method PUT repos/MrKiirya/garden-pilot/rulesets/<id> --input
+  .github/rulesets/master.json` (first time: `--method POST repos/MrKiirya/garden-pilot/rulesets`).
 - **Bumping ESPHome:** Dependabot opens the `chore(deps):` PR; it stays red (`test_spec_versions_match_sources`
   fails) until `docs/SPEC.md` §6 shows the new pin, so push a `docs:` commit with that. Check that the minimum
   still holds. Raising the minimum = edit `esphome-minimum` in `pyproject.toml` and SPEC §6 in one PR. A
