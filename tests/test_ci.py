@@ -21,6 +21,8 @@ WORKFLOWS = GITHUB / "workflows"
 CI = WORKFLOWS / "ci.yml"
 CANARY = WORKFLOWS / "canary.yml"
 DEPENDABOT = GITHUB / "dependabot.yml"
+RULESET = GITHUB / "rulesets" / "master.json"
+GITHUB_ACTIONS_APP_ID = 15368
 SPEC = REPO_ROOT / "docs" / "SPEC.md"
 DEVCONTAINER = REPO_ROOT / ".devcontainer" / "devcontainer.json"
 DOCKERFILE = REPO_ROOT / ".devcontainer" / "Dockerfile"
@@ -168,6 +170,20 @@ def test_ci_concurrency_cancels_superseded_prs() -> None:
     assert "github.event.pull_request.number" in conc["group"] or "github.ref" in conc["group"]
     cancel = conc["cancel-in-progress"]
     assert isinstance(cancel, str) and "pull_request" in cancel and cancel.strip() != "true"
+
+
+def ci_check_names() -> set[str]:
+    jobs = load_yaml(CI)["jobs"]
+    names = set()
+    for key, job in jobs.items():
+        name = job.get("name", key)
+        matrix = job.get("strategy", {}).get("matrix")
+        if matrix:
+            for target in matrix["target"]:
+                names.add(name.replace("${{ matrix.target }}", target))
+        else:
+            names.add(name)
+    return names
 
 
 def test_required_check_names_are_stable() -> None:
@@ -384,3 +400,38 @@ def test_compile_stages_like_config() -> None:
 def test_readmes_have_ci_badge() -> None:
     for name in ("README.md", "README.ru.md"):
         assert "actions/workflows/ci.yml/badge.svg" in (REPO_ROOT / name).read_text(encoding="utf-8"), name
+
+
+def ruleset() -> dict:
+    return json.loads(RULESET.read_text(encoding="utf-8"))
+
+
+def rules_by_type() -> dict[str, dict]:
+    return {rule["type"]: rule.get("parameters", {}) for rule in ruleset()["rules"]}
+
+
+def test_ruleset_targets_the_default_branch() -> None:
+    rs = ruleset()
+    assert rs["target"] == "branch"
+    assert rs["enforcement"] == "active"
+    assert rs["bypass_actors"] == []
+    assert rs["conditions"]["ref_name"] == {"include": ["~DEFAULT_BRANCH"], "exclude": []}
+
+
+def test_ruleset_protects_history() -> None:
+    assert {"deletion", "non_fast_forward", "required_linear_history"} <= rules_by_type().keys()
+
+
+def test_ruleset_requires_squash_pull_requests() -> None:
+    pr = rules_by_type()["pull_request"]
+    assert pr["allowed_merge_methods"] == ["squash"]
+    assert pr["required_approving_review_count"] == 0
+    assert pr["required_review_thread_resolution"] is True
+
+
+def test_ruleset_required_checks_match_ci_jobs() -> None:
+    checks = rules_by_type()["required_status_checks"]
+    required = checks["required_status_checks"]
+    assert {c["context"] for c in required} == ci_check_names()
+    assert all(c["integration_id"] == GITHUB_ACTIONS_APP_ID for c in required)
+    assert checks["strict_required_status_checks_policy"] is False
