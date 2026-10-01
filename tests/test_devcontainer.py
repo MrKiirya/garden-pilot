@@ -124,7 +124,7 @@ def test_run_args_are_engine_neutral() -> None:
 
 def _from_line() -> str:
     for line in DOCKERFILE.read_text(encoding="utf-8").splitlines():
-        if line.startswith("FROM "):
+        if line.startswith("FROM mcr.microsoft.com/devcontainers/python"):
             return line
     raise AssertionError("no FROM")
 
@@ -139,9 +139,8 @@ def test_base_image_matches_python_version() -> None:
 
 def test_uv_is_pinned() -> None:
     text = DOCKERFILE.read_text(encoding="utf-8")
-    match = re.search(r"COPY --from=ghcr\.io/astral-sh/uv:(\S+) /uv /uvx /bin/", text)
-    assert match
-    assert re.fullmatch(r"\d+\.\d+\.\d+|sha256:[0-9a-f]{64}", match.group(1)) or "@sha256:" in match.group(1)
+    assert re.search(r"^FROM ghcr\.io/astral-sh/uv:\d+\.\d+\.\d+@sha256:[0-9a-f]{64} AS uv$", text, re.M)
+    assert "COPY --from=uv /uv /uvx /bin/" in text
 
 
 def test_esphome_comes_only_from_uv_lock() -> None:
