@@ -1,0 +1,47 @@
+{
+  "name": "GardenPilot",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.venv-garden-pilot",
+    "UV_LINK_MODE": "copy",
+    "UV_PYTHON_DOWNLOADS": "never",
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  },
+  "remoteEnv": {
+    "PATH": "/home/vscode/.venv-garden-pilot/bin:${containerEnv:PATH}"
+  },
+  "mounts": [
+    "source=garden-pilot-cache,target=/home/vscode/.cache,type=volume",
+    "source=garden-pilot-platformio,target=/home/vscode/.platformio,type=volume",
+    "source=garden-pilot-claude-${devcontainerId},target=/home/vscode/.claude,type=volume",
+    "source=garden-pilot-vscode-extensions,target=/home/vscode/.vscode-server/extensions,type=volume"
+  ],
+  "runArgs": [
+    "--security-opt",
+    "label=disable",
+    "--device=${localEnv:GP_SERIAL_DEVICE:/dev/null}",
+    "--group-add=${localEnv:GP_SERIAL_GROUP:vscode}"
+  ],
+  "postCreateCommand": "script/setup",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ESPHome.esphome-vscode",
+        "redhat.vscode-yaml",
+        "ms-python.python"
+      ],
+      "settings": {
+        "files.associations": {
+          "**/secrets.yaml": "yaml",
+          "**/secrets.example.yaml": "yaml"
+        },
+        "python.defaultInterpreterPath": "/home/vscode/.venv-garden-pilot/bin/python",
+        "esphome.validator": "local"
+      }
+    }
+  }
+}
