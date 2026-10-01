@@ -40,6 +40,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `.devcontainer/` | Reference dev environment: shared `Dockerfile`, default config, opt-in `sdl/` config (host display). |
 | `design/` | Snapshot of the design system (rules, tokens, icons); the live design lives in claude.ai artifacts. |
 | `docs/SPEC.md` | Product spec, architecture, roadmap, open questions. |
+| `.github/` | CI (`workflows/ci.yml`, weekly `canary.yml`) and `dependabot.yml`. |
 | `tasks/` | Task specs and reviews (see `tasks/README.md`). |
 | `tests/` | pytest repo checks; `script/*` wraps all commands. |
 
@@ -97,9 +98,11 @@ introduced by roadmap tasks, not ad hoc.
 | All checks | `script/test` (pytest, includes `esphome config`) |
 | Fast checks only | `uv run pytest -m unit` |
 | Validate config by hand | `script/config` (uses `secrets.yaml`, or `secrets.example.yaml` if absent) |
-| Compile firmware | `uv run esphome compile garden-pilot.yaml` (needs a real `secrets.yaml`) |
+| Compile firmware | `script/compile` (real `secrets.yaml`, or `GP_SECRETS=example` to stage example secrets under `.esphome/example-build/`) |
+| Other ESPHome version | `GP_ESPHOME=pinned\|minimum\|latest\|YYYY.M.P` with `script/config` / `script/compile` |
 | SDL window smoke check | `script/sdl-smoke` (needs a display: SDL devcontainer config or a desktop host) |
 | Devcontainer from CLI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . script/test` (add `--docker-path podman` and `PODMAN_USERNS=keep-id` for Podman; `--config .devcontainer/sdl/devcontainer.json` for SDL) |
+| Reproduce CI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . sh -c 'GP_SECRETS=example GP_ESPHOME=minimum script/compile'` |
 | Flash / logs | `uv run esphome run garden-pilot.yaml` / `uv run esphome logs garden-pilot.yaml` |
 
 Always pass the config path explicitly; run from the repo root.
@@ -107,7 +110,8 @@ Always pass the config path explicitly; run from the repo root.
 ## Test levels
 - `unit` — pytest repo checks with no ESPHome toolchain: secrets template, public hygiene, YAML shape.
 - `config` — `esphome config` on the entry file with `secrets.example.yaml` (copied into a temp dir).
-- Later (roadmap): `compile` (ESP32 build in CI), C++ unit tests of the `garden_zones` core, `host` + SDL
+- `compile` — `script/compile`: ESP32 firmware build in CI with pinned + minimum ESPHome (the weekly canary builds the latest).
+- Later (roadmap): C++ unit tests of the `garden_zones` core, `host` + SDL
   screenshot checks, `aioesphomeapi` integration scenarios.
 
 ## ESPHome security baseline
@@ -149,9 +153,11 @@ examples (`192.168.x.x`, `[SSID]`).
 - Split a task branch into **several logical commits** so the PR reads commit by commit.
 - No local git pre-commit hooks; checks are enforced by `script/*` and CI.
 - Personal, machine-local instructions go to the git-ignored `CLAUDE.local.md`.
-- **Bumping ESPHome:** edit the pin in `pyproject.toml` and the version in `docs/SPEC.md` §6, run `uv lock`,
-  then verify with `script/setup`, `script/lint` and `script/test`; open a `chore(deps):` PR (light path). The weekly
-  canary (roadmap task 003) warns before a new release breaks us.
+- **Bumping ESPHome:** Dependabot opens the `chore(deps):` PR; it stays red (`test_spec_versions_match_sources`
+  fails) until `docs/SPEC.md` §6 shows the new pin, so push a `docs:` commit with that. Check that the minimum
+  still holds. Raising the minimum = edit `esphome-minimum` in `pyproject.toml` and SPEC §6 in one PR. A
+  `canary-failure` issue means the next bump needs a fix task first. Manual bump: edit the pin in `pyproject.toml`
+  and SPEC §6, run `uv lock`, then `script/setup`, `script/lint`, `script/test`.
 
 ## Language
 - Everything in the repo — YAML, code, comments, docs, task files, commit messages, PRs — is **English**.

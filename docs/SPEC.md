@@ -158,15 +158,16 @@ tests/
 ```
 
 ## 6. Compatibility
-- **Pinned (development):** ESPHome **2026.9.1** (`pyproject.toml`, exact pin).
-- **Minimum supported:** at least **2026.2.3** (sprinkler `millis()` fix, §3). The exact floor is set by CI in
-  roadmap task 003 (our LVGL options may need a newer release).
-- CI builds both the minimum and the pinned version; a weekly canary builds the latest stable ESPHome without
-  committing and warns before a release breaks us.
+- **Pinned (development):** ESPHome **2026.9.1** (`pyproject.toml`, exact pin; Dependabot proposes bumps).
+- **Minimum supported:** ESPHome **2026.6.3** (`[tool.garden-pilot] esphome-minimum` in `pyproject.toml`;
+  lowest release that passes `esphome config` and the CI compile; never below 2026.2.3, the sprinkler
+  `millis()` fix, §3). Releases 2026.6.0-2026.6.2 reject the display `dimensions` (mipi_spi "Invalid offsets").
+- CI compiles both on every PR, and a weekly canary builds the latest stable ESPHome and opens or closes the
+  `canary-failure` issue.
 
 ## 7. Testing without hardware
-1. `esphome config` for every module combination (CI).
-2. `esphome compile` for ESP32 (CI).
+1. `esphome config` for every module combination (CI job `checks` via `script/lint`; one entry file until stage 4).
+2. `esphome compile` for ESP32 (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary).
 3. Unit tests of the `garden_zones` core (GoogleTest or Catch2).
 4. **`host` platform:** firmware runs on Linux/macOS, the API works and HA can connect by IP; no GPIO, hence
    `hardware/sim.yaml`.
@@ -198,8 +199,11 @@ tests/
    `uv.lock`; ESP-IDF / PlatformIO caches in named volumes. USB passthrough on Linux only (env-driven); on
    Windows/macOS flash the first time from the host or web.esphome.io, then OTA by IP. `script/sdl-smoke` proves
    a window opens. Verified by the author on Linux with rootless Podman in VS Code (incl. USB flash and OTA); Windows not verified yet; Docker Engine and macOS untested.
-3. **CI** (task 003): lint, `config` matrix, `compile` (min + pinned ESPHome), canary, Dependabot, `master`
-   ruleset.
+3. **CI** (task 003): `.github/workflows/ci.yml` runs `checks` (yamllint, `esphome config`, pytest) and
+   `compile (pinned|minimum)` in the devcontainer on every PR and push to `master`; `canary.yml` builds the latest
+   ESPHome weekly and reports through one `canary-failure` issue; Dependabot covers actions, uv and devcontainer
+   images. The `master` ruleset is applied by hand (required checks `checks`, `compile (pinned)`,
+   `compile (minimum)`). The `config` matrix over module combinations waits for stage 4.
 4. **Modular layout:** `hardware/`, `packages/core/`, `bed.yaml` with `vars`, `hardware/sim.yaml`.
 5. **Lightweight end-user path:** ESPHome Device Builder (HA add-on or the `ghcr.io/esphome/esphome`
    container) + remote packages from this repo + first flash via web.esphome.io, then OTA; no devcontainer
@@ -230,9 +234,6 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 1. Which drafts from the canvas to keep?
 2. Bed layouts: fixed variants or generated YAML?
 
-**Repository**
-3. Exact minimum ESPHome version (task 003).
-
 ### 10.1 Decided (2026-10-01)
 - **Board:** board profiles, ready-made (T-Relay-S3-like) and self-assembled builds (§2.2).
 - **Zones:** configurable N zones in groups by water source; the author has 3 greenhouse beds (gravity barrel,
@@ -244,6 +245,7 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 - **Heating:** one cable per bed, any temperature sensor, frost protection first; safety documented as
   recommendations (§4).
 - **UI language:** chosen at build time (§8).
+- **Minimum ESPHome:** 2026.6.3, the technical floor found by scanning `esphome config` (task 003, §6).
 
 ## 11. Sources
 - ESPHome `esphome/components/sprinkler/` (`dev`, 2026-10-01) and its commit history.
@@ -254,6 +256,11 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 - https://docs.wokwi.com/wokwi-ci/github-actions
 - https://containers.dev/implementors/spec/
 - https://docs.astral.sh/uv/guides/integration/docker/
+- https://docs.astral.sh/uv/guides/integration/dependabot/
+- https://github.com/devcontainers/ci/blob/main/docs/github-action.md
+- https://github.com/actions/cache
+- https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+- https://github.com/dependabot/dependabot-core/issues/5103
 - https://code.claude.com/docs/en/devcontainer
 - https://github.com/microsoft/wslg/blob/main/samples/container/Containers.md
 - https://docs.podman.io/en/latest/markdown/podman-run.1.html
