@@ -76,7 +76,8 @@ Decision: no intermediate MVP on the stock `sprinkler`; we copy `esphome/compone
   To verify when planning: how a pump shared by zones in different controllers behaves.
 - **Safety:** a watchdog for maximum valve on-time (principle 4).
 - **Soil moisture (optional per zone):** any ESPHome sensor; if present and the soil is wet, the zone's run is
-  skipped.
+  skipped. Today (task 005) a bed can have such a sensor as a reporting-only `sensor` (`packages/greenhouse/
+  bed_soil.yaml`); skipping a run when wet comes with `garden_zones` (stage 6).
 - **History** of runs per zone (wanted; see the backlog in §9).
 
 It takes valves from YAML by id and exposes standard ESPHome entities (switch / number / sensor / text_sensor),
@@ -133,7 +134,7 @@ external_components:
 ## 5. Modularity
 - Many small YAML files, not one big file.
 - The entry file lists modules, most of them commented out: uncomment a line to get a bed, the lawn, heating.
-- A bed is one `packages/bed.yaml` included N times through `!include` with `vars` (id, name, pins). Inside:
+- A bed is one `packages/greenhouse/bed.yaml` (task 005) included N times through `!include` with `vars` (`bed`, `bed_name`, `relay`; an optional `bed_soil.yaml` adds a soil sensor). Inside:
   valve, sensors, heating thermostat, a `garden_zone:` entry for the component. For this the component uses
   `MULTI_CONF`, with a shared `garden_zones:` hub that owns the queue and groups.
   **Verify with a first test build** that lists from different packages merge as expected.
@@ -142,16 +143,27 @@ external_components:
 - Hardware is a separate package: `hardware/<board>.yaml` with real pins (also `esp32:` and the display/touch
   orientation and calibration) and `hardware/sim.yaml` for tests (template switches and sensors instead of GPIO).
   Exists after task 004: `hardware/esp32-s3-devkitc1-breadboard.yaml` and `packages/core/` (network, time).
-  Task 005 adds `bed.yaml` with `vars` and `hardware/sim.yaml`.
+  Task 005 adds (done):
+  - `packages/greenhouse/bed.yaml`, included once per bed with `vars` (`bed`, `bed_name`, `relay`); it adds one
+    valve to the stock `gh_sprinkler` with `!extend` (lists in an extended item are concatenated in package order,
+    so the order of the bed blocks is the valve order). At least 2 beds with the stock sprinkler (it forbids the
+    controller switches and the enable switch with one valve); a 1-bed greenhouse comes with `garden_zones`.
+  - optional `packages/greenhouse/bed_soil.yaml` per bed (reporting soil moisture sensor; vars `bed`, `bed_name`,
+    `adc_pin`, `cal_dry_v`, `cal_wet_v`); one ADC pin serves one probe.
+  - the board profile holds the raw relay drivers as internal switches `board_relay_N` (the same ids in every
+    profile) and names analog inputs `adc_N_pin` (ADC1 only with Wi-Fi); features never use GPIO numbers.
+  - `hardware/sim.yaml` (`host:` + template relays) validates irrigation + beds with `esphome config` only; it cannot
+    be combined with `core/network.yaml` (Wi-Fi), the display or the sensors until the network package is split
+    (stage 11).
 
 Target layout:
 ```
 garden-pilot.yaml          # entry file, modules commented out
-hardware/                  # esp32-<board>.yaml, sim.yaml
+hardware/                  # esp32-<board>.yaml (pins, relay drivers), sim.yaml
 packages/
   core/                    # network, time, api, ota
   lvgl/                    # pages
-  bed.yaml, lawn.yaml, heating.yaml, ...
+  greenhouse/bed.yaml, bed_soil.yaml, ...   # lawn.yaml, heating.yaml, ...
 components/garden_zones/   # __init__.py, *.h, *.cpp
 design/                    # tokens.json, README, icons
 docs/
@@ -169,11 +181,11 @@ tests/
 
 ## 7. Testing without hardware
 1. `esphome config` for every module combination: the matrix in `tests/test_config_matrix.py` (variants built from
-   the real entry file) runs in CI job `checks` via `script/test`; more variants come with task 005.
+   the real entry file) runs in CI job `checks` via `script/test`; 2 beds, a bed with its own soil sensor and the sim board (config only) were added by task 005.
 2. `esphome compile` for ESP32 (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary).
 3. Unit tests of the `garden_zones` core (GoogleTest or Catch2).
 4. **`host` platform:** firmware runs on Linux/macOS, the API works and HA can connect by IP; no GPIO, hence
-   `hardware/sim.yaml`.
+   `hardware/sim.yaml` (config-only until stage 11; see §5).
 5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch; in CI `headless: true` and
    BMP screenshots compared with references.
 6. Integration scenarios through `aioesphomeapi` against the host build.
@@ -208,7 +220,8 @@ tests/
    images. The `master` ruleset lives in `.github/rulesets/master.json` (required checks `checks`,
    `compile (pinned)`, `compile (minimum)`; squash-only PRs) and is applied by a repo admin with `gh api`. The `config` matrix over module combinations arrived with task 004 (`tests/test_config_matrix.py`).
 4. **Modular layout**, two tasks. Task 004: `hardware/` board profile, `packages/core/`, secrets as entry-file
-   substitutions, config matrix. Task 005: `bed.yaml` with `vars`, `hardware/sim.yaml`, more matrix rows.
+   substitutions, config matrix. Task 005 (done): `bed.yaml` with `vars`, optional `bed_soil.yaml`, board relays, `hardware/sim.yaml`,
+   more matrix rows. Follow-ups: page/status poller for other bed counts (stage 8), host build of the sim (stage 11).
 5. **Lightweight end-user path:** ESPHome Device Builder (HA add-on or the `ghcr.io/esphome/esphome`
    container) + remote packages from this repo + first flash via web.esphome.io, then OTA; no devcontainer
    needed. Depends on stage 4.

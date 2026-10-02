@@ -1,35 +1,9 @@
-# Bed N uses board relay N (relay_N_pin from the hardware profile).
-# Three gravity-fed bed zones from a shared barrel — no master/pump switch (self-drain barrel line).
+# Greenhouse irrigation controller: the stock `sprinkler` entry gh_sprinkler (main switch, auto advance).
+# Gravity-fed bed zones from a shared barrel, no master/pump switch (self-drain barrel line).
+# The valves come from packages/greenhouse/bed.yaml (one include per bed, !extend gh_sprinkler; include this file
+# first). The raw relay drivers (board_relay_N) live in the board profile under hardware/.
 # Do not call lvgl.* from run_duration_number on_value — restore/HA can fire outside LVGL-safe context and crash.
 # Greenhouse page shows run durations as text only (no LVGL spinbox ↔ number sync).
-
-switch:
-  - platform: gpio
-    id: gh_valve_zone1_sw
-    internal: true
-    pin:
-      number: ${relay_1_pin}
-      mode:
-        output: true
-    restore_mode: RESTORE_DEFAULT_OFF
-
-  - platform: gpio
-    id: gh_valve_zone2_sw
-    internal: true
-    pin:
-      number: ${relay_2_pin}
-      mode:
-        output: true
-    restore_mode: RESTORE_DEFAULT_OFF
-
-  - platform: gpio
-    id: gh_valve_zone3_sw
-    internal: true
-    pin:
-      number: ${relay_3_pin}
-      mode:
-        output: true
-    restore_mode: RESTORE_DEFAULT_OFF
 
 sprinkler:
   - id: gh_sprinkler
@@ -48,46 +22,3 @@ sprinkler:
             tag: gh_sprinkler_main
             format: "Greenhouse irrigation main: OFF"
     auto_advance_switch: "Greenhouse auto advance"
-    valves:
-      - valve_switch: "Greenhouse bed 1"
-        enable_switch: "Greenhouse bed 1 enable"
-        run_duration_number:
-          id: gh_bed1_run_duration
-          name: "Greenhouse bed 1 run duration"
-          initial_value: 5
-          min_value: 1
-          max_value: 120
-          step: 1
-          unit_of_measurement: "min"
-          restore_value: true
-          icon: mdi:timer-outline
-          mode: BOX
-        valve_switch_id: gh_valve_zone1_sw
-      - valve_switch: "Greenhouse bed 2"
-        enable_switch: "Greenhouse bed 2 enable"
-        run_duration_number:
-          id: gh_bed2_run_duration
-          name: "Greenhouse bed 2 run duration"
-          initial_value: 5
-          min_value: 1
-          max_value: 120
-          step: 1
-          unit_of_measurement: "min"
-          restore_value: true
-          icon: mdi:timer-outline
-          mode: BOX
-        valve_switch_id: gh_valve_zone2_sw
-      - valve_switch: "Greenhouse bed 3"
-        enable_switch: "Greenhouse bed 3 enable"
-        run_duration_number:
-          id: gh_bed3_run_duration
-          name: "Greenhouse bed 3 run duration"
-          initial_value: 5
-          min_value: 1
-          max_value: 120
-          step: 1
-          unit_of_measurement: "min"
-          restore_value: true
-          icon: mdi:timer-outline
-          mode: BOX
-        valve_switch_id: gh_valve_zone3_sw

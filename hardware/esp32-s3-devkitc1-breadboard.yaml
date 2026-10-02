@@ -4,12 +4,14 @@
 #
 # This is the ONLY place with GPIO numbers and with settings that depend on the exact screen and how it is
 # mounted (orientation, touch calibration). Packages refer to them as ${...} substitutions.
-# Pin names describe the board function (relay_1_pin, soil_ao_pin, ...); which relay a bed uses is decided
-# in the feature module, not here.
+# Pin names describe the board function (relay_1_pin, adc_1_pin, ...); which relay a bed uses is decided
+# in the feature module, not here. The raw relay drivers live here too, as internal switches board_relay_1..N:
+# every board profile defines the same board_relay_N ids (features refer to them, never to pins). Analog
+# inputs are adc_N_pin, ADC1 pins only while Wi-Fi is active (ESP32-S3: GPIO1..GPIO10).
 #
-# To add a board: copy this file, keep every *_pin key (a test checks that each profile defines all pins the
-# packages use), change the values and the esp32: block, and !include the new file as the `hardware` package
-# in garden-pilot.yaml. Pick exactly one profile.
+# To add a board: copy this file, keep every *_pin key and every board_relay_N switch (a test checks that each
+# profile defines all pins the packages use and the same relays), change the values and the esp32: block, and
+# !include the new file as the `hardware` package in garden-pilot.yaml. Pick exactly one profile.
 #
 # Wiring notes:
 # - The shared SPI MISO uses GPIO8 (not the strapping GPIO3); wire display and touch MISO to it.
@@ -19,6 +21,35 @@ esp32:
   board: esp32-s3-devkitc1-n16r8
   framework:
     type: esp-idf
+
+# Raw relay drivers: internal, OFF on boot.
+switch:
+  - platform: gpio
+    id: board_relay_1
+    internal: true
+    pin:
+      number: ${relay_1_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_2
+    internal: true
+    pin:
+      number: ${relay_2_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_3
+    internal: true
+    pin:
+      number: ${relay_3_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
 
 substitutions:
   # Shared SPI bus (display + touch).
@@ -55,6 +86,6 @@ substitutions:
   # Air sensor, interim single-wire DHT11 (replace with an I2C sensor later).
   air_dht_pin: GPIO4
 
-  # Soil moisture module: AO = analog, DO = comparator output.
-  soil_ao_pin: GPIO6
+  # Soil moisture module: AO = analog (ADC1), DO = comparator output.
+  adc_1_pin: GPIO6
   soil_do_pin: GPIO7

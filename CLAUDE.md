@@ -22,15 +22,18 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
 7. **Tests first** where code is testable (Python checks now, C++ core of `garden_zones` later).
 
 These principles apply to **new and changed code**. Existing greenhouse packages predate them (the greenhouse
-page calls `sprinkler.*` directly, bed N is hard-wired to relay N in `greenhouse/irrigation.yaml`, valves have no on-time
-guard beyond `run_duration_number`); they migrate in roadmap stages 4 and 7. Don't "fix" legacy code outside a
+page calls `sprinkler.*` directly, valves have no on-time guard beyond `run_duration_number`); they migrate in
+roadmap stages 6-8. Don't "fix" legacy code outside a
 task's scope, and don't block a review on it — list it as a follow-up.
 
 ## Repository layout
 | Path | Role |
 |---|---|
 | `garden-pilot.yaml` | Device entry point only: secret substitutions, `esphome:`, `logger:`, ordered `packages:`. |
-| `hardware/<board>.yaml` | Board profile: `esp32:` block and every GPIO pin plus display/touch orientation and calibration, as substitutions. |
+| `hardware/<board>.yaml` | Board profile: `esp32:` block, every GPIO pin (relays `relay_N_pin`, analog `adc_N_pin`, ...) plus display/touch orientation and calibration as substitutions, and the raw relay drivers as internal switches `board_relay_N`. |
+| `hardware/sim.yaml` | Config-only profile (`host:` + template relays) for irrigation + beds; no Wi-Fi, display or sensors. |
+| `packages/greenhouse/bed.yaml` | One bed per `!include` with `vars` (`bed`, `bed_name`, `relay`): adds a valve to `gh_sprinkler` via `!extend`. |
+| `packages/greenhouse/bed_soil.yaml` | Optional per-bed soil moisture sensor (reports only), second include with `vars`. |
 | `packages/core/network.yaml` | `api` (encryption), `ota`, `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`; secrets arrive as substitutions. |
 | `packages/core/time.yaml` | `time: homeassistant` (`ha_time`), no triggers. |
 | `packages/display_touch.yaml` | SPI, `mipi_spi` ILI9341 display, XPT2046 touch, `touch_ui` / `touch_dot_overlay` scripts. |
@@ -46,7 +49,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `tasks/` | Task specs and reviews (see `tasks/README.md`). |
 | `tests/` | pytest repo checks; `script/*` wraps all commands. |
 
-The target layout (`bed.yaml`, `hardware/sim.yaml`, `components/garden_zones/`) is in SPEC §5; it is
+The target layout (`components/garden_zones/`, `lawn.yaml`, `heating.yaml`, ...) is in SPEC §5; it is
 introduced by roadmap tasks, not ad hoc.
 
 ### `packages:` order in `garden-pilot.yaml` (do not reorder lightly)
@@ -54,13 +57,16 @@ introduced by roadmap tasks, not ad hoc.
 2. `display_touch` — creates `tft_spi`, `tft_display`, `touch` (required by LVGL).
 3. `lvgl_base` — LVGL wiring to those ids.
 4. `lvgl_page_home` — first page = boot screen; other `lvgl_page_*` after it.
-5. `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) →
-   `gh_lvgl_page` → `gh_sensors_air` → `gh_sensors_soil` → `gh_sprinkler_lvgl`.
+5. `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) → `gh_bed_N` (+ optional
+   `gh_bed_N_soil` after its bed) in valve order, at least 2 beds → `gh_lvgl_page` → `gh_sensors_air` →
+   `gh_sensors_soil` → `gh_sprinkler_lvgl`.
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 ### ESPHome YAML conventions
 - **Pins only in `hardware/`, secrets only as entry-file substitutions** (`substitutions: x: !secret x`);
   packages use `${x}`. `tests/test_layout.py` enforces both.
+- **Add a bed** = one `!include` block with `vars` in the entry file; features reference relays as `board_relay_N`
+  and analog inputs as `${adc_N_pin}`, never GPIO numbers. With the stock sprinkler at least 2 beds are needed.
 - **Board:** match the `esp32:` board declared in the `hardware/` profile until a migration task changes it.
 - **Secrets files:** `secrets.yaml` / `secrets.example.yaml` are substitution files only (no `esphome:` block);
   `.vscode/settings.json` maps them to plain YAML so the ESPHome extension doesn't validate them as devices.

@@ -1,6 +1,6 @@
 # 004 — Modular layout, part 1: hardware profile, core packages, config matrix
 
-Status: implemented (awaiting review)
+Status: done
 Roadmap: SPEC §9 item 4 "Modular layout" (part 1 of 2; part 2 is the follow-up task listed under "Out of scope")
 Spec sections: SPEC §2.1, §2.2, §4, §5, §6, §7 (item 1), §8 (last bullet), §10.1; CLAUDE.md core principles 2, 3, 4, 6
 Hardware check: yes. The author flashes the breadboard build (ESP32-S3 DevKitC-1 N16R8 + ILI9341/XPT2046 + relay
@@ -230,10 +230,10 @@ How the matrix builds variants:
 - [x] `packages/network.yaml` and `packages/greenhouse/substitutions.yaml` no longer exist.
 - [x] Normalized `esphome config` diff, master vs branch (procedure in Context) → no differences beyond the
       rendering of secret fields. Helper and output pasted into Implementation notes.
-- [ ] `tests/test_ci.py` unchanged and green (done); `.github/workflows/ci.yml` and `.github/rulesets/master.json`
-      unchanged (done). CI on the PR is green (pending, PR not opened) for `checks`, `compile (pinned)` and `compile (minimum)`.
+- [x] `tests/test_ci.py` unchanged and green (done); `.github/workflows/ci.yml` and `.github/rulesets/master.json`
+      unchanged (done). CI on the PR is green (PR #7 merged with the required checks green) for `checks`, `compile (pinned)` and `compile (minimum)`.
 - [x] `docs/SPEC.md`, `CLAUDE.md`, `README.md` and `README.ru.md` updated as listed in Files.
-- [ ] **Hardware (author, not CI):** after flashing the branch firmware (USB or OTA, `uv run esphome run
+- [x] **Hardware (author, not CI):** after flashing the branch firmware (USB or OTA, `uv run esphome run
       garden-pilot.yaml`) on the breadboard build:
   - the device boots to the Home screen, and the clock appears after HA time sync and keeps updating;
   - touch works and the nav reaches Greenhouse, Lawn and Touch test and returns home;
@@ -247,6 +247,8 @@ How the matrix builds variants:
   - after a power cycle all valves are OFF.
 
   The implementer states in Implementation notes that none of this was verified on a device.
+  Verified by the author on 2026-10-02: OTA flash, screen and clock, touch and navigation, bed relays, sensors, HA
+  entities.
 
 ## Out of scope
 - **Part 2 (next task, proposed `005-modular-beds-sim`):**

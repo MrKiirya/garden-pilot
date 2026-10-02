@@ -92,7 +92,7 @@ Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/comp
 
 ## Repository
 - `garden-pilot.yaml` — device entry file: a list of packages.
-- `hardware/` — board profile (pins); `packages/` — core (network, time), display and touch, LVGL pages, greenhouse (irrigation, sensors).
+- `hardware/` — board profile (pins, relay drivers) and `sim.yaml` (config checks without a board); `packages/` — core (network, time), display and touch, LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; at least 2 beds until the own irrigation engine (roadmap stage 6).
 - `design/` — design system: rules, colour/type tokens, icons.
 - `docs/SPEC.md` — specification, architecture, roadmap.
 - `CLAUDE.md`, `.claude/`, `tasks/` — how the project is developed with Claude Code agents.
