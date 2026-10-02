@@ -1,0 +1,7 @@
+# Wireless firmware updates (device only; the PC emulator does not include it). No secrets in this file: the entry
+# file assigns the substitution below from its own secrets.
+#   ota_password
+
+ota:
+  - platform: esphome
+    password: ${ota_password}

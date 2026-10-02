@@ -1,5 +1,6 @@
 # ESPHome: device entry point. One line per module; pins live only in hardware/.
 # Secrets are assigned here (never inside packages) so packages can be used as remote packages.
+# The same packages run on a PC (host + SDL window) from garden-pilot-sim.yaml: never flash that one.
 
 substitutions:
   api_encryption_key: !secret api_encryption_key
@@ -25,6 +26,8 @@ packages:
   hardware: !include hardware/esp32-s3-devkitc1-breadboard.yaml
 
   # Core: connectivity and clock. Need nothing else (no display, no LVGL).
+  core_api: !include packages/core/api.yaml
+  core_ota: !include packages/core/ota.yaml
   core_network: !include packages/core/network.yaml
   core_time: !include packages/core/time.yaml
 
@@ -39,9 +42,9 @@ packages:
   lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
 
   # Greenhouse (all under packages/greenhouse/ — include each fragment explicitly).
-  # Needs display_touch + the LVGL pages above until stage 7; irrigation must come before its page.
+  # Needs display_touch + the LVGL pages above until stage 8; irrigation must come before its page.
   # Irrigation controller first, then one block per bed (at least 2 with the stock sprinkler). The order of the
-  # bed blocks is the valve order; the greenhouse page expects exactly beds 1-3 until stage 8.
+  # bed blocks is the valve order; the greenhouse page expects exactly beds 1-3 until stage 9.
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
   gh_bed_1: !include
     file: packages/greenhouse/bed.yaml

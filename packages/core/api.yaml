@@ -1,0 +1,8 @@
+# Home Assistant native API with noise encryption. Works without Wi-Fi (the PC emulator uses it on the host's network).
+# No secrets in this file: the entry file assigns the substitution below from its own secrets (no default on purpose,
+# so a missing value fails validation).
+#   api_encryption_key
+
+api:
+  encryption:
+    key: ${api_encryption_key}

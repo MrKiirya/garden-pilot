@@ -15,7 +15,7 @@
 # - The order of the bed blocks in the entry file is the valve order (valve_number 0, 1, 2, ... used by the
 #   greenhouse page).
 # - At least 2 beds with the stock sprinkler: it forbids the controller switches and the per-bed enable switch with
-#   a single valve. A 1-bed greenhouse comes with the own irrigation engine (roadmap stage 6).
+#   a single valve. A 1-bed greenhouse comes with the own irrigation engine (roadmap stage 7).
 # - Optional soil moisture sensor for the bed: packages/greenhouse/bed_soil.yaml (separate include, nothing here).
 # - Do not call lvgl.* from run_duration_number on_value (restore/HA can fire outside an LVGL-safe context).
 

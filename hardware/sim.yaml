@@ -1,11 +1,13 @@
-# Board profile: simulation, for `esphome config` only (no firmware is built or flashed from it).
-# Replaces the raw relay drivers with template switches so the irrigation part validates without a real board.
+# Board profile: simulation. Used by the PC emulator (garden-pilot-sim.yaml, `script/sim`) and by the sim rows of the
+# config matrix. Replaces the raw relay drivers with template switches; each state change is logged
+# ("SIM relay_N ON/OFF"), so relay state is visible in the emulator log (an on-screen board view comes in task 007).
 #
-# Supported packages: gh_irrigation and the gh_bed_N blocks (packages/greenhouse/irrigation.yaml, bed.yaml).
+# Works with: gh_irrigation, the gh_bed_N blocks, core/api.yaml, core/time_host.yaml, display_sdl.yaml, the LVGL
+# pages and the greenhouse page / status poller (see garden-pilot-sim.yaml).
 # NOT supported, because the host platform has no such components:
-# - packages/core/network.yaml (wifi, captive_portal) until the network package is split (roadmap stage 11);
-# - packages/display_touch.yaml and everything LVGL (mipi_spi display, XPT2046 touch);
-# - the greenhouse sensors (DHT, ADC), packages/greenhouse/bed_soil.yaml (ADC) and the greenhouse page.
+# - packages/core/network.yaml (wifi, captive_portal) and core/ota.yaml: the emulator has no Wi-Fi or OTA;
+# - packages/display_touch.yaml (mipi_spi display, XPT2046 touch): use display_sdl.yaml;
+# - the greenhouse sensors (DHT, ADC) and packages/greenhouse/bed_soil.yaml (ADC): simulated sensors come in task 007.
 # Same board_relay_N ids as every other profile; no *_pin substitutions.
 
 host:
@@ -17,15 +19,27 @@ switch:
     internal: true
     optimistic: true
     restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - logger.log: {format: "SIM relay_1 ON", level: INFO}
+    on_turn_off:
+      - logger.log: {format: "SIM relay_1 OFF", level: INFO}
 
   - platform: template
     id: board_relay_2
     internal: true
     optimistic: true
     restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - logger.log: {format: "SIM relay_2 ON", level: INFO}
+    on_turn_off:
+      - logger.log: {format: "SIM relay_2 OFF", level: INFO}
 
   - platform: template
     id: board_relay_3
     internal: true
     optimistic: true
     restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - logger.log: {format: "SIM relay_3 ON", level: INFO}
+    on_turn_off:
+      - logger.log: {format: "SIM relay_3 OFF", level: INFO}

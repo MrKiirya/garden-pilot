@@ -1,5 +1,5 @@
 # Optional soil moisture sensor of one bed. It only reports; skipping a run when the soil is wet is the own
-# irrigation engine (roadmap stage 6). Include it after the bed's own block, once per sensor, from the entry file
+# irrigation engine (roadmap stage 7). Include it after the bed's own block, once per sensor, from the entry file
 # (vars are all required, literal strings):
 #
 #   gh_bed_1_soil: !include

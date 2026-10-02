@@ -1,0 +1,28 @@
+# PC emulator only: SDL window instead of the ILI9341 and the mouse instead of XPT2046 touch.
+# Same ids as packages/display_touch.yaml (tft_display, touch, scripts touch_ui, touch_dot_overlay): keep in sync.
+# Needs SDL2 dev files (sdl2-config) even for `esphome config`. No pins: the host platform has no GPIO.
+# The 320x240 size is the device display (design/tokens.json, size tokens screen-w / screen-h).
+
+display:
+  - platform: sdl
+    id: tft_display
+    dimensions:
+      width: 320
+      height: 240
+
+touchscreen:
+  - platform: sdl
+    id: touch
+    on_touch:
+      then:
+        - script.execute: touch_ui
+
+script:
+  - id: touch_ui
+    then:
+      - script.execute: touch_dot_overlay
+
+  # Default no-op when touch_dot_test package is not included.
+  - id: touch_dot_overlay
+    then:
+      - delay: 0ms
