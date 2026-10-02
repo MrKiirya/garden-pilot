@@ -23,20 +23,23 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
 
 These principles apply to **new and changed code**. Existing greenhouse packages predate them (the greenhouse
 page calls `sprinkler.*` directly, valves have no on-time guard beyond `run_duration_number`); they migrate in
-roadmap stages 6-8. Don't "fix" legacy code outside a
+roadmap stages 7-9. Don't "fix" legacy code outside a
 task's scope, and don't block a review on it — list it as a follow-up.
 
 ## Repository layout
 | Path | Role |
 |---|---|
 | `garden-pilot.yaml` | Device entry point only: secret substitutions, `esphome:`, `logger:`, ordered `packages:`. |
+| `garden-pilot-sim.yaml` | PC emulator entry point (ESPHome `host` + SDL window), same packages as the device; run with `script/sim`, never flash. |
 | `hardware/<board>.yaml` | Board profile: `esp32:` block, every GPIO pin (relays `relay_N_pin`, analog `adc_N_pin`, ...) plus display/touch orientation and calibration as substitutions, and the raw relay drivers as internal switches `board_relay_N`. |
-| `hardware/sim.yaml` | Config-only profile (`host:` + template relays) for irrigation + beds; no Wi-Fi, display or sensors. |
+| `hardware/sim.yaml` | Emulator profile (`host:` + template relays that log state changes) for irrigation + beds; no Wi-Fi, OTA, display or sensors. |
 | `packages/greenhouse/bed.yaml` | One bed per `!include` with `vars` (`bed`, `bed_name`, `relay`): adds a valve to `gh_sprinkler` via `!extend`. |
 | `packages/greenhouse/bed_soil.yaml` | Optional per-bed soil moisture sensor (reports only), second include with `vars`. |
-| `packages/core/network.yaml` | `api` (encryption), `ota`, `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`; secrets arrive as substitutions. |
-| `packages/core/time.yaml` | `time: homeassistant` (`ha_time`), no triggers. |
+| `packages/core/api.yaml`, `ota.yaml` | `api` (encryption) and `ota`; secrets arrive as substitutions. |
+| `packages/core/network.yaml` | `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`; device only. |
+| `packages/core/time.yaml`, `time_host.yaml` | `time: homeassistant` (device) or `time: host` (emulator), both id `ha_time`, no triggers. |
 | `packages/display_touch.yaml` | SPI, `mipi_spi` ILI9341 display, XPT2046 touch, `touch_ui` / `touch_dot_overlay` scripts. |
+| `packages/display_sdl.yaml` | Emulator only: SDL display + mouse touch with the same ids and scripts as `display_touch.yaml` (keep in sync). |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`. |
 | `packages/lvgl/page_*.yaml` | One LVGL page per file under `lvgl: pages:`. |
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`sprinkler`), LVGL page. |
@@ -53,7 +56,7 @@ The target layout (`components/garden_zones/`, `lawn.yaml`, `heating.yaml`, ...)
 introduced by roadmap tasks, not ad hoc.
 
 ### `packages:` order in `garden-pilot.yaml` (do not reorder lightly)
-1. `hardware` (board profile; exactly one), then `core_network`, `core_time` — connectivity first.
+1. `hardware` (board profile; exactly one), then `core_api`, `core_ota`, `core_network`, `core_time` — connectivity first.
 2. `display_touch` — creates `tft_spi`, `tft_display`, `touch` (required by LVGL).
 3. `lvgl_base` — LVGL wiring to those ids.
 4. `lvgl_page_home` — first page = boot screen; other `lvgl_page_*` after it.
@@ -61,6 +64,9 @@ introduced by roadmap tasks, not ad hoc.
    `gh_bed_N_soil` after its bed) in valve order, at least 2 beds → `gh_lvgl_page` → `gh_sensors_air` →
    `gh_sensors_soil` → `gh_sprinkler_lvgl`.
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
+
+`garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `display_sdl` and
+without `core_ota`, `core_network`, the greenhouse sensors and bed soil sensors.
 
 ### ESPHome YAML conventions
 - **Pins only in `hardware/`, secrets only as entry-file substitutions** (`substitutions: x: !secret x`);
@@ -90,6 +96,9 @@ introduced by roadmap tasks, not ad hoc.
   an `interval` instead (see `packages/greenhouse/sprinkler_lvgl_status.yaml`).
 - Package merge: substitutions in the entry file win; dicts merge by key; component lists merge by `id`.
   Prefer small includes over deep `!extend` / `!remove` chains.
+- The sim entry file needs `sdl2-config` (SDL2 dev files) even for `esphome config`; `web_server` is not available on
+  the `host` platform, and `on_time_sync` does not fire on `host` (poll the clock from an `interval`).
+- Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
 - `sprinkler` limitations (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
   queue, queued zones run even when disabled): SPEC §3.
 
@@ -107,9 +116,10 @@ introduced by roadmap tasks, not ad hoc.
 | Lint (yamllint + `esphome config`) | `script/lint` |
 | All checks | `script/test` (pytest, includes `esphome config`) |
 | Fast checks only | `uv run pytest -m unit` |
-| Validate config by hand | `script/config` (uses `secrets.yaml`, or `secrets.example.yaml` if absent) |
+| Validate config by hand | `script/config` (uses `secrets.yaml`, or `secrets.example.yaml` if absent). For `garden-pilot-sim.yaml` a real `secrets.yaml` without `sim_api_encryption_key` fails with "Secret not defined": use `GP_SECRETS=example` (same for `script/compile`; `script/sim` always does) |
 | Compile firmware | `script/compile` (real `secrets.yaml`, or `GP_SECRETS=example` to stage example secrets under `.esphome/example-build/`) |
 | Other ESPHome version | `GP_ESPHOME=pinned\|minimum\|latest\|YYYY.M.P` with `script/config` / `script/compile` |
+| PC emulator (host + SDL window) | `script/sim` (needs a display; always builds with `secrets.example.yaml`; Ctrl+C stops) |
 | SDL window smoke check | `script/sdl-smoke` (needs a display: SDL devcontainer config or a desktop host) |
 | Devcontainer from CLI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . script/test` (add `--docker-path podman` and `PODMAN_USERNS=keep-id` for Podman; `--config .devcontainer/sdl/devcontainer.json` for SDL) |
 | Reproduce CI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . sh -c 'GP_SECRETS=example GP_ESPHOME=minimum script/compile'` |
@@ -121,6 +131,7 @@ Always pass the config path explicitly; run from the repo root.
 - `unit` — pytest repo checks with no ESPHome toolchain: secrets template, public hygiene, YAML shape.
 - `config` — `esphome config` on the entry file with `secrets.example.yaml` (copied into a temp dir).
 - `compile` — `script/compile`: ESP32 firmware build in CI with pinned + minimum ESPHome (the weekly canary builds the latest).
+- The emulator entry file is checked by `esphome config` rows (need `sdl2-config`; skipped without it unless `GP_REQUIRE_SDL=1`, set in CI) and compiled in the CI `compile` jobs.
 - Later (roadmap): C++ unit tests of the `garden_zones` core, `host` + SDL
   screenshot checks, `aioesphomeapi` integration scenarios.
 

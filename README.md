@@ -79,6 +79,33 @@ are not reinstalled on every rebuild. If an extension breaks, remove the contain
 
 A lightweight path for end users (ESPHome Device Builder + remote packages, no devcontainer) is planned.
 
+## Run on a PC (emulator)
+`script/sim` builds and starts `garden-pilot-sim.yaml`: the same LVGL screens and irrigation packages as the device,
+on the ESPHome `host` platform, in a 320x240 SDL window with the mouse as the touchscreen. No hardware is needed
+and it **works fully without Home Assistant**: the clock comes from the PC, and RUN/STOP on a bed switches a
+simulated relay (every change is logged as `SIM relay_N ON/OFF`) and updates the screen. Sensor values stay at their
+placeholders for now; simulated sensors, an on-screen "SIM board" page and `script/sim-ctl` come in task 007.
+
+- **Where:** in the SDL devcontainer config (above; on rootless Podman, X11 host) or on a desktop host with SDL2
+  dev files (`sdl2-config` must exist, even for `esphome config`). Then run `script/sim`; Ctrl+C stops it.
+- **Safe to run:** it always builds with `secrets.example.yaml`, never your real `secrets.yaml`. Its API key,
+  `sim_api_encryption_key`, is a public dummy: anyone who can reach port 6053 can toggle the simulated relays
+  (nothing physical). Never flash this build.
+- **Home Assistant (optional):** add the ESPHome integration by the IP of this PC (for example `192.168.x.x`),
+  port 6053, key `sim_api_encryption_key` from `secrets.example.yaml`. It appears as a separate device,
+  "GardenPilot Sim" (ids get the `gardenpilot_sim_` prefix); there is no mDNS discovery on the host platform. The SDL
+  devcontainer publishes port 6053 to the PC's loopback only, which is enough for HA on the same PC. For HA on
+  another machine set `GP_SIM_API_PUBLISH=6053` on the host before **Rebuild Container** and allow TCP 6053 in the
+  host firewall (firewalld on Fedora and Bazzite). Docker on Linux can use `--network=host` instead.
+- **Checking the sim config by hand:** `script/config garden-pilot-sim.yaml` and `script/compile garden-pilot-sim.yaml`
+  use your real `secrets.yaml` when it exists, which lacks the sim key and fails with "Secret
+  'sim_api_encryption_key' not defined". Use `GP_SECRETS=example` or add the public dummy key from
+  `secrets.example.yaml` to `secrets.yaml` (`script/sim` always uses the example file).
+- If port 6053 is already in use (another emulator or an ESPHome device bridge on this PC), stop that program first.
+- Run durations and other preferences are kept in `.esphome/sim-prefs/`. If the window does not appear, check the
+  X11 access (`xhost`, above); the runner uses software rendering (`SDL_RENDER_DRIVER=software`) so a container
+  without `/dev/dri` does not hang.
+
 ## CI
 Every pull request and every push to `master` runs, inside the devcontainer image: `script/lint` and `script/test`
 (job `checks`), and a real ESP32 firmware compile with the pinned ESPHome and with the lowest supported one
@@ -91,8 +118,8 @@ Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/comp
 `GP_ESPHOME=minimum GP_SECRETS=example script/compile` for the lowest supported ESPHome.
 
 ## Repository
-- `garden-pilot.yaml` — device entry file: a list of packages.
-- `hardware/` — board profile (pins, relay drivers) and `sim.yaml` (config checks without a board); `packages/` — core (network, time), display and touch, LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; at least 2 beds until the own irrigation engine (roadmap stage 6).
+- `garden-pilot.yaml` — device entry file: a list of packages. `garden-pilot-sim.yaml` — the same packages for the PC emulator.
+- `hardware/` — board profile (pins, relay drivers) and `sim.yaml` (PC emulator and config checks without a board); `packages/` — core (API, OTA, network, time), display and touch (device or SDL window), LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; at least 2 beds until the own irrigation engine (roadmap stage 7).
 - `design/` — design system: rules, colour/type tokens, icons.
 - `docs/SPEC.md` — specification, architecture, roadmap.
 - `CLAUDE.md`, `.claude/`, `tasks/` — how the project is developed with Claude Code agents.
