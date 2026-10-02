@@ -1,0 +1,92 @@
+# Boot / connecting screen (draft D17): the first page of the device. It is shown at power-up while Wi-Fi connects and
+# switches to Home as soon as `gp_boot_net_ready` is set (packages/lvgl/boot_wifi.yaml, device only), or after
+# `boot_offline_timeout` ("offline mode"). A spinner replaces the draft's progress bar: there is no real progress.
+# SAFETY: nothing in this file touches an actuator; relays and valves stay OFF (board profile defaults) the whole time.
+# Needs lvgl_page_home (home_page) and core_diagnostics (gp_esphome_version). Tokens only; ASCII only.
+# The emulator has no Wi-Fi: it always takes the timeout path (garden-pilot-sim.yaml sets 3 s).
+
+substitutions:
+  boot_offline_timeout: 30s
+
+globals:
+  - id: gp_boot_net_ready
+    type: bool
+    initial_value: "false"
+    restore_value: false
+  - id: gp_boot_done
+    type: bool
+    initial_value: "false"
+    restore_value: false
+
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - script.execute: gp_boot_sequence
+
+script:
+  - id: gp_boot_sequence
+    mode: single
+    then:
+      - lvgl.label.update:
+          id: boot_version_label
+          text: !lambda |-
+            if (!id(gp_esphome_version).has_state()) return std::string("ESPHome --");
+            return "ESPHome " + id(gp_esphome_version).state;
+      - wait_until:
+          condition:
+            lambda: "return id(gp_boot_net_ready);"
+          timeout: ${boot_offline_timeout}
+      - globals.set:
+          id: gp_boot_done
+          value: "true"
+      - lvgl.page.show: home_page
+
+lvgl:
+  pages:
+    - id: boot_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
+      widgets:
+        - label:
+            align: TOP_MID
+            y: 84
+            text: "GardenPilot"
+            text_font: montserrat_14
+            text_color: 0x78dc77
+        - label:
+            id: boot_status_label
+            align: TOP_MID
+            y: 108
+            text: "Connecting to Wi-Fi..."
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - spinner:
+            x: 144
+            y: 124
+            width: 32
+            height: 32
+            spin_time: 1500ms
+            arc_length: 70deg
+            arc_color: 0x353534
+            arc_width: 4
+            indicator:
+              arc_color: 0x4caf50
+              arc_width: 4
+        - label:
+            align: TOP_MID
+            y: 162
+            text: "Valves closed - offline mode in ${boot_offline_timeout}"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: boot_version_label
+            x: 8
+            y: 224
+            text: "ESPHome --"
+            text_font: montserrat_8
+            text_color: 0xbecab9

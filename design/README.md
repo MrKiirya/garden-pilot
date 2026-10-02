@@ -35,14 +35,15 @@ GardenPilot is the on-device UI for a greenhouse and lawn irrigation controller:
 
 ## Type
 
-One family, Montserrat (LVGL's built-in bitmap fonts), four sizes:
+One family, Montserrat (LVGL's built-in bitmap fonts), four built-in sizes plus one custom clock size (five tokens):
 
 - `caption` 8px/400: captions, nav labels.
 - `label` 10px/600: status text, clock, button labels, titles.
 - `value` 12px/700: sensor readings, bed durations.
 - `value-lg` 14px/700: the one headline reading of a page.
+- `clock` 40px/44px/700: the screensaver clock only, digits, colon and dash only (custom font `gp_font_clock` from the vendored Montserrat Bold TTF, a few KB); don't use it elsewhere.
 
-Don't introduce other sizes: each one is an extra font baked into the firmware.
+Don't introduce other sizes (a new one needs the author's approval): each one is an extra font baked into the firmware.
 
 ## Layout
 
@@ -61,6 +62,11 @@ Five stroke icons (house, leaf, drop, gear, thermo) on a 24-unit grid, 2.2 strok
 
 - **Home** (`home_page`): built. Greenhouse card + Lawn card + nav.
 - **Greenhouse** (`greenhouse_page`): proposal. Stats strip, three `BedCard`s with state edges, status line, STOP / RUN QUEUE / HOME.
+- **Boot** (`boot_page`): built (D17). Title, "Connecting to Wi-Fi...", spinner (replaces the draft's progress bar), "Valves closed - offline mode in 30s", ESPHome version.
+- **Setup** (`setup_page`): built (D10). 2x3 tile grid (NETWORK, TIME, DISPLAY, SERVICE active; CYCLE, SENSORS "Soon"), nav with SETUP active.
+- **Setup - Service - Valves** (`valve_test_page`): built (D18). Beds 1-3 only (no Lawn/Pump, no per-row CLOSE), TEST per bed (10 s max from the tap, ~8 s open), STOP, EXIT SERVICE.
+- **Setup - Network** (`network_page`): built (D11). Status line, WI-FI / HOME ASSISTANT / IP / ESPHOME / UPTIME rows, BACK, RESTART.
+- **Confirm dialog** (`gp_confirm`, top layer): built (D14). Dim layer (`bg` at 65 %), card, CANCEL ghost + one action button: `error-fill` for stop actions only, `green-fill` for other confirmations. ASCII-only texts.
 - **Lawn** (`lawn_page`): concept. Headline soil bar, status card with AUTO-MODE `Switch`, WATER NOW / HOME. No backing entities exist yet.
 
 Component notes keep the LVGL ids (`gh_btn_run_bed1`, `home_clock_label`…) so a design change can be traced to the YAML that implements it.

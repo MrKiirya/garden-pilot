@@ -1,0 +1,197 @@
+# Confirm dialog (draft D14): dim layer + card + CANCEL / action button, on the LVGL top layer above every page.
+# Needs lvgl_base only (no page, no other package). Tokens only (design/tokens.json); ASCII only (built-in Montserrat
+# has no "·", "…", "×"). The dim layer is token `bg` at 65 % opacity (opacity is not a token yet).
+#
+# Call it from any action list; the action stays at the call site:
+#   on_click:
+#     - if:                    # skip when a dialog is open: a dropped second call would read the first answer
+#         condition: {not: {script.is_running: gp_confirm}}
+#         then:
+#           - script.execute:
+#               {id: gp_confirm, title: "Stop all watering?", body: "All valves close.", action: "STOP ALL",
+#                danger: true}
+#           - script.wait: gp_confirm
+#           - if:
+#               condition: {lambda: "return id(gp_confirm_result);"}
+#               then: [<the action>]
+# danger: true = red action button (stop actions only), false = green primary. No answer within 30 s = cancel.
+# gp_confirm_open is true while the dialog is shown (the screensaver must not cover it).
+
+globals:
+  - id: gp_confirm_open
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: gp_confirm_result
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+lvgl:
+  top_layer:
+    widgets:
+      - obj:
+          id: gp_confirm_layer
+          x: 0
+          y: 0
+          width: 320
+          height: 240
+          bg_color: 0x131313
+          bg_opa: 65%
+          border_width: 0
+          radius: 0
+          pad_all: 0
+          scrollable: false
+          clickable: true
+          hidden: true
+          widgets:
+            - obj:
+                x: 30
+                y: 60
+                width: 260
+                height: 120
+                bg_color: 0x1c1b1b
+                bg_opa: COVER
+                border_width: 1
+                border_color: 0x3f4a3c
+                radius: 2
+                pad_all: 0
+                scrollable: false
+                clickable: false
+            - label:
+                id: gp_confirm_title
+                x: 42
+                y: 74
+                text: "Confirm"
+                text_font: montserrat_12
+                text_color: 0xe5e2e1
+            - label:
+                id: gp_confirm_body
+                x: 42
+                y: 96
+                width: 236
+                text: ""
+                long_mode: WRAP
+                text_font: montserrat_10
+                text_color: 0xbecab9
+            - button:
+                id: gp_confirm_cancel
+                x: 42
+                y: 140
+                width: 104
+                height: 26
+                bg_opa: TRANSP
+                border_width: 1
+                border_color: 0xbecab9
+                radius: 3
+                shadow_width: 0
+                scrollable: false
+                on_click:
+                  - globals.set:
+                      id: gp_confirm_open
+                      value: "false"
+                widgets:
+                  - label:
+                      align: CENTER
+                      text: "CANCEL"
+                      text_font: montserrat_10
+                      text_color: 0xbecab9
+            - button:
+                id: gp_confirm_ok_danger
+                x: 154
+                y: 140
+                width: 124
+                height: 26
+                bg_color: 0x93000a
+                bg_opa: COVER
+                border_width: 0
+                radius: 3
+                shadow_width: 0
+                scrollable: false
+                on_click:
+                  - globals.set:
+                      id: gp_confirm_result
+                      value: "true"
+                  - globals.set:
+                      id: gp_confirm_open
+                      value: "false"
+                widgets:
+                  - label:
+                      id: gp_confirm_ok_danger_label
+                      align: CENTER
+                      text: "OK"
+                      text_font: montserrat_10
+                      text_color: 0xffdad6
+            - button:
+                id: gp_confirm_ok_primary
+                x: 154
+                y: 140
+                width: 124
+                height: 26
+                bg_color: 0x4caf50
+                bg_opa: COVER
+                border_width: 0
+                radius: 3
+                shadow_width: 0
+                scrollable: false
+                hidden: true
+                on_click:
+                  - globals.set:
+                      id: gp_confirm_result
+                      value: "true"
+                  - globals.set:
+                      id: gp_confirm_open
+                      value: "false"
+                widgets:
+                  - label:
+                      id: gp_confirm_ok_primary_label
+                      align: CENTER
+                      text: "OK"
+                      text_font: montserrat_10
+                      text_color: 0x003c0b
+
+script:
+  - id: gp_confirm
+    mode: single
+    parameters:
+      title: string
+      body: string
+      action: string
+      danger: bool
+    then:
+      - lvgl.label.update:
+          id: gp_confirm_title
+          text: !lambda "return title;"
+      - lvgl.label.update:
+          id: gp_confirm_body
+          text: !lambda "return body;"
+      - lvgl.label.update:
+          id: gp_confirm_ok_danger_label
+          text: !lambda "return action;"
+      - lvgl.label.update:
+          id: gp_confirm_ok_primary_label
+          text: !lambda "return action;"
+      - if:
+          condition:
+            lambda: "return danger;"
+          then:
+            - lvgl.widget.show: gp_confirm_ok_danger
+            - lvgl.widget.hide: gp_confirm_ok_primary
+          else:
+            - lvgl.widget.hide: gp_confirm_ok_danger
+            - lvgl.widget.show: gp_confirm_ok_primary
+      - globals.set:
+          id: gp_confirm_result
+          value: "false"
+      - globals.set:
+          id: gp_confirm_open
+          value: "true"
+      - lvgl.widget.show: gp_confirm_layer
+      - wait_until:
+          condition:
+            lambda: "return !id(gp_confirm_open);"
+          timeout: 30s
+      - globals.set:
+          id: gp_confirm_open
+          value: "false"
+      - lvgl.widget.hide: gp_confirm_layer

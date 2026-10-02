@@ -1,0 +1,9 @@
+# Wi-Fi hook of the boot screen (packages/lvgl/page_boot.yaml). DEVICE ONLY: the host platform has no `wifi`, so
+# garden-pilot-sim.yaml does not include it. Without this package the boot screen always waits for the full
+# `boot_offline_timeout`. Needs core_network (wifi:) and page_boot. Sets a flag only; no actuator is touched.
+
+wifi:
+  on_connect:
+    - globals.set:
+        id: gp_boot_net_ready
+        value: "true"

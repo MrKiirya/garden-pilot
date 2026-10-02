@@ -435,3 +435,14 @@ def test_ruleset_required_checks_match_ci_jobs() -> None:
     assert {c["context"] for c in required} == ci_check_names()
     assert all(c["integration_id"] == GITHUB_ACTIONS_APP_ID for c in required)
     assert checks["strict_required_status_checks_policy"] is False
+
+
+def test_ci_compiles_the_sim() -> None:
+    jobs = load_yaml(CI)["jobs"]
+    run_cmd = devcontainer_steps(jobs["compile"])[0]["with"]["runCmd"]
+    device = run_cmd.index("script/compile &&")
+    sim = run_cmd.index("script/compile garden-pilot-sim.yaml")
+    assert device < sim, "compile the device first, then the emulator"
+    assert "uv cache prune --ci" in run_cmd[sim:]
+    assert env_lines(devcontainer_steps(jobs["checks"])[0])["GP_REQUIRE_SDL"] == "1"
+    assert env_lines(devcontainer_steps(jobs["compile"])[0])["GP_SECRETS"] == "example"

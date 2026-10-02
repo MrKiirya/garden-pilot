@@ -1,0 +1,134 @@
+# Screensaver (draft D23): a top-layer overlay that covers the current page after `screensaver_timeout` without input.
+# Big clock (design token `clock`, custom font gp_font_clock), a status line (written by a zone package, e.g.
+# packages/greenhouse/screensaver_status.yaml), a running-bed indicator (same package) and "Touch to wake".
+# Any press hides it; the layer swallows that press, so nothing underneath fires, and the page below is untouched.
+# It never appears while the boot screen is shown, a confirm dialog is open (gp_confirm_open) or service mode is on
+# (gp_service_mode, the valve test). Needs lvgl_base, ha_time (core_time / core_time_host), lvgl_page_boot
+# (gp_boot_done, boot_page), lvgl_dialog_confirm and gh_valve_test (the guard globals).
+# Nothing here touches an actuator.
+# Tokens only; ASCII only.
+#
+# Font: Montserrat Bold (static TTF), SIL Open Font License 1.1 (packages/lvgl/fonts/OFL.txt), vendored so config and
+# builds need no network. Source: github.com/JulietaUla/Montserrat, file fonts/ttf/Montserrat-Bold.ttf, upstream
+# master commit 555facfb2a18c72c3c0380f0d9c0f060453a9058 (fetched 2026-10-02; latest upstream tag: v9.000).
+# SHA-256 of the file: bc6e854971cea46b463be6f9eef4d9cd52f51cfc1fc0dd90c9d3e6483dc0ec61
+# Only the glyphs of the token (`0123456789:-`) are baked in (a few KB of flash).
+# The path is relative to the entry file.
+
+substitutions:
+  screensaver_timeout: 5min
+
+font:
+  - id: gp_font_clock
+    file: packages/lvgl/fonts/Montserrat-Bold.ttf
+    size: 40
+    glyphs: "0123456789:-"
+    bpp: 4
+
+lvgl:
+  on_idle:
+    - timeout: ${screensaver_timeout}
+      then:
+        - if:
+            condition:
+              and:
+                - lambda: "return id(gp_boot_done);"
+                - not:
+                    lambda: "return id(gp_confirm_open);"
+                - not:
+                    lambda: "return id(gp_service_mode);"
+                - not:
+                    lvgl.page.is_showing: boot_page
+            then:
+              - script.execute: gp_screensaver_update_clock
+              # The SIM button (emulator) and the confirm layer share the top layer: draw the overlay above them
+              # so the waking touch cannot reach them.
+              - lambda: "lv_obj_move_foreground(id(gp_screensaver_layer));"
+              - lvgl.widget.show: gp_screensaver_layer
+  top_layer:
+    widgets:
+      - obj:
+          id: gp_screensaver_layer
+          x: 0
+          y: 0
+          width: 320
+          height: 240
+          bg_color: 0x131313
+          bg_opa: COVER
+          border_width: 1
+          border_color: 0x3f4a3c
+          radius: 0
+          pad_all: 0
+          scrollable: false
+          clickable: true
+          hidden: true
+          on_press:
+            - lvgl.widget.hide: gp_screensaver_layer
+          widgets:
+            - label:
+                id: gp_screensaver_clock
+                align: TOP_MID
+                y: 70
+                text: "--:--"
+                text_font: gp_font_clock
+                text_color: 0xe5e2e1
+            - label:
+                id: gp_screensaver_status
+                align: TOP_MID
+                y: 124
+                text: ""
+                text_font: montserrat_10
+                text_color: 0xbecab9
+            - obj:
+                id: gp_screensaver_bed_dot
+                x: 132
+                y: 146
+                width: 8
+                height: 8
+                bg_color: 0x4caf50
+                bg_opa: COVER
+                border_width: 0
+                radius: 4
+                pad_all: 0
+                scrollable: false
+                clickable: false
+                hidden: true
+            - label:
+                id: gp_screensaver_bed_label
+                x: 146
+                y: 145
+                text: ""
+                text_font: montserrat_8
+                text_color: 0x78dc77
+                hidden: true
+            - label:
+                align: TOP_MID
+                y: 220
+                text: "Touch to wake"
+                text_font: montserrat_8
+                text_color: 0xbecab9
+
+# "--:--" until the clock is valid (time.has_time is not a condition: use now().is_valid()).
+script:
+  - id: gp_screensaver_update_clock
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: "return id(ha_time).now().is_valid();"
+          then:
+            - lvgl.label.update:
+                id: gp_screensaver_clock
+                text:
+                  time_format: "%H:%M"
+                  time: ha_time
+          else:
+            - lvgl.label.update:
+                id: gp_screensaver_clock
+                text: "--:--"
+
+# Keep the clock current while the screensaver is up (cheap: one short label update).
+interval:
+  - interval: 10s
+    then:
+      - script.execute: gp_screensaver_update_clock

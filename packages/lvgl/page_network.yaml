@@ -1,0 +1,192 @@
+# Network page (draft D11): connection status, Wi-Fi, Home Assistant API, IP, ESPHome version, uptime; BACK and
+# RESTART (asks first through the confirm dialog, packages/lvgl/dialog_confirm.yaml). Tokens only; ASCII only.
+# Wi-Fi and IP rows and the status line are written by packages/lvgl/network_wifi_status.yaml (device only), so on the
+# emulator they stay "--". MQTT and FIRMWARE rows of the draft are not built (no MQTT, no project version yet).
+# The 1 s poller updates API / ESPHome / uptime (pollers, not on_value). Needs core_diagnostics and lvgl_dialog_confirm.
+
+lvgl:
+  pages:
+    - id: network_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
+      widgets:
+        - label:
+            x: 8
+            y: 4
+            text: "Setup - Network"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 8
+            y: 29
+            text: "\uF1EB"
+            text_font: montserrat_14
+            text_color: 0xbecab9
+        - label:
+            id: network_status_label
+            x: 30
+            y: 30
+            text: "--"
+            text_font: montserrat_12
+            text_color: 0xbecab9
+        - label:
+            x: 8
+            y: 55
+            text: "WI-FI"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: network_wifi_value
+            x: 120
+            y: 55
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - label:
+            x: 8
+            y: 73
+            text: "HOME ASSISTANT"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: network_api_value
+            x: 120
+            y: 73
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - label:
+            x: 8
+            y: 91
+            text: "IP"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: network_ip_value
+            x: 120
+            y: 91
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - label:
+            x: 8
+            y: 109
+            text: "ESPHOME"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: network_esphome_value
+            x: 120
+            y: 109
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - label:
+            x: 8
+            y: 127
+            text: "UPTIME"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: network_uptime_value
+            x: 120
+            y: 127
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - button:
+            id: network_btn_back
+            x: 8
+            y: 210
+            width: 92
+            height: 26
+            bg_opa: TRANSP
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - lvgl.page.show: setup_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "BACK"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+        - button:
+            id: network_btn_restart
+            x: 104
+            y: 210
+            width: 208
+            height: 26
+            bg_opa: TRANSP
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - if:
+                  condition:
+                    not:
+                      script.is_running: gp_confirm
+                  then:
+                    - script.execute:
+                        id: gp_confirm
+                        title: "Restart the controller?"
+                        body: "Running watering stops. Valves stay closed after boot."
+                        action: "RESTART"
+                        danger: false
+                    - script.wait: gp_confirm
+                    - if:
+                        condition:
+                          lambda: "return id(gp_confirm_result);"
+                        then:
+                          - button.press: gp_restart_button
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "RESTART"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            api.connected:
+          then:
+            - lvgl.label.update:
+                id: network_api_value
+                text: "API connected"
+                text_color: 0x78dc77
+          else:
+            - lvgl.label.update:
+                id: network_api_value
+                text: "Not connected"
+                text_color: 0xbecab9
+      - lvgl.label.update:
+          id: network_esphome_value
+          text: !lambda |-
+            return id(gp_esphome_version).has_state() ? id(gp_esphome_version).state : std::string("--");
+      - lvgl.label.update:
+          id: network_uptime_value
+          text: !lambda |-
+            return id(gp_uptime).has_state() ? id(gp_uptime).state : std::string("--");

@@ -11,15 +11,20 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import REPO_ROOT
+from conftest import REPO_ROOT, require_sdl_or_skip
 
 pytestmark = pytest.mark.config
 
-CORE = ["hardware", "core_network", "core_time"]
+CORE = ["hardware", "core_api", "core_ota", "core_network", "core_time"]
 BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"]
 SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3"]
 SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2"]
 SIM = "hardware/sim.yaml"
+SIM_ENTRY = "garden-pilot-sim.yaml"
+SIM_API_ONLY = [
+    "hardware", "core_api", "core_time_host", "gh_irrigation", "gh_bed_1", "sim_bed_1_soil", "gh_bed_2",
+    "sim_bed_2_soil", "gh_bed_3", "sim_bed_3_soil", "sim_sensors", "sim_drift",
+]
 
 
 @dataclass(frozen=True)
@@ -28,12 +33,17 @@ class Variant:
     keys: list[str] | None = None
     hardware: str | None = None  # replacement path of the `hardware` include
     enable: tuple[str, ...] = ()  # commented-out example blocks to uncomment first
+    source: str = "garden-pilot.yaml"  # entry file the variant is built from
 
 
 VARIANTS: dict[str, Variant] = {
     "full": Variant("keep"),
     "headless": Variant("keep", CORE),
     "no_touch_debug": Variant("without", ["touch_dot_test"]),
+    "no_wifi_status": Variant("without", ["lvgl_network_wifi"]),
+    "no_boot_wifi": Variant("without", ["lvgl_boot_wifi"]),
+    "no_screensaver": Variant("without", ["lvgl_screensaver", "gh_screensaver_status"]),
+    "headless_diag": Variant("keep", [*CORE, "core_diagnostics"]),
     "beds_2_headless": Variant("keep", BEDS_2),
     "bed_soil_headless": Variant(
         "keep",
@@ -42,6 +52,11 @@ VARIANTS: dict[str, Variant] = {
     ),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),
+    # PC emulator entry file (host + SDL); the first two need SDL2 dev files, sim_api_only does not.
+    "sim_full": Variant("keep", source=SIM_ENTRY),
+    "sim_no_touch_debug": Variant("without", ["touch_dot_test"], source=SIM_ENTRY),
+    "sim_no_board_page": Variant("without", ["sim_sensors_lvgl", "sim_page_board"], source=SIM_ENTRY),
+    "sim_api_only": Variant("keep", SIM_API_ONLY, source=SIM_ENTRY),
 }
 
 _KEY = re.compile(r"^  ([A-Za-z0-9_]+):")
@@ -155,7 +170,7 @@ def test_builder_blocks() -> None:
 @pytest.mark.parametrize("name", list(VARIANTS))
 def test_variant_validates(name: str, tmp_path: Path) -> None:
     v = VARIANTS[name]
-    source = (REPO_ROOT / "garden-pilot.yaml").read_text(encoding="utf-8")
+    source = (REPO_ROOT / v.source).read_text(encoding="utf-8")
     variant = build_variant(source, v.mode, v.keys, v.hardware, v.enable)
     all_keys = package_keys(uncomment_examples(source, v.enable))
     if v.keys is not None:
@@ -164,17 +179,19 @@ def test_variant_validates(name: str, tmp_path: Path) -> None:
         [k for k in all_keys if k in v.keys] if v.mode == "keep" else [k for k in all_keys if k not in v.keys]
     )
     assert package_keys(variant) == expected, f"variant {name} has unexpected packages"
-    if name != "full":
+    if name not in ("full", "sim_full"):
         assert package_keys(variant) != all_keys, f"variant {name} is identical to the full config"
     if v.hardware:
         assert f"hardware: !include {v.hardware}" in variant
-    (tmp_path / "garden-pilot.yaml").write_text(variant, encoding="utf-8")
+    if "display_sdl" in package_keys(variant):
+        require_sdl_or_skip()
+    (tmp_path / v.source).write_text(variant, encoding="utf-8")
     for folder in ("packages", "hardware", "components"):
         if (REPO_ROOT / folder).exists():
             shutil.copytree(REPO_ROOT / folder, tmp_path / folder)
     shutil.copy(REPO_ROOT / "secrets.example.yaml", tmp_path / "secrets.yaml")
     result = subprocess.run(
-        ["sh", str(REPO_ROOT / "script" / "_esphome"), "config", str(tmp_path / "garden-pilot.yaml")],
+        ["sh", str(REPO_ROOT / "script" / "_esphome"), "config", str(tmp_path / v.source)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

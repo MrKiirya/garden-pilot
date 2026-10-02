@@ -1,5 +1,6 @@
 # ESPHome: device entry point. One line per module; pins live only in hardware/.
 # Secrets are assigned here (never inside packages) so packages can be used as remote packages.
+# The same packages run on a PC (host + SDL window) from garden-pilot-sim.yaml: never flash that one.
 
 substitutions:
   api_encryption_key: !secret api_encryption_key
@@ -25,23 +26,40 @@ packages:
   hardware: !include hardware/esp32-s3-devkitc1-breadboard.yaml
 
   # Core: connectivity and clock. Need nothing else (no display, no LVGL).
+  core_api: !include packages/core/api.yaml
+  core_ota: !include packages/core/ota.yaml
   core_network: !include packages/core/network.yaml
   core_time: !include packages/core/time.yaml
+  # ESPHome version, uptime and restart button for the Network page (internal: no Home Assistant entities).
+  core_diagnostics: !include packages/core/diagnostics.yaml
 
   # Display + touch: creates tft_spi, tft_display, touch (required by LVGL).
   display_touch: !include packages/display_touch.yaml
 
-  # LVGL: base first. First page package = boot screen (home). The home page also adds the clock trigger
-  # to core_time, so it requires core_time.
+  # LVGL: base first. First page package = boot screen (it shows Home once Wi-Fi is up or after the offline timeout;
+  # needs core_diagnostics and the home page). The home page also adds the clock trigger to core_time, so it
+  # requires core_time.
   lvgl_base: !include packages/lvgl/base.yaml
+  lvgl_page_boot: !include packages/lvgl/page_boot.yaml
   lvgl_page_home: !include packages/lvgl/page_home.yaml
   lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
   lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
+  # Confirm dialog (top layer), Setup and Network pages. The Network page needs core_diagnostics + the dialog.
+  lvgl_dialog_confirm: !include packages/lvgl/dialog_confirm.yaml
+  # Screensaver overlay after N idle minutes (substitution screensaver_timeout, default 5min); needs the dialog and
+  # gh_valve_test (guards) and, for its status line, gh_screensaver_status below.
+  lvgl_screensaver: !include packages/lvgl/screensaver.yaml
+  lvgl_page_setup: !include packages/lvgl/page_setup.yaml
+  lvgl_page_network: !include packages/lvgl/page_network.yaml
+  # Wi-Fi rows of the Network page (device only; optional).
+  lvgl_network_wifi: !include packages/lvgl/network_wifi_status.yaml
+  # Boot screen leaves on Wi-Fi connect (device only; without it the boot screen waits for the offline timeout).
+  lvgl_boot_wifi: !include packages/lvgl/boot_wifi.yaml
 
   # Greenhouse (all under packages/greenhouse/ — include each fragment explicitly).
-  # Needs display_touch + the LVGL pages above until stage 7; irrigation must come before its page.
+  # Needs display_touch + the LVGL pages above until stage 8; irrigation must come before its page.
   # Irrigation controller first, then one block per bed (at least 2 with the stock sprinkler). The order of the
-  # bed blocks is the valve order; the greenhouse page expects exactly beds 1-3 until stage 8.
+  # bed blocks is the valve order; the greenhouse page expects exactly beds 1-3 until stage 9.
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
   gh_bed_1: !include
     file: packages/greenhouse/bed.yaml
@@ -61,6 +79,9 @@ packages:
   gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml
   gh_sensors_soil: !include packages/greenhouse/sensors_soil.yaml
   gh_sprinkler_lvgl: !include packages/greenhouse/sprinkler_lvgl_status.yaml
+  gh_screensaver_status: !include packages/greenhouse/screensaver_status.yaml
+  # Setup > SERVICE > Valve test (opens real valves for at most 10 s; service mode stops other watering).
+  gh_valve_test: !include packages/greenhouse/lvgl_valve_test.yaml
 
   # Optional: touch dot / coord updates on press. Comment out to disable (overlay script stays no-op).
   touch_dot_test: !include packages/touch_dot_test.yaml

@@ -1,16 +1,8 @@
-# Connectivity: Home Assistant API, OTA, Wi-Fi, captive portal. No LVGL, no secrets in this file:
-# the entry file assigns the substitutions below from its own secrets (none has a default on purpose,
-# so a missing value fails validation).
-#   api_encryption_key, ota_password, wifi_ssid, wifi_password, wifi_ap_password
-
-api:
-  encryption:
-    key: ${api_encryption_key}
-
-# Wireless firmware updates.
-ota:
-  - platform: esphome
-    password: ${ota_password}
+# Wi-Fi with a fallback access point and captive portal (device only; the PC emulator uses the host's network).
+# No secrets in this file: the entry file assigns the substitutions below from its own secrets (none has a default
+# on purpose, so a missing value fails validation).
+#   wifi_ssid, wifi_password, wifi_ap_password
+# The API and OTA live in packages/core/api.yaml and ota.yaml.
 
 wifi:
   ssid: ${wifi_ssid}

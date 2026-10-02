@@ -1,0 +1,48 @@
+# Wi-Fi rows of the Network page (SSID, signal, IP, connection line). Device only: the emulator has no Wi-Fi, so
+# garden-pilot-sim.yaml does not include it (the rows stay "--"). Needs core_network (wifi:) and page_network.
+# Comment it out to drop the Wi-Fi rows. All sensors are internal (no new Home Assistant entities); a poller writes
+# the labels (nothing from on_value: LVGL may not be ready).
+
+text_sensor:
+  - platform: wifi_info
+    ssid:
+      id: gp_wifi_ssid
+      internal: true
+    ip_address:
+      id: gp_wifi_ip
+      internal: true
+
+sensor:
+  - platform: wifi_signal
+    id: gp_wifi_rssi
+    internal: true
+    update_interval: 10s
+
+interval:
+  - interval: 2s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - lvgl.label.update:
+                id: network_status_label
+                text: "Connected"
+                text_color: 0x78dc77
+          else:
+            - lvgl.label.update:
+                id: network_status_label
+                text: "No Wi-Fi"
+                text_color: 0xbecab9
+      - lvgl.label.update:
+          id: network_wifi_value
+          text: !lambda |-
+            char buf[64];
+            if (!id(gp_wifi_ssid).has_state() || !id(gp_wifi_rssi).has_state()) return std::string("--");
+            snprintf(buf, sizeof(buf), "%s / %d dBm", id(gp_wifi_ssid).state.c_str(), (int) id(gp_wifi_rssi).state);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: network_ip_value
+          text: !lambda |-
+            if (!id(gp_wifi_ip).has_state()) return std::string("--");
+            return id(gp_wifi_ip).state;

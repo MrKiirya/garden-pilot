@@ -79,7 +79,7 @@ Decision: no intermediate MVP on the stock `sprinkler`; we copy `esphome/compone
 - **Safety:** a watchdog for maximum valve on-time (principle 4).
 - **Soil moisture (optional per zone):** any ESPHome sensor; if present and the soil is wet, the zone's run is
   skipped. Today (task 005) a bed can have such a sensor as a reporting-only `sensor` (`packages/greenhouse/
-  bed_soil.yaml`); skipping a run when wet comes with `garden_zones` (stage 6).
+  bed_soil.yaml`); skipping a run when wet comes with `garden_zones` (stage 7).
 - **History** of runs per zone (wanted; see the backlog in §9).
 
 It takes valves from YAML by id and exposes standard ESPHome entities (switch / number / sensor / text_sensor),
@@ -144,7 +144,10 @@ external_components:
   D03–D05) or generated YAML — **open**.
 - Hardware is a separate package: `hardware/<board>.yaml` with real pins (also `esp32:` and the display/touch
   orientation and calibration) and `hardware/sim.yaml` for tests (template switches and sensors instead of GPIO).
-  Exists after task 004: `hardware/esp32-s3-devkitc1-breadboard.yaml` and `packages/core/` (network, time).
+  Exists after task 004: `hardware/esp32-s3-devkitc1-breadboard.yaml` and `packages/core/` (network, time); task 006
+  splits the network package into `core/api.yaml`, `core/ota.yaml` and `core/network.yaml` (Wi-Fi + captive portal)
+  and adds `core/time_host.yaml` (PC clock, same id `ha_time`) and `packages/display_sdl.yaml` (SDL window + mouse
+  touch, same ids as `display_touch.yaml`).
   Task 005 adds (done):
   - `packages/greenhouse/bed.yaml`, included once per bed with `vars` (`bed`, `bed_name`, `relay`); it adds one
     valve to the stock `gh_sprinkler` with `!extend` (lists in an extended item are concatenated in package order,
@@ -154,16 +157,19 @@ external_components:
     `adc_pin`, `cal_dry_v`, `cal_wet_v`); one ADC pin serves one probe.
   - the board profile holds the raw relay drivers as internal switches `board_relay_N` (the same ids in every
     profile) and names analog inputs `adc_N_pin` (ADC1 only with Wi-Fi); features never use GPIO numbers.
-  - `hardware/sim.yaml` (`host:` + template relays) validates irrigation + beds with `esphome config` only; it cannot
-    be combined with `core/network.yaml` (Wi-Fi), the display or the sensors until the network package is split
-    (stage 11).
+  - `hardware/sim.yaml` (`host:` + template relays that log every state change) is the board profile of the PC
+    emulator (task 006, `garden-pilot-sim.yaml`, §7); it cannot be combined with `core/network.yaml` (Wi-Fi),
+    `core/ota.yaml`, `display_touch.yaml` or the DHT/ADC sensors (the host platform has none of them).
 
 Target layout:
 ```
-garden-pilot.yaml          # entry file, modules commented out
+garden-pilot.yaml          # device entry file, modules commented out
+garden-pilot-sim.yaml      # PC emulator entry file (host + SDL), same packages
 hardware/                  # esp32-<board>.yaml (pins, relay drivers), sim.yaml
 packages/
-  core/                    # network, time, api, ota
+  core/                    # api, ota, network (Wi-Fi), time, time_host
+  display_touch.yaml, display_sdl.yaml   # device display + touch; emulator window + mouse
+  sim/                     # emulator only: simulated sensors, auto drift, SIM board page
   lvgl/                    # pages
   greenhouse/bed.yaml, bed_soil.yaml, ...   # lawn.yaml, heating.yaml, ...
 components/garden_zones/   # __init__.py, *.h, *.cpp
@@ -183,14 +189,31 @@ tests/
 
 ## 7. Testing without hardware
 1. `esphome config` for every module combination: the matrix in `tests/test_config_matrix.py` (variants built from
-   the real entry file) runs in CI job `checks` via `script/test`; 2 beds, a bed with its own soil sensor and the sim board (config only) were added by task 005.
-2. `esphome compile` for ESP32 (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary).
+   the real entry file) runs in CI job `checks` via `script/test`; 2 beds, a bed with its own soil sensor and the sim board were added by task 005; task 006 adds rows for the emulator entry file `garden-pilot-sim.yaml` (the two SDL rows need `sdl2-config`; `GP_REQUIRE_SDL=1` in CI makes a missing one a failure).
+2. `esphome compile` for ESP32 and for the host emulator build `garden-pilot-sim.yaml` (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary for the device build).
 3. Unit tests of the `garden_zones` core (a minimal header-only harness, `script/test-cpp`).
-4. **`host` platform:** firmware runs on Linux/macOS, the API works and HA can connect by IP; no GPIO, hence
-   `hardware/sim.yaml` (config-only until stage 11; see §5).
-5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch; in CI `headless: true` and
-   BMP screenshots compared with references.
-6. Integration scenarios through `aioesphomeapi` against the host build.
+4. **`host` platform (task 006, done):** `script/sim` builds and runs `garden-pilot-sim.yaml` on Linux: the real LVGL
+   pages and irrigation packages, template relays from `hardware/sim.yaml` (state changes logged as
+   `SIM relay_N ON/OFF`), the clock from the PC. It works fully without Home Assistant; HA can add it by IP (port
+   6053, public dummy key `sim_api_encryption_key`, a separate device "GardenPilot Sim"; no mDNS on host, no OTA).
+   The API has `reboot_timeout: 0s` there (the default would end the program after 15 min without a client).
+   `web_server` is not available on the host platform (`cv.only_on` ESP32/ESP8266/BK72XX/LN882X/RP2/RTL87XX), and no
+   third-party shim is used: manual control of simulated values goes through the native API (`script/sim-ctl`) and
+   an on-screen "SIM board" page, both in task 007 (implemented, below). `on_time_sync` does not fire on host; the Home clock refreshes
+   from its 30 s interval. The host build is compiled in CI (`compile (pinned|minimum)`, same jobs as the device).
+   The sim entry file needs SDL2 dev files even for `esphome config` (the devcontainer image has them; tests skip
+   the SDL rows without `sdl2-config` unless `GP_REQUIRE_SDL=1`, which CI sets).
+   **Simulated sensors and SIM board (task 007, implemented; PC check and CI pending):** `packages/sim/` (never included by the device): template
+   numbers `Sim air temperature` / `Sim air humidity` / `Sim soil moisture` / per-bed `... sim soil moisture` are the
+   source of truth (`restore_value: false`, defaults 22 C / 60 % / 50 %); template sensors with the device ids and
+   names (`gh_air_temperature`, `gh_air_humidity`, `gh_soil_moisture_pct`, `gh_bedN_soil_moisture`) read them. The
+   "Sim auto drift" switch (default OFF) dries soil 1 % per 60 s and raises it 1 % per 10 s while the relevant relay
+   runs. The sim-only `SIM` button (top layer) opens a page with relay indicators, one slider per value and the drift
+   switch. `script/sim-ctl` (`aioesphomeapi`, no new dependency) lists, reads and sets entities of the running
+   emulator; it is unit-tested with a fake client. The device config is unchanged (normalized `esphome config` diff).
+5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch (done, `display_sdl.yaml`); in CI
+   `headless: true` (2026.9.1 and later only) and BMP screenshots compared with references (stage 12).
+6. Integration scenarios through `aioesphomeapi` against the host build (stage 12; task 007 only unit-tests `sim-ctl` with a fake client, a real scenario needs a headless host build in CI).
 7. Optional: Wokwi (ESP32 + ILI9341 emulation, `wokwi-cli` in GitHub Actions).
 
 ## 8. Design
@@ -200,8 +223,27 @@ tests/
   firmware depends on; token changes are synced into the repo by PR.
 - **UI language** is chosen at build time (a substitution in the entry file, `en` / `ru`): only one language
   and its glyphs are baked into flash.
-- Built today: `home_page` only follows the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still
-  use the default LVGL theme. Bottom nav is a placeholder (ZONES → greenhouse, WATER → lawn, SETUP → touch test).
+- **Boot screen** (`boot_page`, D17): the first page; "Connecting to Wi-Fi..." with a spinner (no fake progress), valves
+  stay closed. It shows Home on Wi-Fi connect (`wifi: on_connect`, device only) or after `boot_offline_timeout`
+  (30 s; 3 s in the emulator, which has no Wi-Fi). It never touches an actuator. Home Assistant is not awaited.
+- **Valve test and service mode** (`valve_test_page`, D18; Setup > SERVICE): TEST opens one greenhouse valve (beds 1-3)
+  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the sprinkler opens the valve ~2 s after the tap, so it is open ~8 s and the countdown stops near 2 s); every start
+  shuts down the previous valve first. While the page is open `gp_service_mode` is on: the queue is cleared and any
+  run not started by the test (Home Assistant, queue) is shut down within 1 s with a WARN log. Service mode ends by
+  EXIT SERVICE, by leaving the page, after 10 minutes without a test, or by a reboot (not restored). Blocking Home
+  Assistant before it starts a valve needs the `gp_*` layer (stage 8).
+- **Screensaver** (D23, `packages/lvgl/screensaver.yaml`): a top-layer overlay, not a page, shown after
+  `screensaver_timeout` (5 min; 1 min in the emulator) without input: 40 px clock (token `clock`, custom font
+  `gp_font_clock` baked from the vendored Montserrat Bold with only `0123456789:-`), a status line ("24C - soil 58%"),
+  "Bed N" with a green dot while a bed runs, "Touch to wake". Any touch hides it and is swallowed by the overlay. It never
+  shows on the boot screen, over a confirm dialog or in service mode. No backlight dimming yet (needs a backlight pin
+  in the board profile) and no "next run" part (no schedules).
+- Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
+  layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
+  LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the
+  touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). STOP on the Greenhouse page and RESTART on the Network page ask
+  through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
+  only, so UI texts are ASCII (`-`, `...`). Version, uptime, Wi-Fi and the restart button are `internal: true`.
 - Known UI defects: the Home "NEXT" label shows the remaining queue time (hours dropped), not the next scheduled
   run — there are no schedules yet.
 - The Home clock updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
@@ -222,20 +264,26 @@ tests/
    images. The `master` ruleset lives in `.github/rulesets/master.json` (required checks `checks`,
    `compile (pinned)`, `compile (minimum)`; squash-only PRs) and is applied by a repo admin with `gh api`. The `config` matrix over module combinations arrived with task 004 (`tests/test_config_matrix.py`).
 4. **Modular layout**, two tasks. Task 004: `hardware/` board profile, `packages/core/`, secrets as entry-file
-   substitutions, config matrix. Task 005 (done): `bed.yaml` with `vars`, optional `bed_soil.yaml`, board relays, `hardware/sim.yaml`,
-   more matrix rows. Follow-ups: page/status poller for other bed counts (stage 8), host build of the sim (stage 11).
+   substitutions, config matrix. Task 005 (done): `bed.yaml` with `vars`, optional `bed_soil.yaml`, board relays,
+   `hardware/sim.yaml`, more matrix rows. Follow-up: page/status poller for other bed counts (stage 9).
 5. **Lightweight end-user path:** ESPHome Device Builder (HA add-on or the `ghcr.io/esphome/esphome`
    container) + remote packages from this repo + first flash via web.esphome.io, then OTA; no devcontainer
    needed. Depends on stage 4.
-6. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
+6. **PC emulator (host + SDL)**, two tasks. Task 006 (part 1): `garden-pilot-sim.yaml` + `script/sim`, split of the
+   network package, SDL display/touch package, PC clock, runs without Home Assistant, optional HA by IP, host build
+   compiled in CI. Task 007 (part 2): simulated sensors with settable values, manual control without HA (a sim-only
+   "SIM board" LVGL page and `script/sim-ctl` over the native API) and the "Sim auto drift" switch (default OFF; when
+   ON soil slowly dries and rises while that bed's relay runs). Both parts implemented (done once the PR merges: CI and the PC check are still open).
+7. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
    via lanes, watchdog, optional soil-moisture skip. Task 008: fork + open/persistent queue, manual run keeps the
    queue, disabled zones skipped; groups/lanes 012, watchdog + soil 013, device switch 014.
-7. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
-8. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
+8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
+9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.
-9. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
-10. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
-11. **Host + SDL** test harness and screenshot checks.
+10. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
+11. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
+12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
+    scenarios against the host build.
 
 ### 9.1 Backlog (ideas, separate tasks once the base is ready)
 Optional modules; most can be built and tested without the physical sensors (`hardware/sim.yaml`):
@@ -250,7 +298,7 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 - Heating: night-tariff window and schedule modes.
 
 ## 10. Open questions
-**Screens** (decide with the design work, roadmap stage 8)
+**Screens** (decide with the design work, roadmap stage 9)
 1. Which drafts from the canvas to keep?
 2. Bed layouts: fixed variants or generated YAML?
 
