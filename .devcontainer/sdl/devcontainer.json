@@ -9,6 +9,7 @@
     "UV_PROJECT_ENVIRONMENT": "/home/vscode/.venv-garden-pilot",
     "UV_LINK_MODE": "copy",
     "UV_PYTHON_DOWNLOADS": "never",
+    "GP_REQUIRE_CXX": "1",
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
     "DISPLAY": "${localEnv:DISPLAY::0}"
   },
