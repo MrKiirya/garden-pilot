@@ -145,7 +145,24 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - sprinkler.shutdown: gh_sprinkler
+              # Asks first (packages/lvgl/dialog_confirm.yaml); the legacy direct sprinkler call stays until stage 8.
+              - if:
+                  condition:
+                    not:
+                      script.is_running: gp_confirm
+                  then:
+                    - script.execute:
+                        id: gp_confirm
+                        title: "Stop all watering?"
+                        body: "All greenhouse valves close."
+                        action: "STOP ALL"
+                        danger: true
+                    - script.wait: gp_confirm
+                    - if:
+                        condition:
+                          lambda: "return id(gp_confirm_result);"
+                        then:
+                          - sprinkler.shutdown: gh_sprinkler
             widgets:
               - label:
                   align: CENTER

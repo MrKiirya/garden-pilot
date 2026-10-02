@@ -9,7 +9,8 @@
 # device, "GardenPilot Sim".
 #
 # Left out of the device's package list on purpose:
-# - core_network, core_ota: no Wi-Fi or OTA on host (the PC's network is used);
+# - core_network, core_ota: no Wi-Fi or OTA on host (the PC's network is used); lvgl_network_wifi (Wi-Fi rows of the
+#   Network page) is left out for the same reason, those rows stay "--";
 # - core_time (Home Assistant clock): core_time_host takes the PC clock under the same id;
 # - display_touch: display_sdl has the same ids; hardware: hardware/sim.yaml has template relays;
 # - gh_sensors_air, gh_sensors_soil, bed soil sensors: DHT/ADC do not exist on host; packages/sim/ replaces them with
@@ -41,6 +42,7 @@ packages:
 
   core_api: !include packages/core/api.yaml
   core_time_host: !include packages/core/time_host.yaml
+  core_diagnostics: !include packages/core/diagnostics.yaml
 
   display_sdl: !include packages/display_sdl.yaml
 
@@ -48,6 +50,9 @@ packages:
   lvgl_page_home: !include packages/lvgl/page_home.yaml
   lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
   lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
+  lvgl_dialog_confirm: !include packages/lvgl/dialog_confirm.yaml
+  lvgl_page_setup: !include packages/lvgl/page_setup.yaml
+  lvgl_page_network: !include packages/lvgl/page_network.yaml
 
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
   gh_bed_1: !include

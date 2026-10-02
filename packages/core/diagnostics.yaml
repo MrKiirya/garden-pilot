@@ -1,0 +1,16 @@
+# Diagnostics for the Network page: ESPHome version, uptime and a restart button. Display-independent (no LVGL);
+# works on the device and in the emulator. Everything is internal: Home Assistant gets no new entities.
+
+text_sensor:
+  - platform: version
+    id: gp_esphome_version
+    internal: true
+    hide_timestamp: true
+  - platform: uptime
+    id: gp_uptime
+    internal: true
+
+button:
+  - platform: restart
+    id: gp_restart_button
+    internal: true

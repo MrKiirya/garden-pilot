@@ -30,6 +30,8 @@ packages:
   core_ota: !include packages/core/ota.yaml
   core_network: !include packages/core/network.yaml
   core_time: !include packages/core/time.yaml
+  # ESPHome version, uptime and restart button for the Network page (internal: no Home Assistant entities).
+  core_diagnostics: !include packages/core/diagnostics.yaml
 
   # Display + touch: creates tft_spi, tft_display, touch (required by LVGL).
   display_touch: !include packages/display_touch.yaml
@@ -40,6 +42,12 @@ packages:
   lvgl_page_home: !include packages/lvgl/page_home.yaml
   lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
   lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
+  # Confirm dialog (top layer), Setup and Network pages. The Network page needs core_diagnostics + the dialog.
+  lvgl_dialog_confirm: !include packages/lvgl/dialog_confirm.yaml
+  lvgl_page_setup: !include packages/lvgl/page_setup.yaml
+  lvgl_page_network: !include packages/lvgl/page_network.yaml
+  # Wi-Fi rows of the Network page (device only; optional).
+  lvgl_network_wifi: !include packages/lvgl/network_wifi_status.yaml
 
   # Greenhouse (all under packages/greenhouse/ — include each fragment explicitly).
   # Needs display_touch + the LVGL pages above until stage 8; irrigation must come before its page.
