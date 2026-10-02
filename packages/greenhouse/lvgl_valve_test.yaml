@@ -1,0 +1,409 @@
+# Valve test and service mode (draft D18; task 010). ACTUATOR-FACING: a TEST button opens one real valve.
+# Opened from Setup > SERVICE. Greenhouse-specific (it uses gh_sprinkler); rows for beds 1-3 only, like the
+# greenhouse page, until stage 8 moves this to the gp_* layer (principle 2: the direct sprinkler.* calls here are
+# legacy on purpose).
+#
+# SAFETY (human's call to change):
+# - `valve_test_max_time` is the longest a test valve stays open. It MUST NOT exceed 10 s (tests/test_service.py).
+#   It is enforced twice: `run_duration` of sprinkler.start_single_valve and the independent
+#   `gp_valve_test_guard` script that shuts everything down after the same time (holds even if run_duration were
+#   ignored).
+# - Timing: the guard counts from the tap, but the sprinkler opens the valve about 2 s later (start delay after
+#   the shutdown), so a test valve is really open about 8 s and the "OPEN - N s" countdown stops near 2 s.
+# - One valve at a time: every start shuts the sprinkler down first.
+# - Service mode (`gp_service_mode`, not restored: a reboot always leaves it) is on while the page is open. On entry
+#   everything is stopped and the queue cleared. A 1 s poller shuts down any run that was not started by the test
+#   (Home Assistant, queue) with a WARN log. Service mode ends by EXIT SERVICE, by leaving the page, after 10 min of
+#   no test (`gp_service_session`) or by a reboot; each end shuts the sprinkler down.
+# - Only sprinkler.start_single_valve / shutdown / clear_queued_valves on gh_sprinkler; never a raw relay or a
+#   zone switch.
+# Needs gh_irrigation, the beds 1-3 and lvgl_page_setup (the SERVICE tile). Tokens only; ASCII only.
+
+substitutions:
+  valve_test_max_time: 10s
+
+globals:
+  - id: gp_service_mode
+    type: bool
+    initial_value: "false"
+    restore_value: false
+
+script:
+  - id: gp_service_enter
+    mode: restart
+    then:
+      - sprinkler.shutdown: gh_sprinkler
+      - sprinkler.clear_queued_valves: gh_sprinkler
+      - globals.set:
+          id: gp_service_mode
+          value: "true"
+      - script.execute: gp_service_session
+
+  # Starts bed `valve` (0-based) for at most valve_test_max_time. Refused outside service mode.
+  - id: gp_valve_test_start
+    mode: restart
+    parameters:
+      valve: int
+    then:
+      - if:
+          condition:
+            lambda: "return id(gp_service_mode);"
+          then:
+            - sprinkler.shutdown: gh_sprinkler
+            # The guard starts before the valve opens, so the open time can only be shorter than the limit.
+            - script.execute: gp_valve_test_guard
+            - sprinkler.start_single_valve:
+                id: gh_sprinkler
+                valve_number: !lambda "return valve;"
+                run_duration: ${valve_test_max_time}
+            - script.execute: gp_service_session
+
+  # Second, independent enforcement of the limit.
+  - id: gp_valve_test_guard
+    mode: restart
+    then:
+      - delay: ${valve_test_max_time}
+      - sprinkler.shutdown: gh_sprinkler
+
+  - id: gp_valve_test_stop
+    mode: restart
+    then:
+      - script.stop: gp_valve_test_guard
+      - sprinkler.shutdown: gh_sprinkler
+
+  - id: gp_service_session
+    mode: restart
+    then:
+      - delay: 10min
+      - script.execute: gp_service_exit
+
+  - id: gp_service_exit
+    mode: restart
+    then:
+      - script.stop: gp_valve_test_guard
+      - script.stop: gp_service_session
+      - sprinkler.shutdown: gh_sprinkler
+      - globals.set:
+          id: gp_service_mode
+          value: "false"
+      - lvgl.page.show: setup_page
+
+  # Leaving the page by any other route (e.g. the sim SIM button) ends service mode too, without navigating.
+  - id: gp_service_leave
+    mode: restart
+    then:
+      - script.stop: gp_valve_test_guard
+      - script.stop: gp_service_session
+      - sprinkler.shutdown: gh_sprinkler
+      - globals.set:
+          id: gp_service_mode
+          value: "false"
+
+interval:
+  - interval: 1s
+    then:
+      # Block other watering while in service mode (anything not started by the test, i.e. guard not running).
+      - if:
+          condition:
+            and:
+              - lambda: "return id(gp_service_mode);"
+              - lambda: |-
+                  return id(gh_sprinkler)->active_valve().has_value() ||
+                         id(gh_sprinkler)->queued_valve().has_value();
+              - not:
+                  script.is_running: gp_valve_test_guard
+          then:
+            - logger.log:
+                level: WARN
+                tag: gp_service
+                format: "service mode: external start blocked"
+            - sprinkler.shutdown: gh_sprinkler
+            - sprinkler.clear_queued_valves: gh_sprinkler
+      - if:
+          condition:
+            lambda: |-
+              auto v = id(gh_sprinkler)->active_valve();
+              return v.has_value() && v.value() == 0;
+          then:
+            - lvgl.label.update:
+                id: valve_test_bed1_status
+                text: !lambda |-
+                  char buf[20];
+                  auto tr = id(gh_sprinkler)->time_remaining_active_valve();
+                  snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
+                  return std::string(buf);
+                text_color: 0x78dc77
+          else:
+            - lvgl.label.update:
+                id: valve_test_bed1_status
+                text: "closed"
+                text_color: 0xbecab9
+      - if:
+          condition:
+            lambda: |-
+              auto v = id(gh_sprinkler)->active_valve();
+              return v.has_value() && v.value() == 1;
+          then:
+            - lvgl.label.update:
+                id: valve_test_bed2_status
+                text: !lambda |-
+                  char buf[20];
+                  auto tr = id(gh_sprinkler)->time_remaining_active_valve();
+                  snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
+                  return std::string(buf);
+                text_color: 0x78dc77
+          else:
+            - lvgl.label.update:
+                id: valve_test_bed2_status
+                text: "closed"
+                text_color: 0xbecab9
+      - if:
+          condition:
+            lambda: |-
+              auto v = id(gh_sprinkler)->active_valve();
+              return v.has_value() && v.value() == 2;
+          then:
+            - lvgl.label.update:
+                id: valve_test_bed3_status
+                text: !lambda |-
+                  char buf[20];
+                  auto tr = id(gh_sprinkler)->time_remaining_active_valve();
+                  snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
+                  return std::string(buf);
+                text_color: 0x78dc77
+          else:
+            - lvgl.label.update:
+                id: valve_test_bed3_status
+                text: "closed"
+                text_color: 0xbecab9
+
+lvgl:
+  pages:
+    - id: valve_test_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
+      on_load:
+        - script.execute: gp_service_enter
+      on_unload:
+        - script.execute: gp_service_leave
+      widgets:
+        - label:
+            x: 8
+            y: 4
+            text: "Service - Valves"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - label:
+            align: TOP_RIGHT
+            x: -8
+            y: 4
+            text: "SERVICE"
+            text_font: montserrat_10
+            text_color: 0xffb870
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 8
+            y: 28
+            text: "Opens one valve, max ${valve_test_max_time}. Other watering is stopped."
+            text_font: montserrat_8
+            text_color: 0xffb870
+        - obj:
+            x: 8
+            y: 44
+            width: 150
+            height: 44
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 14
+            y: 50
+            text: "Bed 1"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - label:
+            id: valve_test_bed1_status
+            x: 14
+            y: 68
+            text: "closed"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - button:
+            id: valve_test_bed1_btn
+            x: 110
+            y: 56
+            width: 42
+            height: 20
+            bg_color: 0x4caf50
+            bg_opa: COVER
+            border_width: 0
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - script.execute: {id: gp_valve_test_start, valve: 0}
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "TEST"
+                  text_font: montserrat_8
+                  text_color: 0x003c0b
+        - obj:
+            x: 162
+            y: 44
+            width: 150
+            height: 44
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 168
+            y: 50
+            text: "Bed 2"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - label:
+            id: valve_test_bed2_status
+            x: 168
+            y: 68
+            text: "closed"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - button:
+            id: valve_test_bed2_btn
+            x: 264
+            y: 56
+            width: 42
+            height: 20
+            bg_color: 0x4caf50
+            bg_opa: COVER
+            border_width: 0
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - script.execute: {id: gp_valve_test_start, valve: 1}
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "TEST"
+                  text_font: montserrat_8
+                  text_color: 0x003c0b
+        - obj:
+            x: 8
+            y: 94
+            width: 150
+            height: 44
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 14
+            y: 100
+            text: "Bed 3"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - label:
+            id: valve_test_bed3_status
+            x: 14
+            y: 118
+            text: "closed"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - button:
+            id: valve_test_bed3_btn
+            x: 110
+            y: 106
+            width: 42
+            height: 20
+            bg_color: 0x4caf50
+            bg_opa: COVER
+            border_width: 0
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - script.execute: {id: gp_valve_test_start, valve: 2}
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "TEST"
+                  text_font: montserrat_8
+                  text_color: 0x003c0b
+        - button:
+            id: valve_test_btn_stop
+            x: 8
+            y: 210
+            width: 92
+            height: 26
+            bg_color: 0x93000a
+            bg_opa: COVER
+            border_width: 0
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - script.execute: gp_valve_test_stop
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "STOP"
+                  text_font: montserrat_10
+                  text_color: 0xffdad6
+        - button:
+            id: valve_test_btn_exit
+            x: 104
+            y: 210
+            width: 208
+            height: 26
+            bg_opa: TRANSP
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - script.execute: gp_service_exit
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "EXIT SERVICE"
+                  text_font: montserrat_10
+                  text_color: 0xe5e2e1

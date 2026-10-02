@@ -1,5 +1,5 @@
 # Setup page (draft D10): 2x3 tile grid. NETWORK opens the Network page, DISPLAY opens the touch test, TIME shows the
-# clock, the other tiles are "Soon" placeholders (task 010 turns SERVICE into the valve test). Bottom nav copies the
+# clock, SERVICE opens the valve test, the other tiles are "Soon" placeholders. Bottom nav copies the
 # Home nav with SETUP active; widget ids are global, hence the setup_nav_btn_* prefix.
 # Tokens only (design/tokens.json); ASCII only (built-in fonts). The 1 s poller below updates NETWORK and TIME
 # (pollers, not on_value: LVGL may not be ready then). Needs core_time (ha_time) and page_network.
@@ -190,7 +190,9 @@ lvgl:
                   text: "Soon"
                   text_font: montserrat_10
                   text_color: 0xbecab9
-        - obj:
+        # SERVICE opens the valve test (packages/greenhouse/lvgl_valve_test.yaml). That page is a greenhouse package,
+        # so this tile needs it: fine while the greenhouse is the only zone group (both entry files include it).
+        - button:
             id: setup_tile_service
             x: 162
             y: 138
@@ -204,7 +206,8 @@ lvgl:
             pad_all: 0
             shadow_width: 0
             scrollable: false
-            clickable: false
+            on_click:
+              - lvgl.page.show: valve_test_page
             widgets:
               - label:
                   x: 6
@@ -216,7 +219,13 @@ lvgl:
                   id: setup_service_value
                   x: 6
                   y: 20
-                  text: "Soon"
+                  text: "Valve test"
+                  text_font: montserrat_10
+                  text_color: 0xffb870
+              - label:
+                  x: 132
+                  y: 20
+                  text: "\uF054"
                   text_font: montserrat_10
                   text_color: 0xbecab9
 
