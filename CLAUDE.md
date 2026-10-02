@@ -62,11 +62,12 @@ introduced by roadmap tasks, not ad hoc.
 1. `hardware` (board profile; exactly one), then `core_api`, `core_ota`, `core_network`, `core_time`, `core_diagnostics` — connectivity first.
 2. `display_touch` — creates `tft_spi`, `tft_display`, `touch` (required by LVGL).
 3. `lvgl_base` — LVGL wiring to those ids.
-4. `lvgl_page_home` — first page = boot screen; other `lvgl_page_*` after it, then `lvgl_dialog_confirm`,
-   `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`.
+4. `lvgl_page_boot` — first page = boot screen (shows Home on Wi-Fi connect or after `boot_offline_timeout`; needs
+   `core_diagnostics` and the home page); then `lvgl_page_home`, other `lvgl_page_*`, `lvgl_dialog_confirm`,
+   `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`, `lvgl_boot_wifi`.
 5. `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) → `gh_bed_N` (+ optional
    `gh_bed_N_soil` after its bed) in valve order, at least 2 beds → `gh_lvgl_page` → `gh_sensors_air` →
-   `gh_sensors_soil` → `gh_sprinkler_lvgl`.
+   `gh_sensors_soil` → `gh_sprinkler_lvgl` → `gh_valve_test` (Setup > SERVICE valve test).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 `garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `core_diagnostics`, `display_sdl` and
@@ -108,6 +109,9 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - The sim entry file needs `sdl2-config` (SDL2 dev files) even for `esphome config`; `web_server` is not available on
   the `host` platform, and `on_time_sync` does not fire on `host` (poll the clock from an `interval`).
 - Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
+- **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
+  (`tests/test_service.py`); it is enforced by `run_duration` and by the separate `gp_valve_test_guard` script. Service
+  mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the sprinkler opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
 - `sprinkler` limitations (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
   queue, queued zones run even when disabled): SPEC §3.
 
