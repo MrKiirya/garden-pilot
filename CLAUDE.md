@@ -43,6 +43,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`. |
 | `packages/lvgl/page_*.yaml` | One LVGL page per file under `lvgl: pages:`. |
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`sprinkler`), LVGL page. |
+| `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
 | `secrets.example.yaml` | Template with obvious dummy values; copy to git-ignored `secrets.yaml`. |
 | `.devcontainer/` | Reference dev environment: shared `Dockerfile`, default config, opt-in `sdl/` config (host display). |
@@ -120,6 +121,7 @@ without `core_ota`, `core_network`, the greenhouse sensors and bed soil sensors.
 | Compile firmware | `script/compile` (real `secrets.yaml`, or `GP_SECRETS=example` to stage example secrets under `.esphome/example-build/`) |
 | Other ESPHome version | `GP_ESPHOME=pinned\|minimum\|latest\|YYYY.M.P` with `script/config` / `script/compile` |
 | PC emulator (host + SDL window) | `script/sim` (needs a display; always builds with `secrets.example.yaml`; Ctrl+C stops) |
+| Control the running emulator | `script/sim-ctl list \| get NAME \| set NAME VALUE \| switch NAME on\|off` (native API, `127.0.0.1:6053`, key from `secrets.example.yaml`; exit 1 = unreachable, 2 = usage) |
 | SDL window smoke check | `script/sdl-smoke` (needs a display: SDL devcontainer config or a desktop host) |
 | Devcontainer from CLI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . script/test` (add `--docker-path podman` and `PODMAN_USERNS=keep-id` for Podman; `--config .devcontainer/sdl/devcontainer.json` for SDL) |
 | Reproduce CI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . sh -c 'GP_SECRETS=example GP_ESPHOME=minimum script/compile'` |
@@ -131,6 +133,7 @@ Always pass the config path explicitly; run from the repo root.
 - `unit` — pytest repo checks with no ESPHome toolchain: secrets template, public hygiene, YAML shape.
 - `config` — `esphome config` on the entry file with `secrets.example.yaml` (copied into a temp dir).
 - `compile` — `script/compile`: ESP32 firmware build in CI with pinned + minimum ESPHome (the weekly canary builds the latest).
+- Sim entry order after the beds: `sim_bed_N_soil` right after `gh_bed_N`, then `sim_sensors`, `sim_drift`, `sim_sensors_lvgl`, `sim_page_board` (the last two are optional and LVGL-only; `sim_*` ids stay out of device files).
 - The emulator entry file is checked by `esphome config` rows (need `sdl2-config`; skipped without it unless `GP_REQUIRE_SDL=1`, set in CI) and compiled in the CI `compile` jobs.
 - Later (roadmap): C++ unit tests of the `garden_zones` core, `host` + SDL
   screenshot checks, `aioesphomeapi` integration scenarios.
