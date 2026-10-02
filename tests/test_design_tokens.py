@@ -12,7 +12,11 @@ from conftest import REPO_ROOT
 pytestmark = pytest.mark.unit
 
 # Pages already rebuilt on the design system. Add a page here when it is migrated (SPEC §8).
-TOKENIZED_PAGES = ["packages/lvgl/page_home.yaml"]
+TOKENIZED_PAGES = [
+    "packages/lvgl/page_home.yaml",
+    "packages/sim/page_board.yaml",
+    "packages/sim/sensors_lvgl.yaml",
+]
 LVGL_COLOR = re.compile(r"\b0x([0-9a-fA-F]{6})\b")
 
 

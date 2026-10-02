@@ -224,3 +224,13 @@ def test_sim_script() -> None:
     compile_paths = re.search(r"for path in (.*?); do", compile_text)
     assert sim_paths and compile_paths
     assert sim_paths.group(1).split()[1:] == compile_paths.group(1).split()[1:]
+
+
+def test_sim_ctl_script() -> None:
+    script = REPO_ROOT / "script" / "sim-ctl"
+    assert script.is_file() and script.stat().st_mode & 0o111
+    assert "uv run python" in script.read_text(encoding="utf-8")
+    assert "sim_ctl.py" in script.read_text(encoding="utf-8")
+    py = (REPO_ROOT / "script" / "sim_ctl.py").read_text(encoding="utf-8")
+    assert "secrets.example.yaml" in py
+    assert not re.search(r"secrets\.yaml", py.replace("secrets.example.yaml", ""))
