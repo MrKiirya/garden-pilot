@@ -204,7 +204,8 @@ def test_vscode_extensions_are_a_named_volume() -> None:
 def test_sdl_variant_publishes_api_port() -> None:
     sdl = load(DEVCONTAINER_DIR / "sdl" / "devcontainer.json")
     published = [a for a in sdl["runArgs"] if a.startswith("--publish")]
-    assert published == ["--publish=${localEnv:GP_SIM_API_PUBLISH:127.0.0.1:6053}:6053"]
+    # The localEnv default must not contain ":" (devcontainers cut the default at the next colon).
+    assert published == ["--publish=${localEnv:GP_SIM_API_BIND:127.0.0.1}:6053:6053"]
     assert "--network=host" not in " ".join(sdl["runArgs"])
     assert not [a for a in load(DEFAULT)["runArgs"] if "--publish" in a]
 

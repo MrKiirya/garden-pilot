@@ -25,7 +25,7 @@
   "runArgs": [
     "--security-opt",
     "label=disable",
-    "--publish=${localEnv:GP_SIM_API_PUBLISH:127.0.0.1:6053}:6053",
+    "--publish=${localEnv:GP_SIM_API_BIND:127.0.0.1}:6053:6053",
     "--device=${localEnv:GP_SERIAL_DEVICE:/dev/null}",
     "--group-add=${localEnv:GP_SERIAL_GROUP:vscode}"
   ],

@@ -95,7 +95,7 @@ placeholders for now; simulated sensors, an on-screen "SIM board" page and `scri
   port 6053, key `sim_api_encryption_key` from `secrets.example.yaml`. It appears as a separate device,
   "GardenPilot Sim" (ids get the `gardenpilot_sim_` prefix); there is no mDNS discovery on the host platform. The SDL
   devcontainer publishes port 6053 to the PC's loopback only, which is enough for HA on the same PC. For HA on
-  another machine set `GP_SIM_API_PUBLISH=6053` on the host before **Rebuild Container** and allow TCP 6053 in the
+  another machine set `GP_SIM_API_BIND=0.0.0.0` on the host before **Rebuild Container** and allow TCP 6053 in the
   host firewall (firewalld on Fedora and Bazzite). Docker on Linux can use `--network=host` instead.
 - **Checking the sim config by hand:** `script/config garden-pilot-sim.yaml` and `script/compile garden-pilot-sim.yaml`
   use your real `secrets.yaml` when it exists, which lacks the sim key and fails with "Secret

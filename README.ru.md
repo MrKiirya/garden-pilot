@@ -95,7 +95,7 @@ Flatpak VS Code нужен обходной путь из апстрима дл�
   ключ `sim_api_encryption_key` из `secrets.example.yaml`. Появится отдельное устройство «GardenPilot Sim» (id
   получают префикс `gardenpilot_sim_`); на платформе host нет обнаружения через mDNS. Devcontainer с SDL публикует
   порт 6053 только на loopback ПК, этого хватает для HA на том же ПК. Для HA на другой машине задайте на хосте
-  `GP_SIM_API_PUBLISH=6053` до **Rebuild Container** и разрешите TCP 6053 в файрволе хоста (firewalld в Fedora и
+  `GP_SIM_API_BIND=0.0.0.0` до **Rebuild Container** и разрешите TCP 6053 в файрволе хоста (firewalld в Fedora и
   Bazzite). Docker на Linux может вместо этого использовать `--network=host`.
 - **Проверка конфига эмулятора вручную:** `script/config garden-pilot-sim.yaml` и `script/compile garden-pilot-sim.yaml`
   берут ваш настоящий `secrets.yaml`, если он есть; в нём нет ключа эмулятора, и команда падает с «Secret
