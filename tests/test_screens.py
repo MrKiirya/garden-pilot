@@ -242,7 +242,8 @@ def test_device_only_packages_not_in_sim() -> None:
     assert WIFI not in sim_files
 
 
-TOKENIZED_TEXT_FILES = [SETUP, NETWORK, DIALOG, WIFI, BOOT, "packages/greenhouse/lvgl_valve_test.yaml"]
+TOKENIZED_TEXT_FILES = [SETUP, NETWORK, DIALOG, WIFI, BOOT, "packages/greenhouse/lvgl_valve_test.yaml",
+                        "packages/lvgl/screensaver.yaml", "packages/greenhouse/screensaver_status.yaml"]
 
 
 @pytest.mark.parametrize("rel", TOKENIZED_TEXT_FILES)
