@@ -1,8 +1,9 @@
-# Resistive soil probe: VCC→3V3 (preferred) or 5V; GND→GND; AO→soil_ao_pin (ADC);
+# Resistive soil probe: VCC→3V3 (preferred) or 5V; GND→GND; AO→adc_1_pin (ADC);
 # DO→soil_do_pin (optional digital).
 # If VCC=5V, AO can exceed 3.3V — use a resistor divider (~10k/20k) before the ESP ADC pin.
 # On-board pot sets DO threshold only. AO → % via calibrate_linear (soil_cal_*_v);
 # not absolute soil science, just a useful scale.
+# One ADC pin serves one probe: not together with a bed_soil.yaml sensor on adc_1_pin.
 # Calibrate: note V at air-dry probe and at waterlogged (or glass of water), put into the substitutions
 # below (or override them in the entry file).
 
@@ -13,7 +14,7 @@ substitutions:
 
 sensor:
   - platform: adc
-    pin: ${soil_ao_pin}
+    pin: ${adc_1_pin}
     id: gh_soil_moisture_pct
     name: "Greenhouse soil moisture"
     unit_of_measurement: "%"

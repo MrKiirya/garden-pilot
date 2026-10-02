@@ -1,0 +1,31 @@
+# Board profile: simulation, for `esphome config` only (no firmware is built or flashed from it).
+# Replaces the raw relay drivers with template switches so the irrigation part validates without a real board.
+#
+# Supported packages: gh_irrigation and the gh_bed_N blocks (packages/greenhouse/irrigation.yaml, bed.yaml).
+# NOT supported, because the host platform has no such components:
+# - packages/core/network.yaml (wifi, captive_portal) until the network package is split (roadmap stage 11);
+# - packages/display_touch.yaml and everything LVGL (mipi_spi display, XPT2046 touch);
+# - the greenhouse sensors (DHT, ADC), packages/greenhouse/bed_soil.yaml (ADC) and the greenhouse page.
+# Same board_relay_N ids as every other profile; no *_pin substitutions.
+
+host:
+  mac_address: "02:00:00:00:00:01"
+
+switch:
+  - platform: template
+    id: board_relay_1
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+
+  - platform: template
+    id: board_relay_2
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+
+  - platform: template
+    id: board_relay_3
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF

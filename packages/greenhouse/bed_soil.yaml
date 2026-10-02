@@ -1,0 +1,40 @@
+# Optional soil moisture sensor of one bed. It only reports; skipping a run when the soil is wet is the own
+# irrigation engine (roadmap stage 6). Include it after the bed's own block, once per sensor, from the entry file
+# (vars are all required, literal strings):
+#
+#   gh_bed_1_soil: !include
+#     file: packages/greenhouse/bed_soil.yaml
+#     vars: {bed: "1", bed_name: "Greenhouse bed 1", adc_pin: "${adc_1_pin}", cal_dry_v: "3.16", cal_wet_v: "0.80"}
+#
+#   bed, bed_name   same values as the bed's own include.
+#   adc_pin         a board analog input from the hardware profile (${adc_N_pin}), never a GPIO number.
+#   cal_dry_v       probe voltage in air (0 %), cal_wet_v: probe voltage in water (100 %), in volts.
+#
+# Wiring and calibration: resistive probe VCC->3V3, GND->GND, AO->the ADC pin (if VCC=5V, AO can exceed 3.3 V:
+# use a resistor divider ~10k/20k). Note the voltage with a dry probe and with the probe in water.
+# - ADC1 pins only while Wi-Fi is active (ESP32-S3: GPIO1..GPIO10).
+# - One probe per ADC pin: do not use the same adc_pin for two sensors, nor together with the greenhouse-wide
+#   probe (sensors_soil.yaml) on the same pin.
+
+sensor:
+  - platform: adc
+    pin: ${adc_pin}
+    id: gh_bed${bed}_soil_moisture
+    name: "${bed_name} soil moisture"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: moisture
+    update_interval: 5s
+    attenuation: 12db
+    samples: 8
+    filters:
+      - median:
+          window_size: 5
+          send_every: 5
+          send_first_at: 1
+      - calibrate_linear:
+          - ${cal_dry_v} -> 0.0
+          - ${cal_wet_v} -> 100.0
+      - clamp:
+          min_value: 0.0
+          max_value: 100.0

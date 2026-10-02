@@ -21,6 +21,7 @@ logger:
 
 packages:
   # Board profile: pins, display/touch orientation and calibration, esp32:. Pick exactly one.
+  # (hardware/sim.yaml validates irrigation + beds only, see its header.)
   hardware: !include hardware/esp32-s3-devkitc1-breadboard.yaml
 
   # Core: connectivity and clock. Need nothing else (no display, no LVGL).
@@ -39,7 +40,23 @@ packages:
 
   # Greenhouse (all under packages/greenhouse/ — include each fragment explicitly).
   # Needs display_touch + the LVGL pages above until stage 7; irrigation must come before its page.
+  # Irrigation controller first, then one block per bed (at least 2 with the stock sprinkler). The order of the
+  # bed blocks is the valve order; the greenhouse page expects exactly beds 1-3 until stage 8.
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
+  gh_bed_1: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+  # Optional soil moisture sensor of bed 1 (only reports): uncomment and set adc_pin and calibration.
+  # An ADC pin serves one probe: not together with gh_sensors_soil on the same pin.
+  # gh_bed_1_soil: !include
+  #   file: packages/greenhouse/bed_soil.yaml
+  #   vars: {bed: "1", bed_name: "Greenhouse bed 1", adc_pin: "${adc_1_pin}", cal_dry_v: "3.16", cal_wet_v: "0.80"}
+  gh_bed_2: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "2", bed_name: "Greenhouse bed 2", relay: "2"}
+  gh_bed_3: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
   gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml
   gh_sensors_soil: !include packages/greenhouse/sensors_soil.yaml

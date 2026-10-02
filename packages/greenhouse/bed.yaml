@@ -1,0 +1,38 @@
+# One greenhouse bed: a sprinkler valve with its enable switch and run-duration number.
+# Include it once per bed from the entry file (vars are all required, literal strings):
+#
+#   gh_bed_1: !include
+#     file: packages/greenhouse/bed.yaml
+#     vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+#
+#   bed        bed number; used in ids (gh_bed<bed>_run_duration). Unique per bed.
+#   bed_name   entity name in Home Assistant; "<bed_name> enable" and "<bed_name> run duration" derive from it.
+#   relay      board relay number; the bed drives `board_relay_<relay>` from the hardware profile.
+#
+# Requirements and rules:
+# - Include packages/greenhouse/irrigation.yaml (gh_irrigation) BEFORE the beds: the valve is added to its
+#   `gh_sprinkler` with !extend.
+# - The order of the bed blocks in the entry file is the valve order (valve_number 0, 1, 2, ... used by the
+#   greenhouse page).
+# - At least 2 beds with the stock sprinkler: it forbids the controller switches and the per-bed enable switch with
+#   a single valve. A 1-bed greenhouse comes with the own irrigation engine (roadmap stage 6).
+# - Optional soil moisture sensor for the bed: packages/greenhouse/bed_soil.yaml (separate include, nothing here).
+# - Do not call lvgl.* from run_duration_number on_value (restore/HA can fire outside an LVGL-safe context).
+
+sprinkler:
+  - id: !extend gh_sprinkler
+    valves:
+      - valve_switch: "${bed_name}"
+        enable_switch: "${bed_name} enable"
+        run_duration_number:
+          id: gh_bed${bed}_run_duration
+          name: "${bed_name} run duration"
+          initial_value: 5
+          min_value: 1
+          max_value: 120
+          step: 1
+          unit_of_measurement: "min"
+          restore_value: true
+          icon: mdi:timer-outline
+          mode: BOX
+        valve_switch_id: board_relay_${relay}
