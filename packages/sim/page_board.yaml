@@ -1,0 +1,599 @@
+# PC emulator only (garden-pilot-sim.yaml); never include from the device entry file.
+# SIM board: the virtual board. Left card: one live indicator per board relay (named by board function, state is the
+# fill colour plus the word ON/OFF) and the "Sim auto drift" switch. Right card: one slider per simulated value
+# (they write the settable numbers from sensors.yaml / bed_soil.yaml; the same numbers can be set by script/sim-ctl or
+# Home Assistant). A sim-only SIM button on the top layer (visible on every page, in the header band) opens the page.
+# To drop the page: comment out sim_page_board (and sim_sensors_lvgl if you also drop the Home/Greenhouse values).
+# Note: the SIM button is on the top layer of every page, so on the Touch test page it catches taps in
+# x=200..244, y=1..21 (ESPHome has no page condition to hide it; page entries do not merge): read touch-test
+# results near the top edge with that in mind.
+# Tokens only (design/tokens.json). The Slider and the relay indicator row are not in the design system yet.
+# The sync interval reads state by polling: there is no lvgl.* call in any number/switch on_value (LVGL may not be
+# ready then). Sliders and the switch write with on_change, which fires on user input only, so the poll never
+# fights the knob.
+
+lvgl:
+  top_layer:
+    widgets:
+      - button:
+          id: nav_btn_sim
+          x: 200
+          y: 1
+          width: 44
+          height: 20
+          bg_color: 0x201f1f
+          bg_opa: COVER
+          border_width: 0
+          radius: 3
+          shadow_width: 0
+          on_click:
+            - lvgl.page.show: sim_board_page
+          widgets:
+            - label:
+                align: CENTER
+                text: "SIM"
+                text_font: montserrat_8
+                text_color: 0xbecab9
+  pages:
+    - id: sim_board_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      scrollable: false
+      widgets:
+        - label:
+            x: 8
+            y: 5
+            text: "SIM BOARD"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - obj:
+            x: 8
+            y: 26
+            width: 148
+            height: 176
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 14
+            y: 31
+            text: "OUTPUTS"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - obj:
+            id: sim_relay_1_led
+            x: 14
+            y: 48
+            width: 10
+            height: 10
+            bg_color: 0x353534
+            bg_opa: COVER
+            border_width: 0
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            id: sim_relay_1_label
+            x: 30
+            y: 49
+            text: "R1 BED 1 VALVE"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_relay_1_state
+            x: 124
+            y: 48
+            text: "OFF"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - obj:
+            id: sim_relay_2_led
+            x: 14
+            y: 68
+            width: 10
+            height: 10
+            bg_color: 0x353534
+            bg_opa: COVER
+            border_width: 0
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            id: sim_relay_2_label
+            x: 30
+            y: 69
+            text: "R2 BED 2 VALVE"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_relay_2_state
+            x: 124
+            y: 68
+            text: "OFF"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - obj:
+            id: sim_relay_3_led
+            x: 14
+            y: 88
+            width: 10
+            height: 10
+            bg_color: 0x353534
+            bg_opa: COVER
+            border_width: 0
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            id: sim_relay_3_label
+            x: 30
+            y: 89
+            text: "R3 BED 3 VALVE"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_relay_3_state
+            x: 124
+            y: 88
+            text: "OFF"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - label:
+            x: 14
+            y: 118
+            text: "SIM AUTO DRIFT"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - switch:
+            id: sim_auto_drift_sw
+            x: 14
+            y: 134
+            width: 28
+            height: 14
+            radius: 7
+            bg_color: 0x353534
+            bg_opa: COVER
+            indicator:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            knob:
+              bg_color: 0xe5e2e1
+              bg_opa: COVER
+            ext_click_area: 6
+            on_change:
+              - if:
+                  condition:
+                    lambda: return x;
+                  then:
+                    - switch.turn_on: sim_auto_drift
+                  else:
+                    - switch.turn_off: sim_auto_drift
+        - label:
+            id: sim_auto_drift_state
+            x: 50
+            y: 135
+            text: "OFF"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - obj:
+            x: 162
+            y: 26
+            width: 150
+            height: 176
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 168
+            y: 31
+            text: "INPUTS"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            x: 168
+            y: 44
+            text: "AIR T"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_air_t_value
+            x: 262
+            y: 43
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - slider:
+            id: sim_air_t_slider
+            x: 168
+            y: 57
+            width: 136
+            height: 6
+            min_value: -10
+            max_value: 50
+            bg_color: 0x353534
+            bg_opa: COVER
+            indicator:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            knob:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            ext_click_area: 8
+            on_change:
+              - number.set:
+                  id: sim_air_temperature
+                  value: !lambda return x;
+        - label:
+            x: 168
+            y: 69
+            text: "AIR RH"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_air_rh_value
+            x: 262
+            y: 68
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - slider:
+            id: sim_air_rh_slider
+            x: 168
+            y: 82
+            width: 136
+            height: 6
+            min_value: 0
+            max_value: 100
+            bg_color: 0x353534
+            bg_opa: COVER
+            indicator:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            knob:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            ext_click_area: 8
+            on_change:
+              - number.set:
+                  id: sim_air_humidity
+                  value: !lambda return x;
+        - label:
+            x: 168
+            y: 94
+            text: "SOIL GH"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_soil_gh_value
+            x: 262
+            y: 93
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - slider:
+            id: sim_soil_gh_slider
+            x: 168
+            y: 107
+            width: 136
+            height: 6
+            min_value: 0
+            max_value: 100
+            bg_color: 0x353534
+            bg_opa: COVER
+            indicator:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            knob:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            ext_click_area: 8
+            on_change:
+              - number.set:
+                  id: sim_soil_moisture
+                  value: !lambda return x;
+        - label:
+            x: 168
+            y: 119
+            text: "SOIL B1"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_soil_b1_value
+            x: 262
+            y: 118
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - slider:
+            id: sim_soil_b1_slider
+            x: 168
+            y: 132
+            width: 136
+            height: 6
+            min_value: 0
+            max_value: 100
+            bg_color: 0x353534
+            bg_opa: COVER
+            indicator:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            knob:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            ext_click_area: 8
+            on_change:
+              - number.set:
+                  id: sim_bed1_soil_moisture
+                  value: !lambda return x;
+        - label:
+            x: 168
+            y: 144
+            text: "SOIL B2"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_soil_b2_value
+            x: 262
+            y: 143
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - slider:
+            id: sim_soil_b2_slider
+            x: 168
+            y: 157
+            width: 136
+            height: 6
+            min_value: 0
+            max_value: 100
+            bg_color: 0x353534
+            bg_opa: COVER
+            indicator:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            knob:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            ext_click_area: 8
+            on_change:
+              - number.set:
+                  id: sim_bed2_soil_moisture
+                  value: !lambda return x;
+        - label:
+            x: 168
+            y: 169
+            text: "SOIL B3"
+            text_font: montserrat_8
+            text_color: 0xbecab9
+        - label:
+            id: sim_soil_b3_value
+            x: 262
+            y: 168
+            text: "--"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - slider:
+            id: sim_soil_b3_slider
+            x: 168
+            y: 182
+            width: 136
+            height: 6
+            min_value: 0
+            max_value: 100
+            bg_color: 0x353534
+            bg_opa: COVER
+            indicator:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            knob:
+              bg_color: 0x4caf50
+              bg_opa: COVER
+            ext_click_area: 8
+            on_change:
+              - number.set:
+                  id: sim_bed3_soil_moisture
+                  value: !lambda return x;
+        - button:
+            id: sim_btn_home
+            x: 232
+            y: 208
+            width: 80
+            height: 26
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            on_click:
+              - lvgl.page.show: home_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "HOME"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+
+interval:
+  - interval: 500ms
+    then:
+      - if:
+          condition:
+            switch.is_on: board_relay_1
+          then:
+            - lvgl.widget.update:
+                id: sim_relay_1_led
+                bg_color: 0x4caf50
+            - lvgl.label.update:
+                id: sim_relay_1_state
+                text: "ON"
+                text_color: 0x78dc77
+          else:
+            - lvgl.widget.update:
+                id: sim_relay_1_led
+                bg_color: 0x353534
+            - lvgl.label.update:
+                id: sim_relay_1_state
+                text: "OFF"
+                text_color: 0xbecab9
+      - if:
+          condition:
+            switch.is_on: board_relay_2
+          then:
+            - lvgl.widget.update:
+                id: sim_relay_2_led
+                bg_color: 0x4caf50
+            - lvgl.label.update:
+                id: sim_relay_2_state
+                text: "ON"
+                text_color: 0x78dc77
+          else:
+            - lvgl.widget.update:
+                id: sim_relay_2_led
+                bg_color: 0x353534
+            - lvgl.label.update:
+                id: sim_relay_2_state
+                text: "OFF"
+                text_color: 0xbecab9
+      - if:
+          condition:
+            switch.is_on: board_relay_3
+          then:
+            - lvgl.widget.update:
+                id: sim_relay_3_led
+                bg_color: 0x4caf50
+            - lvgl.label.update:
+                id: sim_relay_3_state
+                text: "ON"
+                text_color: 0x78dc77
+          else:
+            - lvgl.widget.update:
+                id: sim_relay_3_led
+                bg_color: 0x353534
+            - lvgl.label.update:
+                id: sim_relay_3_state
+                text: "OFF"
+                text_color: 0xbecab9
+      - if:
+          condition:
+            switch.is_on: sim_auto_drift
+          then:
+            - lvgl.widget.update:
+                id: sim_auto_drift_sw
+                state:
+                  checked: true
+            - lvgl.label.update:
+                id: sim_auto_drift_state
+                text: "ON"
+                text_color: 0x78dc77
+          else:
+            - lvgl.widget.update:
+                id: sim_auto_drift_sw
+                state:
+                  checked: false
+            - lvgl.label.update:
+                id: sim_auto_drift_state
+                text: "OFF"
+                text_color: 0xbecab9
+      - if:
+          condition:
+            lambda: return id(sim_air_temperature).has_state();
+          then:
+            - lvgl.slider.update:
+                id: sim_air_t_slider
+                value: !lambda return (int) lroundf(id(sim_air_temperature).state);
+            - lvgl.label.update:
+                id: sim_air_t_value
+                text: !lambda |-
+                  char buf[12];
+                  snprintf(buf, sizeof(buf), "%.0fC", id(sim_air_temperature).state);
+                  return std::string(buf);
+      - if:
+          condition:
+            lambda: return id(sim_air_humidity).has_state();
+          then:
+            - lvgl.slider.update:
+                id: sim_air_rh_slider
+                value: !lambda return (int) lroundf(id(sim_air_humidity).state);
+            - lvgl.label.update:
+                id: sim_air_rh_value
+                text: !lambda |-
+                  char buf[12];
+                  snprintf(buf, sizeof(buf), "%.0f%%", id(sim_air_humidity).state);
+                  return std::string(buf);
+      - if:
+          condition:
+            lambda: return id(sim_soil_moisture).has_state();
+          then:
+            - lvgl.slider.update:
+                id: sim_soil_gh_slider
+                value: !lambda return (int) lroundf(id(sim_soil_moisture).state);
+            - lvgl.label.update:
+                id: sim_soil_gh_value
+                text: !lambda |-
+                  char buf[12];
+                  snprintf(buf, sizeof(buf), "%.0f%%", id(sim_soil_moisture).state);
+                  return std::string(buf);
+      - if:
+          condition:
+            lambda: return id(sim_bed1_soil_moisture).has_state();
+          then:
+            - lvgl.slider.update:
+                id: sim_soil_b1_slider
+                value: !lambda return (int) lroundf(id(sim_bed1_soil_moisture).state);
+            - lvgl.label.update:
+                id: sim_soil_b1_value
+                text: !lambda |-
+                  char buf[12];
+                  snprintf(buf, sizeof(buf), "%.0f%%", id(sim_bed1_soil_moisture).state);
+                  return std::string(buf);
+      - if:
+          condition:
+            lambda: return id(sim_bed2_soil_moisture).has_state();
+          then:
+            - lvgl.slider.update:
+                id: sim_soil_b2_slider
+                value: !lambda return (int) lroundf(id(sim_bed2_soil_moisture).state);
+            - lvgl.label.update:
+                id: sim_soil_b2_value
+                text: !lambda |-
+                  char buf[12];
+                  snprintf(buf, sizeof(buf), "%.0f%%", id(sim_bed2_soil_moisture).state);
+                  return std::string(buf);
+      - if:
+          condition:
+            lambda: return id(sim_bed3_soil_moisture).has_state();
+          then:
+            - lvgl.slider.update:
+                id: sim_soil_b3_slider
+                value: !lambda return (int) lroundf(id(sim_bed3_soil_moisture).state);
+            - lvgl.label.update:
+                id: sim_soil_b3_value
+                text: !lambda |-
+                  char buf[12];
+                  snprintf(buf, sizeof(buf), "%.0f%%", id(sim_bed3_soil_moisture).state);
+                  return std::string(buf);

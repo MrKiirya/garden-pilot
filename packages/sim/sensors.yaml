@@ -1,0 +1,76 @@
+# PC emulator only (garden-pilot-sim.yaml); never include from the device entry file.
+# Simulated greenhouse sensors. The template numbers are the single source of truth (set them on the SIM board page,
+# with script/sim-ctl or from Home Assistant); the template sensors carry the same ids, names, units and precision as
+# the device sensors (sensors_air_dht.yaml, sensors_soil.yaml), so screens and Home Assistant see the same entities.
+# Display-free: the labels are updated by sensors_lvgl.yaml. Defaults are deterministic (no restore).
+
+number:
+  - platform: template
+    id: sim_air_temperature
+    name: "Sim air temperature"
+    unit_of_measurement: "°C"
+    mode: slider
+    optimistic: true
+    restore_value: false
+    min_value: -10
+    max_value: 50
+    step: 0.5
+    initial_value: 22
+    on_value:
+      - component.update: gh_air_temperature
+
+  - platform: template
+    id: sim_air_humidity
+    name: "Sim air humidity"
+    unit_of_measurement: "%"
+    mode: slider
+    optimistic: true
+    restore_value: false
+    min_value: 0
+    max_value: 100
+    step: 1
+    initial_value: 60
+    on_value:
+      - component.update: gh_air_humidity
+
+  - platform: template
+    id: sim_soil_moisture
+    name: "Sim soil moisture"
+    unit_of_measurement: "%"
+    mode: slider
+    optimistic: true
+    restore_value: false
+    min_value: 0
+    max_value: 100
+    step: 1
+    initial_value: 50
+    on_value:
+      - component.update: gh_soil_moisture_pct
+
+sensor:
+  - platform: template
+    id: gh_air_temperature
+    name: "Greenhouse air temperature"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+    update_interval: 5s
+    lambda: return id(sim_air_temperature).state;
+
+  - platform: template
+    id: gh_air_humidity
+    name: "Greenhouse air humidity"
+    unit_of_measurement: "%"
+    device_class: humidity
+    accuracy_decimals: 1
+    update_interval: 5s
+    lambda: return id(sim_air_humidity).state;
+
+  - platform: template
+    id: gh_soil_moisture_pct
+    name: "Greenhouse soil moisture"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: moisture
+    update_interval: 5s
+    lambda: return id(sim_soil_moisture).state;

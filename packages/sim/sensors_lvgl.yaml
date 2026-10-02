@@ -1,0 +1,60 @@
+# PC emulator only (garden-pilot-sim.yaml); never include from the device entry file.
+# Polled label/bar updates for the simulated sensors (needs LVGL pages home and greenhouse; drop it with the page).
+# Same text formats as the device's on_value updates: keep in sync with sensors_air_dht.yaml / sensors_soil.yaml.
+# Polling (not on_value) avoids calling lvgl before it is ready. A widget keeps its placeholder until the sensor
+# has a state.
+
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: return id(gh_air_temperature).has_state();
+          then:
+            - lvgl.label.update:
+                id: gh_home_air_t_label
+                text: !lambda |-
+                  char buf[16];
+                  snprintf(buf, sizeof(buf), "%.0f C", id(gh_air_temperature).state);
+                  return std::string(buf);
+            - lvgl.label.update:
+                id: gh_greenhouse_t_label
+                text: !lambda |-
+                  char buf[32];
+                  snprintf(buf, sizeof(buf), "Air: %.1f C", id(gh_air_temperature).state);
+                  return std::string(buf);
+      - if:
+          condition:
+            lambda: return id(gh_air_humidity).has_state();
+          then:
+            - lvgl.label.update:
+                id: gh_home_air_rh_label
+                text: !lambda |-
+                  char buf[16];
+                  snprintf(buf, sizeof(buf), "%.0f%%", id(gh_air_humidity).state);
+                  return std::string(buf);
+            - lvgl.label.update:
+                id: gh_greenhouse_rh_label
+                text: !lambda |-
+                  char buf[32];
+                  snprintf(buf, sizeof(buf), "RH: %.0f %%", id(gh_air_humidity).state);
+                  return std::string(buf);
+      - if:
+          condition:
+            lambda: return id(gh_soil_moisture_pct).has_state();
+          then:
+            - lvgl.bar.update:
+                id: gh_home_soil_bar
+                value: !lambda |-
+                  int v = (int) (id(gh_soil_moisture_pct).state + 0.5f);
+                  if (v < 0)
+                    v = 0;
+                  if (v > 100)
+                    v = 100;
+                  return v;
+            - lvgl.label.update:
+                id: gh_greenhouse_soil_hint
+                text: !lambda |-
+                  char buf[40];
+                  snprintf(buf, sizeof(buf), "Soil: %.0f %%", id(gh_soil_moisture_pct).state);
+                  return std::string(buf);
