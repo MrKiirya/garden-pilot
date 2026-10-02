@@ -1,0 +1,37 @@
+# Greenhouse part of the screensaver (packages/lvgl/screensaver.yaml): status line "24C - soil 58%" and the
+# running-bed indicator ("Bed N" with a green dot, hidden when idle). Read-only: it only reads sensors and
+# gh_sprinkler and updates labels, it never starts or stops anything. ASCII only ("--" while a sensor has no state).
+# Needs gh_sensors_air / gh_sensors_soil (or the emulator's sim_sensors with the same ids) and gh_sprinkler.
+
+interval:
+  - interval: 2s
+    then:
+      - lvgl.label.update:
+          id: gp_screensaver_status
+          text: !lambda |-
+            char t[8];
+            char s[8];
+            float temp = id(gh_air_temperature).state;
+            float soil = id(gh_soil_moisture_pct).state;
+            if (id(gh_air_temperature).has_state() && !std::isnan(temp)) snprintf(t, sizeof(t), "%.0fC", temp);
+            else snprintf(t, sizeof(t), "--");
+            if (id(gh_soil_moisture_pct).has_state() && !std::isnan(soil)) snprintf(s, sizeof(s), "%.0f%%", soil);
+            else snprintf(s, sizeof(s), "--");
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%s - soil %s", t, s);
+            return std::string(buf);
+      - if:
+          condition:
+            lambda: "return id(gh_sprinkler)->active_valve().has_value();"
+          then:
+            - lvgl.label.update:
+                id: gp_screensaver_bed_label
+                text: !lambda |-
+                  char buf[12];
+                  snprintf(buf, sizeof(buf), "Bed %u", (unsigned) (id(gh_sprinkler)->active_valve().value() + 1));
+                  return std::string(buf);
+            - lvgl.widget.show: gp_screensaver_bed_dot
+            - lvgl.widget.show: gp_screensaver_bed_label
+          else:
+            - lvgl.widget.hide: gp_screensaver_bed_dot
+            - lvgl.widget.hide: gp_screensaver_bed_label
