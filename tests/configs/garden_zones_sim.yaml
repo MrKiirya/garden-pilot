@@ -162,7 +162,8 @@ script:
       - garden_zones.start_from_queue: gz_sim
       - delay: 1s
       - garden_zones.pause: gz_sim
-      - delay: 500ms
+      # pause() leaves the controller STOPPING for about 1 s; start_from_queue is ignored until it is IDLE again
+      - delay: 2s
       - script.execute:
           id: gz_log_paused
           label: stale
