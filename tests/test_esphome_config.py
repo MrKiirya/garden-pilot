@@ -27,7 +27,7 @@ def test_sim_entry_file_is_a_package_list() -> None:
     assert isinstance(config, dict)
     assert set(config) <= {"substitutions", "esphome", "logger", "api", "packages"}
     keys = list(config["packages"])
-    assert keys[:5] == ["hardware", "core_api", "core_time_host", "display_sdl", "lvgl_base"]
+    assert keys[:6] == ["hardware", "core_api", "core_time_host", "core_diagnostics", "display_sdl", "lvgl_base"]
     hardware = config["packages"]["hardware"]
     assert hardware["__tag__"] == "include" and hardware["value"] == "hardware/sim.yaml"
 
