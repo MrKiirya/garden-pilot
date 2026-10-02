@@ -1,0 +1,61 @@
+# PC emulator entry point: the real LVGL pages and irrigation packages on the ESPHome `host` platform, with an SDL
+# window instead of the ILI9341 and the mouse instead of touch. Run it with `script/sim`.
+# NEVER FLASH THIS FILE to a device: it is a Linux program, and its API key is a public dummy.
+# By hand: `script/config` / `script/compile` on this file fail with "Secret 'sim_api_encryption_key' not defined" when
+# a real secrets.yaml lacks that key: use GP_SECRETS=example, or add the public dummy key to secrets.yaml.
+#
+# Works without Home Assistant (clock from the PC, controls on the screen). Optionally add it to Home Assistant by
+# the IP of this PC, port 6053, key `sim_api_encryption_key` from secrets.example.yaml: it appears as a separate
+# device, "GardenPilot Sim".
+#
+# Left out of the device's package list on purpose:
+# - core_network, core_ota: no Wi-Fi or OTA on host (the PC's network is used);
+# - core_time (Home Assistant clock): core_time_host takes the PC clock under the same id;
+# - display_touch: display_sdl has the same ids; hardware: hardware/sim.yaml has template relays;
+# - gh_sensors_air, gh_sensors_soil, bed soil sensors: DHT/ADC do not exist on host (simulated sensors: task 007);
+# - the built-in web page: ESPHome does not support it on the host platform.
+# Keep the package order and the bed blocks in sync with garden-pilot.yaml.
+
+substitutions:
+  # Public dummy key (secrets.example.yaml; script/sim always stages the example secrets).
+  api_encryption_key: !secret sim_api_encryption_key
+
+esphome:
+  name: garden-pilot-sim
+  friendly_name: GardenPilot Sim
+
+logger:
+  level: INFO
+
+# The emulator must run indefinitely without a client; the default 15 min "no client" reboot would end the program.
+api:
+  reboot_timeout: 0s
+
+packages:
+  hardware: !include hardware/sim.yaml
+
+  core_api: !include packages/core/api.yaml
+  core_time_host: !include packages/core/time_host.yaml
+
+  display_sdl: !include packages/display_sdl.yaml
+
+  lvgl_base: !include packages/lvgl/base.yaml
+  lvgl_page_home: !include packages/lvgl/page_home.yaml
+  lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
+  lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
+
+  gh_irrigation: !include packages/greenhouse/irrigation.yaml
+  gh_bed_1: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+  gh_bed_2: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "2", bed_name: "Greenhouse bed 2", relay: "2"}
+  gh_bed_3: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+  gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
+  gh_sprinkler_lvgl: !include packages/greenhouse/sprinkler_lvgl_status.yaml
+
+  # Optional: touch dot / coord updates on press. Comment out to disable (overlay script stays no-op).
+  touch_dot_test: !include packages/touch_dot_test.yaml

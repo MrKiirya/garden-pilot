@@ -1,0 +1,8 @@
+# Wall clock from the PC (ESPHome `host` platform), for the emulator; the device uses packages/core/time.yaml.
+# The id stays `ha_time` so packages/lvgl/page_home.yaml (`!extend ha_time`) works with either source.
+# `on_time_sync` does not fire on host; the Home clock label refreshes from its 30 s interval instead.
+# Keep in sync with time.yaml (same id, one item).
+
+time:
+  - platform: host
+    id: ha_time

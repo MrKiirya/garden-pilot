@@ -14,6 +14,7 @@ pytestmark = pytest.mark.unit
 
 SECRET_REF = re.compile(r"!secret\s+([A-Za-z0-9_]+)")
 EXAMPLE_API_KEY_TEXT = b"garden-pilot-example-key-dummy!!"
+EXAMPLE_SIM_KEY_TEXT = b"garden-pilot-sim-public-dummy!!!"
 
 
 def _secret_refs() -> set[str]:
@@ -42,11 +43,21 @@ def test_example_has_no_unused_keys() -> None:
 @pytest.mark.parametrize("key", sorted(_example()))
 def test_example_values_are_obvious_placeholders(key: str) -> None:
     value = _example()[key]
-    if key == "api_encryption_key":
+    if key == "sim_api_encryption_key":
+        assert base64.b64decode(value, validate=True) == EXAMPLE_SIM_KEY_TEXT
+    elif key == "api_encryption_key":
         # ESPHome rejects an all-zeros key, so the placeholder is readable text instead.
         assert base64.b64decode(value) == EXAMPLE_API_KEY_TEXT
     else:
         assert set(value) == {"0"}, f"{key} must be a zero-only placeholder"
+
+
+def test_sim_api_key_is_valid_and_distinct() -> None:
+    example = _example()
+    raw = base64.b64decode(example["sim_api_encryption_key"], validate=True)
+    assert len(raw) == 32
+    assert example["sim_api_encryption_key"] != example["api_encryption_key"]
+    assert raw != b"\0" * 32, "ESPHome rejects an all-zeros key"
 
 
 def test_real_secrets_file_is_not_tracked() -> None:

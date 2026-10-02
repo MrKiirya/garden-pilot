@@ -14,6 +14,8 @@ from conftest import REPO_ROOT, _EsphomeLoader, load_esphome_yaml
 pytestmark = pytest.mark.unit
 
 ENTRY = REPO_ROOT / "garden-pilot.yaml"
+SIM_ENTRY = REPO_ROOT / "garden-pilot-sim.yaml"
+ENTRIES = [ENTRY, SIM_ENTRY]
 
 
 def tracked_files() -> list[Path]:
@@ -91,12 +93,12 @@ def _entry_text_with_examples() -> str:
     return _uncomment_examples(ENTRY.read_text(encoding="utf-8"))[0]
 
 
-def _entry_includes(path_suffix: str) -> list[dict]:
+def _entry_includes(path_suffix: str, entry: Path = ENTRY) -> list[dict]:
     """Entry-file packages including `path_suffix` with file:/vars:, in file order.
 
     Each item: key, vars, active (False for commented-out examples).
     """
-    text, examples = _uncomment_examples(ENTRY.read_text(encoding="utf-8"))
+    text, examples = _uncomment_examples(entry.read_text(encoding="utf-8"))
     data = yaml.load(text, Loader=_EsphomeLoader)  # noqa: S506 - SafeLoader subclass
     items = []
     for key, pkg in data["packages"].items():
@@ -324,10 +326,11 @@ def test_bed_vars_do_not_shadow_globals() -> None:
     assert not names & defined, f"bed vars shadow global substitutions: {sorted(names & defined)}"
 
 
-def test_no_secret_outside_entry_file() -> None:
+@pytest.mark.parametrize("entry_path", ENTRIES, ids=lambda p: p.name)
+def test_no_secret_outside_entry_file(entry_path: Path) -> None:
     for path in _yaml_files("packages", "hardware"):
         assert "!secret" not in _strip_comments(path.read_text(encoding="utf-8")), path
-    entry = load_esphome_yaml(ENTRY)
+    entry = load_esphome_yaml(entry_path)
     assert isinstance(entry, dict)
     for section, value in entry.items():
         if section != "substitutions":
@@ -360,6 +363,47 @@ def test_substitutions_resolve() -> None:
     assert not missing, f"undefined substitutions: {sorted(missing)}"
 
 
+def _sim_data() -> dict:
+    data = load_esphome_yaml(SIM_ENTRY)
+    assert isinstance(data, dict)
+    return data
+
+
+def _package_files(data: dict) -> dict[str, str]:
+    """Entry-file package key -> included file path (`!include path` or `!include {file: path}`)."""
+    result = {}
+    for key, pkg in data["packages"].items():
+        assert isinstance(pkg, dict) and pkg.get("__tag__") == "include", key
+        value = pkg["value"]
+        result[key] = value["file"] if isinstance(value, dict) else value
+    return result
+
+
+def test_sim_substitutions_resolve() -> None:
+    """Every ${name} used by a package the sim includes is defined by the sim entry file, hardware/sim.yaml,
+    a package `substitutions:` block or a bed's vars (catches a sim package that needs wifi_ssid etc.)."""
+    data = _sim_data()
+    files = _package_files(data)
+    sim_hw = REPO_ROOT / files["hardware"]
+    defined = set(data.get("substitutions") or {}) | _subst_keys(sim_hw)
+    supplied: dict[str, set[str]] = {}
+    for key, pkg in data["packages"].items():
+        value = pkg["value"]
+        if isinstance(value, dict):
+            supplied.setdefault(value["file"], set()).update(value.get("vars") or {})
+    for rel in files.values():
+        loaded = load_esphome_yaml(REPO_ROOT / rel)
+        if isinstance(loaded, dict):
+            defined |= set(loaded.get("substitutions") or {})
+    missing = set()
+    for rel in files.values():
+        text = _strip_comments((REPO_ROOT / rel).read_text(encoding="utf-8"))
+        for name in re.findall(r"\$\{(\w+)\}", text):
+            if name not in defined | supplied.get(rel, set()):
+                missing.add((rel, name))
+    assert not missing, f"undefined substitutions in the sim build: {sorted(missing)}"
+
+
 def test_core_is_display_independent() -> None:
     lvgl_ids: set[str] = set()
     for path in _yaml_files("packages/lvgl"):
@@ -385,3 +429,79 @@ def test_gpio_actuators_are_safe() -> None:
                 assert sw.get("internal") is True, f"{path.name}: gpio switch must be internal"
                 assert sw.get("restore_mode") in {"RESTORE_DEFAULT_OFF", "ALWAYS_OFF"}, path.name
     assert checked, "no gpio switches found"
+
+
+def _single_top_level(rel: str, key: str) -> dict | list:
+    data = load_esphome_yaml(REPO_ROOT / rel)
+    assert isinstance(data, dict)
+    assert set(data) == {key}, f"{rel}: expected only `{key}`, got {sorted(data)}"
+    return data[key]
+
+
+def test_core_split() -> None:
+    api = _single_top_level("packages/core/api.yaml", "api")
+    assert isinstance(api, dict) and api["encryption"]["key"] == "${api_encryption_key}"
+    ota = _single_top_level("packages/core/ota.yaml", "ota")
+    assert len(ota) == 1 and ota[0]["platform"] == "esphome" and ota[0]["password"] == "${ota_password}"
+    data = load_esphome_yaml(REPO_ROOT / "packages/core/network.yaml")
+    assert isinstance(data, dict) and set(data) == {"wifi", "captive_portal"}
+    for rel, platform in (("packages/core/time.yaml", "homeassistant"), ("packages/core/time_host.yaml", "host")):
+        times = _single_top_level(rel, "time")
+        assert len(times) == 1, rel
+        assert times[0]["platform"] == platform and times[0]["id"] == "ha_time", rel
+
+
+def _ids(items: list, platform: str | None = None) -> set[str]:
+    return {i["id"] for i in items if platform is None or i.get("platform") == platform}
+
+
+def test_display_packages_share_ids() -> None:
+    touch = load_esphome_yaml(REPO_ROOT / "packages" / "display_touch.yaml")
+    sdl = load_esphome_yaml(REPO_ROOT / "packages" / "display_sdl.yaml")
+    assert isinstance(touch, dict) and isinstance(sdl, dict)
+    for data in (touch, sdl):
+        assert _ids(data["display"]) == {"tft_display"}
+        assert _ids(data["touchscreen"]) == {"touch"}
+        assert _ids(data["script"]) == {"touch_ui", "touch_dot_overlay"}
+    assert [d["platform"] for d in sdl["display"]] == ["sdl"]
+    assert [t["platform"] for t in sdl["touchscreen"]] == ["sdl"]
+    text = _strip_comments((REPO_ROOT / "packages" / "display_sdl.yaml").read_text(encoding="utf-8"))
+    assert not re.search(r"\$\{\w+_pin\}|GPIO|headless|snapshot_key", text)
+
+
+def test_sim_entry_file() -> None:
+    data = _sim_data()
+    assert set(data) <= {"substitutions", "esphome", "logger", "api", "packages"}
+    assert set(data.get("api") or {}) <= {"reboot_timeout"}
+    files = _package_files(data)
+    assert files["hardware"] == "hardware/sim.yaml"
+    keys = list(files)
+    required = ["core_api", "core_time_host", "display_sdl", "lvgl_base", "lvgl_page_home", "gh_irrigation",
+                "gh_bed_1", "gh_bed_2", "gh_bed_3", "gh_lvgl_page", "gh_sprinkler_lvgl"]
+    assert set(required) <= set(keys), sorted(set(required) - set(keys))
+    first_page = [k for k in keys if k.startswith("lvgl_page_")][0]
+    assert first_page == "lvgl_page_home"
+    forbidden = {"core_network", "core_ota", "core_time", "display_touch", "gh_sensors_air", "gh_sensors_soil"}
+    assert not forbidden & set(keys), sorted(forbidden & set(keys))
+    assert BED_SOIL_FILE not in files.values()
+    assert "web_server" not in data
+    device = load_esphome_yaml(ENTRY)
+    assert isinstance(device, dict)
+    assert data["esphome"]["name"] != device["esphome"]["name"]
+    assert data["logger"]["level"] in {"INFO", "WARN", "WARNING", "ERROR", "NONE"}
+    secret_names = [v["value"] for v in data["substitutions"].values() if isinstance(v, dict) and v.get("__tag__") == "secret"]
+    assert secret_names == ["sim_api_encryption_key"], "the emulator uses only its own public dummy key"
+    assert data["substitutions"]["api_encryption_key"] == {"__tag__": "secret", "value": "sim_api_encryption_key"}
+    text = _strip_comments(SIM_ENTRY.read_text(encoding="utf-8"))
+    assert text.count("!secret") == 1
+
+
+def test_sim_beds_match_device() -> None:
+    sim_beds = _entry_includes(BED_FILE, SIM_ENTRY)
+    device_beds = _entry_includes(BED_FILE, ENTRY)
+    assert sim_beds == device_beds
+    device_files = _package_files(load_esphome_yaml(ENTRY))  # type: ignore[arg-type]
+    sim_files = _package_files(_sim_data())
+    for key in set(device_files) & set(sim_files):
+        if key != "hardware":
+            assert device_files[key] == sim_files[key], key
