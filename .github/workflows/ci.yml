@@ -50,6 +50,7 @@ jobs:
           runCmd: script/lint && script/test && uv cache prune --ci
           env: |
             GP_SECRETS=example
+            GP_REQUIRE_SDL=1
 
   compile:
     name: compile (${{ matrix.target }})
@@ -94,7 +95,7 @@ jobs:
         with:
           imageName: garden-pilot-devcontainer
           push: never
-          runCmd: script/compile && uv cache prune --ci
+          runCmd: script/compile && script/compile garden-pilot-sim.yaml && uv cache prune --ci
           env: |
             GP_SECRETS=example
             GP_ESPHOME=${{ matrix.target }}

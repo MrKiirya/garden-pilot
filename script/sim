@@ -1,0 +1,38 @@
+#!/bin/sh
+# Run the PC emulator: builds garden-pilot-sim.yaml (ESPHome `host` platform + SDL window) and starts it.
+# Ctrl+C stops it. Run it from the SDL devcontainer (.devcontainer/sdl) or on a desktop host with SDL2 dev files.
+#
+# ESPHome version: GP_ESPHOME (pinned | minimum | latest | YYYY.M.P), see script/_esphome.
+# Always builds with secrets.example.yaml, never the real secrets.yaml: the emulator's API key is a public dummy and
+# no real key may enter it. The sources are staged into the git-ignored .esphome/sim-build/ (fixed dir, so reruns
+# are incremental). Run durations and other preferences are kept in .esphome/sim-prefs/ (unless ESPHOME_PREFDIR is set).
+set -eu
+cd "$(dirname "$0")/.."
+
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  echo "sim: neither DISPLAY nor WAYLAND_DISPLAY is set. Open the repo with the SDL config" >&2
+  echo "     (.devcontainer/sdl, 'Reopen in Container' and pick it), or run this on a desktop host." >&2
+  exit 2
+fi
+
+CONFIG="garden-pilot-sim.yaml"
+STAGE=".esphome/sim-build"
+mkdir -p "$STAGE/.esphome"
+# Refresh the staged sources; keep the nested .esphome/ build dir.
+find "$STAGE" -mindepth 1 -maxdepth 1 ! -name .esphome -exec rm -r -f {} +
+# Everything an entry file may include; keep in sync with script/compile and script/config.
+for path in "$CONFIG" packages hardware components; do
+  if [ -e "$path" ]; then
+    cp -R "$path" "$STAGE/"
+  fi
+done
+cp secrets.example.yaml "$STAGE/secrets.yaml"
+
+mkdir -p .esphome/sim-prefs
+export ESPHOME_PREFDIR="${ESPHOME_PREFDIR:-$PWD/.esphome/sim-prefs}"
+# A 320x240 UI does not need GPU rendering; without /dev/dri (a container) GL start-up can hang.
+export SDL_RENDER_DRIVER="${SDL_RENDER_DRIVER:-software}"
+
+echo "Works without Home Assistant. Optional HA: add ESPHome device by IP of this PC, port 6053, key"
+echo "sim_api_encryption_key from secrets.example.yaml. Never flash this build."
+exec sh script/_esphome run "$STAGE/$CONFIG"
