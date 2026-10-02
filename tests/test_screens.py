@@ -18,6 +18,8 @@ SETUP = "packages/lvgl/page_setup.yaml"
 NETWORK = "packages/lvgl/page_network.yaml"
 DIAG = "packages/core/diagnostics.yaml"
 WIFI = "packages/lvgl/network_wifi_status.yaml"
+BOOT = "packages/lvgl/page_boot.yaml"
+BOOT_WIFI = "packages/lvgl/boot_wifi.yaml"
 HOME = "packages/lvgl/page_home.yaml"
 GH_PAGE = "packages/greenhouse/lvgl_page.yaml"
 NAV_NAMES = ["dash", "zones", "water", "setup"]
@@ -88,7 +90,7 @@ def _page_ids(files: list[str]) -> set[str]:
 def test_nav_targets_exist(entry: str) -> None:
     files = _entry_files(entry)
     ids = _page_ids(files)
-    assert {"setup_page", "network_page"} <= ids
+    assert {"setup_page", "network_page", "boot_page", "valve_test_page"} <= ids
     for f in files:
         d = load_esphome_yaml(REPO_ROOT / f)
         for target in _show_targets(d):
@@ -240,7 +242,7 @@ def test_device_only_packages_not_in_sim() -> None:
     assert WIFI not in sim_files
 
 
-TOKENIZED_TEXT_FILES = [SETUP, NETWORK, DIALOG, WIFI]
+TOKENIZED_TEXT_FILES = [SETUP, NETWORK, DIALOG, WIFI, BOOT, "packages/greenhouse/lvgl_valve_test.yaml"]
 
 
 @pytest.mark.parametrize("rel", TOKENIZED_TEXT_FILES)
@@ -266,3 +268,47 @@ def test_confirm_call_texts_are_ascii(rel: str) -> None:
         for key in ("title", "body", "action"):
             assert call[key].isascii() and call[key].isprintable(), f"{rel}: non-ASCII {key}: {call[key]!r}"
             assert len(call[key]) > 0
+
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+def test_boot_page_first(entry: str) -> None:
+    keys = list(load_esphome_yaml(REPO_ROOT / entry)["packages"])
+    assert [k for k in keys if k.startswith("lvgl_page_")][0] == "lvgl_page_boot"
+    assert keys.index("lvgl_base") < keys.index("lvgl_page_boot") < keys.index("lvgl_page_home")
+    files = _entry_files(entry)
+    assert files[keys.index("lvgl_page_boot")] == BOOT
+    data = _load(BOOT)
+    assert _page(BOOT, "boot_page")
+    text = _strip_comments((REPO_ROOT / BOOT).read_text(encoding="utf-8"))
+    assert not re.search(r"sprinkler\.|switch\.|board_relay|valve", text.replace("Valves closed", "")), "no actuator action"
+    assert set(data) <= {"substitutions", "esphome", "globals", "script", "lvgl"}
+    assert data["substitutions"]["boot_offline_timeout"]
+    globs = {g["id"]: g for g in data["globals"]}
+    assert set(globs) == {"gp_boot_net_ready", "gp_boot_done"}
+    assert all(g["restore_value"] is False for g in globs.values())
+    boot = data["esphome"]["on_boot"]
+    assert boot[0]["priority"] == -100
+    assert {"script.execute": "gp_boot_sequence"} in boot[0]["then"]
+    seq = {s["id"]: s for s in data["script"]}["gp_boot_sequence"]
+    assert seq["mode"] == "single"
+    steps = seq["then"]
+    wait = next(d for d in steps if "wait_until" in d)["wait_until"]
+    assert wait["timeout"] == "${boot_offline_timeout}"
+    assert "gp_boot_net_ready" in str(wait["condition"])
+    assert steps[-1] == {"lvgl.page.show": "home_page"}
+
+
+def test_boot_wifi_device_only() -> None:
+    data = _load(BOOT_WIFI)
+    assert set(data) == {"wifi"} and set(data["wifi"]) == {"on_connect"}
+    assert data["wifi"]["on_connect"] == [{"globals.set": {"id": "gp_boot_net_ready", "value": "true"}}]
+    keys = list(load_esphome_yaml(REPO_ROOT / "garden-pilot.yaml")["packages"])
+    files = _entry_files("garden-pilot.yaml")
+    assert BOOT_WIFI in files
+    assert keys.index("lvgl_boot_wifi") > keys.index("lvgl_network_wifi")
+    assert BOOT_WIFI not in _entry_files("garden-pilot-sim.yaml")
+    sim = load_esphome_yaml(REPO_ROOT / "garden-pilot-sim.yaml")
+    assert sim["substitutions"]["boot_offline_timeout"] == "3s"
+    dev = load_esphome_yaml(REPO_ROOT / "garden-pilot.yaml")
+    assert "boot_offline_timeout" not in dev["substitutions"]

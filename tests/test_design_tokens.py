@@ -20,6 +20,8 @@ TOKENIZED_PAGES = [
     "packages/lvgl/page_network.yaml",
     "packages/lvgl/dialog_confirm.yaml",
     "packages/lvgl/network_wifi_status.yaml",
+    "packages/lvgl/page_boot.yaml",
+    "packages/greenhouse/lvgl_valve_test.yaml",
 ]
 TOKEN_FONTS = {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14"}
 LVGL_FONT = re.compile(r"\bmontserrat_\d+\b")
