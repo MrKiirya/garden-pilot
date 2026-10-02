@@ -1,0 +1,13 @@
+#!/bin/sh
+# C++ unit tests of the garden_zones core (tests/cpp/*.cpp, minimal harness in tests/cpp/minitest.h)
+# built with the host compiler. Sources are compiled with -Wall -Wextra -Werror into the git-ignored
+# .esphome/cpp-tests/ and run.
+set -eu
+cd "$(dirname "$0")/.."
+
+OUT_DIR=".esphome/cpp-tests"
+mkdir -p "$OUT_DIR"
+
+"${CXX:-g++}" -std=c++17 -Wall -Wextra -Werror -I components -I tests/cpp \
+    tests/cpp/*.cpp -o "$OUT_DIR/test_garden_zones"
+"$OUT_DIR/test_garden_zones"

@@ -135,6 +135,7 @@ devcontainer. CI проверяет только Docker Engine на Linux в н�
 - `CLAUDE.md`, `.claude/`, `tasks/` — как проект разрабатывается с агентами Claude Code.
 
 ## Лицензия
-[MIT](LICENSE)
+[MIT](LICENSE), кроме `components/garden_zones/`: изменённая копия кода ESPHome под GPLv3 (см. его `LICENSE` и
+`README.md`). Компонент в разработке и пока не используется устройством.
 
 Шрифт Montserrat Bold в `packages/lvgl/fonts/` сторонний, под лицензией SIL Open Font License 1.1 (см. `packages/lvgl/fonts/OFL.txt`).

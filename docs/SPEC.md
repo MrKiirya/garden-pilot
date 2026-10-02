@@ -45,6 +45,8 @@ Checked against `esphome/components/sprinkler/` on the `dev` branch, 2026-10-01:
   The current greenhouse page uses it for its RUN buttons.
 - Queued zones run **even if their enable switch is off**.
 - The `Sprinkler` class is `final` (since July 2026): it cannot be subclassed.
+- Forked into `components/garden_zones/` from tag 2026.9.1 (task 008): open persistent queue, manual run that keeps
+  the queue, disabled zones skipped; see `components/garden_zones/PATCHES.md`.
 - No functional changes since spring 2026. The `millis()` overflow fix (esphome#14299) shipped in
   **2026.2.3** — the lowest version we can support. Built-in latching valve support was removed (#12603).
 
@@ -189,7 +191,7 @@ tests/
 1. `esphome config` for every module combination: the matrix in `tests/test_config_matrix.py` (variants built from
    the real entry file) runs in CI job `checks` via `script/test`; 2 beds, a bed with its own soil sensor and the sim board were added by task 005; task 006 adds rows for the emulator entry file `garden-pilot-sim.yaml` (the two SDL rows need `sdl2-config`; `GP_REQUIRE_SDL=1` in CI makes a missing one a failure).
 2. `esphome compile` for ESP32 and for the host emulator build `garden-pilot-sim.yaml` (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary for the device build).
-3. Unit tests of the `garden_zones` core (GoogleTest or Catch2).
+3. Unit tests of the `garden_zones` core (a minimal header-only harness, `script/test-cpp`).
 4. **`host` platform (task 006, done):** `script/sim` builds and runs `garden-pilot-sim.yaml` on Linux: the real LVGL
    pages and irrigation packages, template relays from `hardware/sim.yaml` (state changes logged as
    `SIM relay_N ON/OFF`), the clock from the PC. It works fully without Home Assistant; HA can add it by IP (port
@@ -273,7 +275,8 @@ tests/
    "SIM board" LVGL page and `script/sim-ctl` over the native API) and the "Sim auto drift" switch (default OFF; when
    ON soil slowly dries and rises while that bed's relay runs). Both parts implemented (done once the PR merges: CI and the PC check are still open).
 7. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
-   via lanes, watchdog, optional soil-moisture skip.
+   via lanes, watchdog, optional soil-moisture skip. Task 008: fork + open/persistent queue, manual run keeps the
+   queue, disabled zones skipped; groups/lanes 012, watchdog + soil 013, device switch 014.
 8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.

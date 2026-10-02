@@ -54,6 +54,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `design/` | Snapshot of the design system (rules, tokens, icons); the live design lives in claude.ai artifacts. |
 | `docs/SPEC.md` | Product spec, architecture, roadmap, open questions. |
 | `.github/` | CI (`workflows/ci.yml`, weekly `canary.yml`) and `dependabot.yml`. |
+| `components/garden_zones/` | Fork of the stock `sprinkler`, GPLv3; patches listed in `PATCHES.md`, marked `GZ-PATCH` in the code. Not used by the device yet. |
 | `tasks/` | Task specs and reviews (see `tasks/README.md`). |
 | `tests/` | pytest repo checks; `script/*` wraps all commands. |
 
@@ -141,6 +142,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 | SDL window smoke check | `script/sdl-smoke` (needs a display: SDL devcontainer config or a desktop host) |
 | Devcontainer from CLI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . script/test` (add `--docker-path podman` and `PODMAN_USERNS=keep-id` for Podman; `--config .devcontainer/sdl/devcontainer.json` for SDL) |
 | Reproduce CI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . sh -c 'GP_SECRETS=example GP_ESPHOME=minimum script/compile'` |
+| C++ unit tests | `script/test-cpp` |
 | Flash / logs | `uv run esphome run garden-pilot.yaml` / `uv run esphome logs garden-pilot.yaml` |
 
 Always pass the config path explicitly; run from the repo root.
@@ -151,7 +153,8 @@ Always pass the config path explicitly; run from the repo root.
 - `compile` — `script/compile`: ESP32 firmware build in CI with pinned + minimum ESPHome (the weekly canary builds the latest).
 - Sim entry order after the beds: `sim_bed_N_soil` right after `gh_bed_N`, then `sim_sensors`, `sim_drift`, `sim_sensors_lvgl`, `sim_page_board` (the last two are optional and LVGL-only; `sim_*` ids stay out of device files).
 - The emulator entry file is checked by `esphome config` rows (need `sdl2-config`; skipped without it unless `GP_REQUIRE_SDL=1`, set in CI) and compiled in the CI `compile` jobs.
-- Later (roadmap): C++ unit tests of the `garden_zones` core, `host` + SDL
+- `cpp` (minimal header-only harness, `script/test-cpp`) and `host` (host compile + scenario of `tests/configs/`) exist for `garden_zones`; both skip when no C++ compiler is installed.
+- Later (roadmap): `host` + SDL
   screenshot checks, `aioesphomeapi` integration scenarios.
 
 ## ESPHome security baseline
