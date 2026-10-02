@@ -167,6 +167,7 @@ hardware/                  # esp32-<board>.yaml (pins, relay drivers), sim.yaml
 packages/
   core/                    # api, ota, network (Wi-Fi), time, time_host
   display_touch.yaml, display_sdl.yaml   # device display + touch; emulator window + mouse
+  sim/                     # emulator only: simulated sensors, auto drift, SIM board page
   lvgl/                    # pages
   greenhouse/bed.yaml, bed_soil.yaml, ...   # lawn.yaml, heating.yaml, ...
 components/garden_zones/   # __init__.py, *.h, *.cpp
@@ -196,13 +197,21 @@ tests/
    The API has `reboot_timeout: 0s` there (the default would end the program after 15 min without a client).
    `web_server` is not available on the host platform (`cv.only_on` ESP32/ESP8266/BK72XX/LN882X/RP2/RTL87XX), and no
    third-party shim is used: manual control of simulated values goes through the native API (`script/sim-ctl`) and
-   an on-screen "SIM board" page, both in task 007. `on_time_sync` does not fire on host; the Home clock refreshes
+   an on-screen "SIM board" page, both in task 007 (implemented, below). `on_time_sync` does not fire on host; the Home clock refreshes
    from its 30 s interval. The host build is compiled in CI (`compile (pinned|minimum)`, same jobs as the device).
    The sim entry file needs SDL2 dev files even for `esphome config` (the devcontainer image has them; tests skip
    the SDL rows without `sdl2-config` unless `GP_REQUIRE_SDL=1`, which CI sets).
+   **Simulated sensors and SIM board (task 007, implemented; PC check and CI pending):** `packages/sim/` (never included by the device): template
+   numbers `Sim air temperature` / `Sim air humidity` / `Sim soil moisture` / per-bed `... sim soil moisture` are the
+   source of truth (`restore_value: false`, defaults 22 C / 60 % / 50 %); template sensors with the device ids and
+   names (`gh_air_temperature`, `gh_air_humidity`, `gh_soil_moisture_pct`, `gh_bedN_soil_moisture`) read them. The
+   "Sim auto drift" switch (default OFF) dries soil 1 % per 60 s and raises it 1 % per 10 s while the relevant relay
+   runs. The sim-only `SIM` button (top layer) opens a page with relay indicators, one slider per value and the drift
+   switch. `script/sim-ctl` (`aioesphomeapi`, no new dependency) lists, reads and sets entities of the running
+   emulator; it is unit-tested with a fake client. The device config is unchanged (normalized `esphome config` diff).
 5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch (done, `display_sdl.yaml`); in CI
    `headless: true` (2026.9.1 and later only) and BMP screenshots compared with references (stage 12).
-6. Integration scenarios through `aioesphomeapi` against the host build (task 007 starts them; the rest is stage 12).
+6. Integration scenarios through `aioesphomeapi` against the host build (stage 12; task 007 only unit-tests `sim-ctl` with a fake client, a real scenario needs a headless host build in CI).
 7. Optional: Wokwi (ESP32 + ILI9341 emulation, `wokwi-cli` in GitHub Actions).
 
 ## 8. Design
@@ -243,7 +252,7 @@ tests/
    network package, SDL display/touch package, PC clock, runs without Home Assistant, optional HA by IP, host build
    compiled in CI. Task 007 (part 2): simulated sensors with settable values, manual control without HA (a sim-only
    "SIM board" LVGL page and `script/sim-ctl` over the native API) and the "Sim auto drift" switch (default OFF; when
-   ON soil slowly dries and rises while that bed's relay runs).
+   ON soil slowly dries and rises while that bed's relay runs). Both parts implemented (done once the PR merges: CI and the PC check are still open).
 7. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
    via lanes, watchdog, optional soil-moisture skip.
 8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.

@@ -66,6 +66,8 @@ BED = REPO_ROOT / "packages" / "greenhouse" / "bed.yaml"
 BED_SOIL = REPO_ROOT / "packages" / "greenhouse" / "bed_soil.yaml"
 BED_FILE = "packages/greenhouse/bed.yaml"
 BED_SOIL_FILE = "packages/greenhouse/bed_soil.yaml"
+SIM_BED_SOIL = REPO_ROOT / "packages" / "sim" / "bed_soil.yaml"
+SIM_BED_SOIL_FILE = "packages/sim/bed_soil.yaml"
 _EXAMPLE_START = re.compile(r"^  # ([A-Za-z0-9_]+): !include\s*$")
 _EXAMPLE_CONT = re.compile(r"^  #   ")
 
@@ -354,6 +356,7 @@ def test_substitutions_resolve() -> None:
     supplied = {
         BED: set().union(*(set(i["vars"]) for i in _entry_includes(BED_FILE))),
         BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(BED_SOIL_FILE))),
+        SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
     }
     missing = set()
     for path in package_files:
@@ -484,6 +487,13 @@ def test_sim_entry_file() -> None:
     forbidden = {"core_network", "core_ota", "core_time", "display_touch", "gh_sensors_air", "gh_sensors_soil"}
     assert not forbidden & set(keys), sorted(forbidden & set(keys))
     assert BED_SOIL_FILE not in files.values()
+    sim_keys = [k for k in keys if k.startswith("sim_")]
+    assert sim_keys == ["sim_bed_1_soil", "sim_bed_2_soil", "sim_bed_3_soil", "sim_sensors", "sim_drift",
+                        "sim_sensors_lvgl", "sim_page_board"]
+    for n in (1, 2, 3):  # each sim bed soil sits right after its bed block, with the bed's vars
+        assert keys.index(f"sim_bed_{n}_soil") == keys.index(f"gh_bed_{n}") + 1
+        assert _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY)[n - 1]["vars"] == _entry_includes(BED_FILE, SIM_ENTRY)[n - 1]["vars"]
+    assert keys.index("sim_page_board") < keys.index("touch_dot_test")
     assert "web_server" not in data
     device = load_esphome_yaml(ENTRY)
     assert isinstance(device, dict)
@@ -505,3 +515,140 @@ def test_sim_beds_match_device() -> None:
     for key in set(device_files) & set(sim_files):
         if key != "hardware":
             assert device_files[key] == sim_files[key], key
+
+
+# --- task 007: simulated sensors, SIM board page ---------------------------------------------------------------
+
+SIM_DIR = REPO_ROOT / "packages" / "sim"
+SIM_DISPLAY_FREE = ["sensors.yaml", "bed_soil.yaml", "drift.yaml"]
+
+
+def _sim_pkg(name: str) -> dict:
+    data = load_esphome_yaml(SIM_DIR / name)
+    assert isinstance(data, dict), name
+    return data
+
+
+def _all_sim_numbers() -> list[dict]:
+    """Every sim number; the per-bed template of bed_soil.yaml is expanded for beds 1..3."""
+    numbers = []
+    for f in SIM_DISPLAY_FREE:
+        if f == "bed_soil.yaml":
+            for bed in ("1", "2", "3"):
+                numbers += _substituted(SIM_DIR / f, bed=bed, bed_name=f"Bed {bed}", relay=bed).get("number") or []
+        else:
+            numbers += _sim_pkg(f).get("number") or []
+    return numbers
+
+
+def test_sim_packages_never_in_device() -> None:
+    device = load_esphome_yaml(ENTRY)
+    assert isinstance(device, dict)
+    assert not [k for k in device["packages"] if k.startswith("sim_")]
+    assert not [f for f in _package_files(device).values() if f.startswith("packages/sim/")]
+    others = [p for p in _yaml_files("packages", "hardware") if SIM_DIR not in p.parents]
+    for path in others:
+        text = path.read_text(encoding="utf-8")
+        assert "packages/sim/" not in text, path
+        assert not re.search(r"\bid:\s*sim_", _strip_comments(text)), path
+    assert not re.search(r"packages/sim|\bsim_", _strip_comments(ENTRY.read_text(encoding="utf-8")))
+
+
+def _sensor_key(item: dict) -> tuple:
+    return tuple(item.get(k) for k in ("id", "name", "unit_of_measurement", "device_class", "accuracy_decimals"))
+
+
+def _substituted(path: Path, **values: str) -> dict:
+    text = path.read_text(encoding="utf-8")
+    for k, v in values.items():
+        text = text.replace("${" + k + "}", v)
+    data = yaml.load(text, Loader=_EsphomeLoader)  # noqa: S506 - SafeLoader subclass
+    return data
+
+
+def test_sim_sensors_mirror_device() -> None:
+    sim = {s["id"]: s for s in _sim_pkg("sensors.yaml")["sensor"]}
+    air = load_esphome_yaml(REPO_ROOT / "packages/greenhouse/sensors_air_dht.yaml")["sensor"][0]  # type: ignore[index]
+    soil = load_esphome_yaml(REPO_ROOT / "packages/greenhouse/sensors_soil.yaml")["sensor"][0]  # type: ignore[index]
+    for key in ("temperature", "humidity"):  # dht defaults: unit and device class of the platform
+        dev = dict(air[key])
+        dev.update(
+            unit_of_measurement="°C" if key == "temperature" else "%",
+            device_class="temperature" if key == "temperature" else "humidity",
+        )
+        assert _sensor_key(sim[dev["id"]]) == _sensor_key(dev)
+    assert _sensor_key(sim[soil["id"]]) == _sensor_key(soil)
+    assert set(sim) == {"gh_air_temperature", "gh_air_humidity", "gh_soil_moisture_pct"}
+    assert all(s["platform"] == "template" for s in sim.values())
+    vars_ = {"bed": "2", "bed_name": "Greenhouse bed 2"}
+    dev_bed = _substituted(BED_SOIL, adc_pin="1", cal_dry_v="1", cal_wet_v="0", **vars_)["sensor"][0]
+    sim_bed = _substituted(SIM_BED_SOIL, relay="2", **vars_)["sensor"][0]
+    assert _sensor_key(sim_bed) == _sensor_key(dev_bed)
+
+
+def test_sim_numbers_are_deterministic() -> None:
+    numbers = _all_sim_numbers()
+    assert len(numbers) == 6
+    for n in numbers:
+        assert n["platform"] == "template" and n["optimistic"] is True and n["restore_value"] is False, n["id"]
+        assert n["min_value"] <= n["initial_value"] <= n["max_value"], n["id"]
+        if "soil" in n["id"] or "humidity" in n["id"]:
+            assert (n["min_value"], n["max_value"]) == (0, 100), n["id"]
+
+
+def _actions_text(node: object) -> str:
+    return yaml.dump(node)
+
+
+def test_sim_drift_defaults_off() -> None:
+    drift = _sim_pkg("drift.yaml")
+    sw = {s["id"]: s for s in drift["switch"]}["sim_auto_drift"]
+    assert sw["platform"] == "template" and sw["restore_mode"] == "ALWAYS_OFF" and not sw.get("internal")
+    intervals = drift["interval"] + _sim_pkg("bed_soil.yaml")["interval"]
+    assert len(intervals) == 4
+    for item in intervals:
+        steps = item["then"]
+        assert len(steps) == 1 and "if" in steps[0], item
+        assert "sim_auto_drift" in _actions_text(steps[0]["if"]["condition"])
+        wetting = any(k.startswith("number.increment") for k in (a for a in steps[0]["if"]["then"] for a in a))
+        if wetting:
+            assert "board_relay_" in _actions_text(steps[0]["if"]["condition"])
+        for action in steps[0]["if"]["then"]:
+            for body in action.values():
+                assert body["cycle"] is False
+
+
+def test_sim_display_free_packages() -> None:
+    for name in SIM_DISPLAY_FREE:
+        text = _strip_comments((SIM_DIR / name).read_text(encoding="utf-8"))
+        assert not re.search(r"\blvgl\b|lvgl\.", text), name
+        assert not re.search(r"GPIO|\$\{\w+_pin\}|!secret", text), name
+
+
+def test_sim_board_page() -> None:
+    page = (SIM_DIR / "page_board.yaml").read_text(encoding="utf-8")
+    code = _strip_comments(page)
+    data = _sim_pkg("page_board.yaml")
+    assert [p["id"] for p in data["lvgl"]["pages"]] == ["sim_board_page"]
+    relays = set(re.findall(r"id: (board_relay_\d+)", (REPO_ROOT / "hardware/sim.yaml").read_text(encoding="utf-8")))
+    assert relays == {"board_relay_1", "board_relay_2", "board_relay_3"}
+    for relay in relays:
+        n = relay.rsplit("_", 1)[1]
+        for suffix in ("led", "state", "label"):
+            assert f"id: sim_relay_{n}_{suffix}" in code
+        assert f"switch.is_on: {relay}" in code
+    numbers = [n["id"] for n in _all_sim_numbers()]
+    sliders = set(re.findall(r"id: (sim_\w+_slider)", code))
+    assert len(sliders) == len(numbers) == 6
+    for number in numbers:
+        assert f"id: {number}" in code, number  # every slider writes (number.set) exactly its number
+    assert code.count("number.set:") == 6
+    assert "id: sim_auto_drift_sw" in code
+    assert re.search(r"id: sim_btn_home[\s\S]*?lvgl.page.show: home_page", code)
+    top = data["lvgl"]["top_layer"]["widgets"]
+    assert [w["button"]["id"] for w in top] == ["nav_btn_sim"]
+    assert top[0]["button"]["on_click"] == [{"lvgl.page.show": "sim_board_page"}]
+    assert set(re.findall(r"text_font: (\w+)", code)) <= {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14"}
+    for name in SIM_DISPLAY_FREE:  # no lvgl.* in any on_value of a number/switch (anywhere in packages/sim)
+        for entity in (_sim_pkg(name).get("number") or []) + (_sim_pkg(name).get("switch") or []):
+            assert "lvgl" not in _actions_text(entity.get("on_value")), entity["id"]

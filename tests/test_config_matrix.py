@@ -21,7 +21,10 @@ SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3"]
 SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2"]
 SIM = "hardware/sim.yaml"
 SIM_ENTRY = "garden-pilot-sim.yaml"
-SIM_API_ONLY = ["hardware", "core_api", "core_time_host", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3"]
+SIM_API_ONLY = [
+    "hardware", "core_api", "core_time_host", "gh_irrigation", "gh_bed_1", "sim_bed_1_soil", "gh_bed_2",
+    "sim_bed_2_soil", "gh_bed_3", "sim_bed_3_soil", "sim_sensors", "sim_drift",
+]
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ VARIANTS: dict[str, Variant] = {
     # PC emulator entry file (host + SDL); the first two need SDL2 dev files, sim_api_only does not.
     "sim_full": Variant("keep", source=SIM_ENTRY),
     "sim_no_touch_debug": Variant("without", ["touch_dot_test"], source=SIM_ENTRY),
+    "sim_no_board_page": Variant("without", ["sim_sensors_lvgl", "sim_page_board"], source=SIM_ENTRY),
     "sim_api_only": Variant("keep", SIM_API_ONLY, source=SIM_ENTRY),
 }
 

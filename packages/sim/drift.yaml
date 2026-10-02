@@ -1,0 +1,40 @@
+# PC emulator only (garden-pilot-sim.yaml); never include from the device entry file.
+# "Sim auto drift": a switch (default OFF after every start) that makes the simulated soil change slowly. Rates are
+# literal defaults, small enough to watch on screen:
+# - every 60 s the greenhouse soil number drops 1 % (drying);
+# - every 10 s it rises 1 % while any board relay (board_relay_1..3) is on (watering).
+# Per-bed soil follows its own relay (bed_soil.yaml). Everything is clamped to 0..100 and written through the settable
+# numbers, so a value set by hand, by script/sim-ctl or from Home Assistant is always the starting point.
+# No other modelling (no day/night, no temperature).
+
+switch:
+  - platform: template
+    id: sim_auto_drift
+    name: "Sim auto drift"
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+
+interval:
+  - interval: 60s
+    then:
+      - if:
+          condition:
+            switch.is_on: sim_auto_drift
+          then:
+            - number.decrement:
+                id: sim_soil_moisture
+                cycle: false
+  - interval: 10s
+    then:
+      - if:
+          condition:
+            and:
+              - switch.is_on: sim_auto_drift
+              - or:
+                  - switch.is_on: board_relay_1
+                  - switch.is_on: board_relay_2
+                  - switch.is_on: board_relay_3
+          then:
+            - number.increment:
+                id: sim_soil_moisture
+                cycle: false

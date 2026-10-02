@@ -1,0 +1,60 @@
+# PC emulator only (garden-pilot-sim.yaml); never include from the device entry file.
+# Simulated soil moisture of one bed, a mirror of packages/greenhouse/bed_soil.yaml (same sensor id, name, unit).
+# Include it once per bed right after the bed's own block (vars are all required, literal strings):
+#
+#   sim_bed_1_soil: !include
+#     file: packages/sim/bed_soil.yaml
+#     vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+#
+#   bed, bed_name   same values as the bed's own include.
+#   relay           the board relay of the bed's valve (board_relay_N): while it runs, soil rises in auto drift.
+#
+# The settable number is the source of truth. Auto drift (switch sim_auto_drift in drift.yaml, default OFF):
+# the soil dries 1 % per 60 s and, while the bed's relay is on, rises 1 % per 10 s (clamped 0..100).
+
+number:
+  - platform: template
+    id: sim_bed${bed}_soil_moisture
+    name: "${bed_name} sim soil moisture"
+    unit_of_measurement: "%"
+    mode: slider
+    optimistic: true
+    restore_value: false
+    min_value: 0
+    max_value: 100
+    step: 1
+    initial_value: 50
+    on_value:
+      - component.update: gh_bed${bed}_soil_moisture
+
+sensor:
+  - platform: template
+    id: gh_bed${bed}_soil_moisture
+    name: "${bed_name} soil moisture"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: moisture
+    update_interval: 5s
+    lambda: return id(sim_bed${bed}_soil_moisture).state;
+
+interval:
+  - interval: 60s
+    then:
+      - if:
+          condition:
+            switch.is_on: sim_auto_drift
+          then:
+            - number.decrement:
+                id: sim_bed${bed}_soil_moisture
+                cycle: false
+  - interval: 10s
+    then:
+      - if:
+          condition:
+            and:
+              - switch.is_on: sim_auto_drift
+              - switch.is_on: board_relay_${relay}
+          then:
+            - number.increment:
+                id: sim_bed${bed}_soil_moisture
+                cycle: false

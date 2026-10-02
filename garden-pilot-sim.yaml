@@ -12,8 +12,13 @@
 # - core_network, core_ota: no Wi-Fi or OTA on host (the PC's network is used);
 # - core_time (Home Assistant clock): core_time_host takes the PC clock under the same id;
 # - display_touch: display_sdl has the same ids; hardware: hardware/sim.yaml has template relays;
-# - gh_sensors_air, gh_sensors_soil, bed soil sensors: DHT/ADC do not exist on host (simulated sensors: task 007);
+# - gh_sensors_air, gh_sensors_soil, bed soil sensors: DHT/ADC do not exist on host; packages/sim/ replaces them with
+#   simulated sensors of the same ids and names;
 # - the built-in web page: ESPHome does not support it on the host platform.
+#
+# SIM page: a sim-only "SIM" button (top right of every page) opens a virtual board: live relay indicators, one slider
+# per simulated value and the "Sim auto drift" switch (default OFF). Values are set on the SIM page, by
+# `script/sim-ctl` or from Home Assistant. To drop the page, comment out sim_sensors_lvgl and sim_page_board.
 # Keep the package order and the bed blocks in sync with garden-pilot.yaml.
 
 substitutions:
@@ -48,14 +53,30 @@ packages:
   gh_bed_1: !include
     file: packages/greenhouse/bed.yaml
     vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+  sim_bed_1_soil: !include
+    file: packages/sim/bed_soil.yaml
+    vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
   gh_bed_2: !include
     file: packages/greenhouse/bed.yaml
+    vars: {bed: "2", bed_name: "Greenhouse bed 2", relay: "2"}
+  sim_bed_2_soil: !include
+    file: packages/sim/bed_soil.yaml
     vars: {bed: "2", bed_name: "Greenhouse bed 2", relay: "2"}
   gh_bed_3: !include
     file: packages/greenhouse/bed.yaml
     vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+  sim_bed_3_soil: !include
+    file: packages/sim/bed_soil.yaml
+    vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
   gh_sprinkler_lvgl: !include packages/greenhouse/sprinkler_lvgl_status.yaml
+
+  # Simulated sensors (settable numbers; display-free), auto drift, and their on-screen part.
+  sim_sensors: !include packages/sim/sensors.yaml
+  sim_drift: !include packages/sim/drift.yaml
+  # Comment out the next two to drop the SIM page and the Home/Greenhouse sensor values.
+  sim_sensors_lvgl: !include packages/sim/sensors_lvgl.yaml
+  sim_page_board: !include packages/sim/page_board.yaml
 
   # Optional: touch dot / coord updates on press. Comment out to disable (overlay script stays no-op).
   touch_dot_test: !include packages/touch_dot_test.yaml

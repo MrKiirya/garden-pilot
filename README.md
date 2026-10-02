@@ -83,8 +83,18 @@ A lightweight path for end users (ESPHome Device Builder + remote packages, no d
 `script/sim` builds and starts `garden-pilot-sim.yaml`: the same LVGL screens and irrigation packages as the device,
 on the ESPHome `host` platform, in a 320x240 SDL window with the mouse as the touchscreen. No hardware is needed
 and it **works fully without Home Assistant**: the clock comes from the PC, and RUN/STOP on a bed switches a
-simulated relay (every change is logged as `SIM relay_N ON/OFF`) and updates the screen. Sensor values stay at their
-placeholders for now; simulated sensors, an on-screen "SIM board" page and `script/sim-ctl` come in task 007.
+simulated relay (every change is logged as `SIM relay_N ON/OFF`) and updates the screen. Sensor values are simulated:
+air temperature, air humidity, greenhouse soil moisture and the soil of each bed are settable numbers, shown on Home
+and Greenhouse like the real sensors.
+
+- **SIM page:** the `SIM` button (top right of every page) opens a virtual board: live indicators for relay 1..3
+  (bed 1..3 valves), one slider per simulated value and the **Sim auto drift** switch (default OFF; when ON soil dries
+  1 % per minute and rises 1 % per 10 s while the bed's relay runs).
+- **From a terminal:** `script/sim-ctl` talks to the running emulator over the native API (same path as Home
+  Assistant): `script/sim-ctl list`, `script/sim-ctl get greenhouse_soil_moisture`,
+  `script/sim-ctl set "Sim soil moisture" 35`, `script/sim-ctl switch "Sim auto drift" on`. Options `--host`,
+  `--port` (6053), `--key`, `--timeout`; exit code 1 means the emulator is not reachable, 2 a usage or entity error.
+  Run it in the same devcontainer, or on the PC against the published port.
 
 - **Where:** in the SDL devcontainer config (above; on rootless Podman, X11 host) or on a desktop host with SDL2
   dev files (`sdl2-config` must exist, even for `esphome config`). Then run `script/sim`; Ctrl+C stops it.
