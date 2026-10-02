@@ -3,7 +3,7 @@
 GardenPilot's irrigation engine: a modified copy of ESPHome's
 [`sprinkler`](https://esphome.io/components/sprinkler/) component (tag `2026.9.1`) with an open, persistent queue.
 
-**Status:** in development; not used by the device yet (roadmap stage 6: groups and lanes, watchdog and soil skip,
+**Status:** in development; not used by the device yet (roadmap stage 7: groups and lanes, watchdog and soil skip,
 switching the device). It must not drive a real valve before the maximum on-time watchdog exists. It is loaded only
 by `tests/configs/garden_zones_sim.yaml` (host build with simulated relays).
 

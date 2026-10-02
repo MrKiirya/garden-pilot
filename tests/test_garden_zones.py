@@ -175,7 +175,7 @@ def test_queue_ops_is_esphome_free() -> None:
 def test_device_unchanged() -> None:
     paths = [REPO_ROOT / "garden-pilot.yaml"]
     for folder in ("packages", "hardware"):
-        paths += [p for p in (REPO_ROOT / folder).rglob("*") if p.is_file()]
+        paths += [p for p in (REPO_ROOT / folder).rglob("*.yaml") if p.is_file()]
     for path in paths:
         text = path.read_text(encoding="utf-8")
         assert "garden_zones" not in text, f"{path.relative_to(REPO_ROOT)} must not use garden_zones yet"

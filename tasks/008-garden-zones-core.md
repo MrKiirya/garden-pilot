@@ -27,7 +27,7 @@ change that is not inside a documented patch region.
 
 ## Context
 
-### Stage plan (roadmap stage 6 split)
+### Stage plan (roadmap stage 7 split; renumbered after the emulator became stage 6)
 - **008 (this task)** — fork + queue patches + C++ unit tests + host scenario on the sim board. Top-level YAML schema
   is still the stock one (a list of controllers under the key `garden_zones:`).
 - **012 — groups and lanes.** Python codegen of controllers from `garden_zones: {groups: [...], zones: [...]}`
@@ -42,7 +42,7 @@ change that is not inside a documented patch region.
   component), optional per-zone soil-moisture skip (any ESPHome `sensor`, threshold), with C++ tests.
 - **014 — switch the device.** `bed.yaml` / `irrigation.yaml` move to `garden_zones` (1-bed greenhouse allowed),
   ESP32 compile of the device with the component (pinned + minimum), HA entity names and saved run durations kept,
-  greenhouse page and poller keep working; prerequisites for the `gp_*` layer (stage 7: `gp_run_bed` → manual run
+  greenhouse page and poller keep working; prerequisites for the `gp_*` layer (stage 8: `gp_run_bed` → manual run
   without breaking the queue, `gp_queue_text` from the open queue API). Hardware check by the author.
 
 ### Upstream sources checked (tag 2026.9.1)
@@ -244,7 +244,7 @@ Component (new):
 - create: `components/garden_zones/LICENSE` — GPLv3 text.
 - create: `components/garden_zones/PATCHES.md` — Decision 2 (base tag + SHA; one section per patch id; "how to
   re-port on an ESPHome bump": copy upstream, re-apply regions, run `uv run pytest tests/test_garden_zones.py`).
-- create: `components/garden_zones/README.md` — what it is, status ("not used by the device yet; stage 6 tasks
+- create: `components/garden_zones/README.md` — what it is, status ("not used by the device yet; stage 7 tasks
   012–014"), YAML example (stock schema under `garden_zones:` + new actions/condition/option), differences to stock
   (the four patches, one line each), licence section incl. the ESPHome MIT notice.
 
@@ -330,7 +330,7 @@ ESP32 and HA entities are checked in task 014.
 - Max on-time watchdog and soil-moisture skip (013). Consequence: `garden_zones` must not drive a real valve before
   013; this is fine because no device config loads it (principle 4 is met by not shipping it to a device yet).
 - Switching `bed.yaml` / `irrigation.yaml` / the greenhouse page to `garden_zones`, ESP32 compile with the component,
-  1-bed greenhouse, the `gp_*` layer (014, stage 7).
+  1-bed greenhouse, the `gp_*` layer (014, stage 8).
 - A queue text sensor / HA entity for the queue (stage 7 `gp_queue_text`), watering history (backlog §9.1).
 - Changing stock `start_single_valve` semantics, renaming upstream classes or files, refactoring upstream code.
 - Lane-aware or deduplicating queue; dynamic lanes (backlog).
