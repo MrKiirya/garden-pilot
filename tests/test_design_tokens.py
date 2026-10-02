@@ -16,7 +16,13 @@ TOKENIZED_PAGES = [
     "packages/lvgl/page_home.yaml",
     "packages/sim/page_board.yaml",
     "packages/sim/sensors_lvgl.yaml",
+    "packages/lvgl/page_setup.yaml",
+    "packages/lvgl/page_network.yaml",
+    "packages/lvgl/dialog_confirm.yaml",
+    "packages/lvgl/network_wifi_status.yaml",
 ]
+TOKEN_FONTS = {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14"}
+LVGL_FONT = re.compile(r"\bmontserrat_\d+\b")
 LVGL_COLOR = re.compile(r"\b0x([0-9a-fA-F]{6})\b")
 
 
@@ -34,3 +40,9 @@ def test_page_uses_only_token_colors(page: str) -> None:
     used = {c.lower() for c in LVGL_COLOR.findall((REPO_ROOT / page).read_text(encoding="utf-8"))}
     unknown = used - _token_colors()
     assert not unknown, f"{page} uses colours outside design/tokens.json: {sorted(unknown)}"
+
+
+@pytest.mark.parametrize("page", TOKENIZED_PAGES)
+def test_page_uses_only_token_fonts(page: str) -> None:
+    used = set(LVGL_FONT.findall((REPO_ROOT / page).read_text(encoding="utf-8")))
+    assert used <= TOKEN_FONTS, f"{page} uses font sizes outside tokens.json: {sorted(used - TOKEN_FONTS)}"

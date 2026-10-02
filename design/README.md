@@ -61,6 +61,9 @@ Five stroke icons (house, leaf, drop, gear, thermo) on a 24-unit grid, 2.2 strok
 
 - **Home** (`home_page`): built. Greenhouse card + Lawn card + nav.
 - **Greenhouse** (`greenhouse_page`): proposal. Stats strip, three `BedCard`s with state edges, status line, STOP / RUN QUEUE / HOME.
+- **Setup** (`setup_page`): built (D10). 2x3 tile grid (NETWORK, TIME, DISPLAY active; CYCLE, SENSORS, SERVICE "Soon"), nav with SETUP active.
+- **Setup - Network** (`network_page`): built (D11). Status line, WI-FI / HOME ASSISTANT / IP / ESPHOME / UPTIME rows, BACK, RESTART.
+- **Confirm dialog** (`gp_confirm`, top layer): built (D14). Dim layer (`bg` at 65 %), card, CANCEL ghost + one action button: `error-fill` for stop actions only, `green-fill` for other confirmations. ASCII-only texts.
 - **Lawn** (`lawn_page`): concept. Headline soil bar, status card with AUTO-MODE `Switch`, WATER NOW / HOME. No backing entities exist yet.
 
 Component notes keep the LVGL ids (`gh_btn_run_bed1`, `home_clock_label`…) so a design change can be traced to the YAML that implements it.

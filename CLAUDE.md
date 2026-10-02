@@ -42,6 +42,8 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/display_sdl.yaml` | Emulator only: SDL display + mouse touch with the same ids and scripts as `display_touch.yaml` (keep in sync). |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`. |
 | `packages/lvgl/page_*.yaml` | One LVGL page per file under `lvgl: pages:`. |
+| `packages/lvgl/dialog_confirm.yaml` | Confirm dialog on the LVGL top layer + `gp_confirm` script (pattern in its header). |
+| `packages/core/diagnostics.yaml` | Internal version / uptime / restart button for the Network page (no new HA entities). |
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`sprinkler`), LVGL page. |
 | `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
@@ -57,17 +59,18 @@ The target layout (`components/garden_zones/`, `lawn.yaml`, `heating.yaml`, ...)
 introduced by roadmap tasks, not ad hoc.
 
 ### `packages:` order in `garden-pilot.yaml` (do not reorder lightly)
-1. `hardware` (board profile; exactly one), then `core_api`, `core_ota`, `core_network`, `core_time` — connectivity first.
+1. `hardware` (board profile; exactly one), then `core_api`, `core_ota`, `core_network`, `core_time`, `core_diagnostics` — connectivity first.
 2. `display_touch` — creates `tft_spi`, `tft_display`, `touch` (required by LVGL).
 3. `lvgl_base` — LVGL wiring to those ids.
-4. `lvgl_page_home` — first page = boot screen; other `lvgl_page_*` after it.
+4. `lvgl_page_home` — first page = boot screen; other `lvgl_page_*` after it, then `lvgl_dialog_confirm`,
+   `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`.
 5. `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) → `gh_bed_N` (+ optional
    `gh_bed_N_soil` after its bed) in valve order, at least 2 beds → `gh_lvgl_page` → `gh_sensors_air` →
    `gh_sensors_soil` → `gh_sprinkler_lvgl`.
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
-`garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `display_sdl` and
-without `core_ota`, `core_network`, the greenhouse sensors and bed soil sensors.
+`garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `core_diagnostics`, `display_sdl` and
+without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors and bed soil sensors.
 
 ### ESPHome YAML conventions
 - **Pins only in `hardware/`, secrets only as entry-file substitutions** (`substitutions: x: !secret x`);
@@ -91,6 +94,11 @@ without `core_ota`, `core_network`, the greenhouse sensors and bed soil sensors.
 - **Small, task-scoped edits;** no unrelated refactors.
 
 ### ESPHome gotchas (learned the hard way)
+- Built-in LVGL Montserrat fonts have only ASCII plus the LVGL symbols: no `·`, `…`, `×`, `‑` in UI texts
+  (use `-`, `...`, `x`); `tests/test_screens.py` enforces it on the tokenized files.
+- Confirm dialog: `script.execute: gp_confirm {title, body, action, danger}` → `script.wait: gp_confirm` → `if` on
+  `gp_confirm_result` → the action (see `packages/lvgl/dialog_confirm.yaml`). `time.has_time` is not a condition:
+  use `id(ha_time).now().is_valid()`.
 - Actions extended into a `script` run outside the `on_touch` trigger: don't use the trigger-only `touch`
   variable there; use `id(touch)->get_touch()`.
 - Don't call `lvgl.*` from a `number`'s `on_value` that can fire on restore/HA before LVGL is ready; poll from

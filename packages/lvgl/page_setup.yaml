@@ -1,0 +1,368 @@
+# Setup page (draft D10): 2x3 tile grid. NETWORK opens the Network page, DISPLAY opens the touch test, TIME shows the
+# clock, the other tiles are "Soon" placeholders (task 010 turns SERVICE into the valve test). Bottom nav copies the
+# Home nav with SETUP active; widget ids are global, hence the setup_nav_btn_* prefix.
+# Tokens only (design/tokens.json); ASCII only (built-in fonts). The 1 s poller below updates NETWORK and TIME
+# (pollers, not on_value: LVGL may not be ready then). Needs core_time (ha_time) and page_network.
+
+lvgl:
+  pages:
+    - id: setup_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
+      widgets:
+        - label:
+            x: 8
+            y: 4
+            text: "Setup"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - button:
+            id: setup_tile_network
+            x: 8
+            y: 26
+            width: 150
+            height: 52
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - lvgl.page.show: network_page
+            widgets:
+              - label:
+                  x: 6
+                  y: 6
+                  text: "NETWORK"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              - label:
+                  id: setup_network_value
+                  x: 6
+                  y: 20
+                  text: "HA offline"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+              - label:
+                  x: 132
+                  y: 20
+                  text: "\uF054"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+        - obj:
+            id: setup_tile_time
+            x: 162
+            y: 26
+            width: 150
+            height: 52
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  x: 6
+                  y: 6
+                  text: "TIME"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              - label:
+                  id: setup_time_value
+                  x: 6
+                  y: 20
+                  text: "--:-- not set"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+        - button:
+            id: setup_tile_display
+            x: 8
+            y: 82
+            width: 150
+            height: 52
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - lvgl.page.show: touch_test_page
+            widgets:
+              - label:
+                  x: 6
+                  y: 6
+                  text: "DISPLAY"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              - label:
+                  id: setup_display_value
+                  x: 6
+                  y: 20
+                  text: "Touch test"
+                  text_font: montserrat_10
+                  text_color: 0xe5e2e1
+              - label:
+                  x: 132
+                  y: 20
+                  text: "\uF054"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+        - obj:
+            id: setup_tile_cycle
+            x: 162
+            y: 82
+            width: 150
+            height: 52
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  x: 6
+                  y: 6
+                  text: "CYCLE"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              - label:
+                  id: setup_cycle_value
+                  x: 6
+                  y: 20
+                  text: "Soon"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+        - obj:
+            id: setup_tile_sensors
+            x: 8
+            y: 138
+            width: 150
+            height: 52
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  x: 6
+                  y: 6
+                  text: "SENSORS"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              - label:
+                  id: setup_sensors_value
+                  x: 6
+                  y: 20
+                  text: "Soon"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+        - obj:
+            id: setup_tile_service
+            x: 162
+            y: 138
+            width: 150
+            height: 52
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  x: 6
+                  y: 6
+                  text: "SERVICE"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              - label:
+                  id: setup_service_value
+                  x: 6
+                  y: 20
+                  text: "Soon"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+
+        # --- Bottom nav (same as Home, SETUP active) ---
+        - obj:
+            x: 0
+            y: 201
+            width: 320
+            height: 39
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            border_side: [TOP]
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - button:
+            id: setup_nav_btn_dash
+            x: 4
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF015"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "DASH"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: home_page
+        - button:
+            id: setup_nav_btn_zones
+            x: 84
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF06C"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "ZONES"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: greenhouse_page
+        - button:
+            id: setup_nav_btn_water
+            x: 164
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF043"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "WATER"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: lawn_page
+        - button:
+            id: setup_nav_btn_setup
+            x: 244
+            y: 204
+            width: 72
+            height: 32
+            bg_color: 0x4caf50
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF013"
+                  text_font: montserrat_14
+                  text_color: 0x003c0b
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "SETUP"
+                  text_font: montserrat_8
+                  text_color: 0x003c0b
+            on_click:
+              - lvgl.page.show: setup_page
+
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            api.connected:
+          then:
+            - lvgl.label.update:
+                id: setup_network_value
+                text: "HA online"
+                text_color: 0x78dc77
+          else:
+            - lvgl.label.update:
+                id: setup_network_value
+                text: "HA offline"
+                text_color: 0xbecab9
+      - if:
+          condition:
+            lambda: "return id(ha_time).now().is_valid();"
+          then:
+            - lvgl.label.update:
+                id: setup_time_value
+                text:
+                  time_format: "%H:%M"
+                  time: ha_time
+                text_color: 0xe5e2e1
+          else:
+            - lvgl.label.update:
+                id: setup_time_value
+                text: "--:-- not set"
+                text_color: 0xbecab9
