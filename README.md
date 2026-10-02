@@ -98,4 +98,5 @@ Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/comp
 - `CLAUDE.md`, `.claude/`, `tasks/` — how the project is developed with Claude Code agents.
 
 ## License
-[MIT](LICENSE)
+[MIT](LICENSE), except `components/garden_zones/`: a modified copy of ESPHome code under GPLv3 (see its
+`LICENSE` and `README.md`). That component is in development and not used by the device yet.

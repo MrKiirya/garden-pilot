@@ -45,6 +45,8 @@ Checked against `esphome/components/sprinkler/` on the `dev` branch, 2026-10-01:
   The current greenhouse page uses it for its RUN buttons.
 - Queued zones run **even if their enable switch is off**.
 - The `Sprinkler` class is `final` (since July 2026): it cannot be subclassed.
+- Forked into `components/garden_zones/` from tag 2026.9.1 (task 008): open persistent queue, manual run that keeps
+  the queue, disabled zones skipped; see `components/garden_zones/PATCHES.md`.
 - No functional changes since spring 2026. The `millis()` overflow fix (esphome#14299) shipped in
   **2026.2.3** — the lowest version we can support. Built-in latching valve support was removed (#12603).
 
@@ -183,7 +185,7 @@ tests/
 1. `esphome config` for every module combination: the matrix in `tests/test_config_matrix.py` (variants built from
    the real entry file) runs in CI job `checks` via `script/test`; 2 beds, a bed with its own soil sensor and the sim board (config only) were added by task 005.
 2. `esphome compile` for ESP32 (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary).
-3. Unit tests of the `garden_zones` core (GoogleTest or Catch2).
+3. Unit tests of the `garden_zones` core (a minimal header-only harness, `script/test-cpp`).
 4. **`host` platform:** firmware runs on Linux/macOS, the API works and HA can connect by IP; no GPIO, hence
    `hardware/sim.yaml` (config-only until stage 11; see §5).
 5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch; in CI `headless: true` and
@@ -226,7 +228,8 @@ tests/
    container) + remote packages from this repo + first flash via web.esphome.io, then OTA; no devcontainer
    needed. Depends on stage 4.
 6. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
-   via lanes, watchdog, optional soil-moisture skip.
+   via lanes, watchdog, optional soil-moisture skip. Task 008: fork + open/persistent queue, manual run keeps the
+   queue, disabled zones skipped; groups/lanes 012, watchdog + soil 013, device switch 014.
 7. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
 8. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.
