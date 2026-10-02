@@ -136,3 +136,5 @@ devcontainer. CI проверяет только Docker Engine на Linux в н�
 
 ## Лицензия
 [MIT](LICENSE)
+
+Шрифт Montserrat Bold в `packages/lvgl/fonts/` сторонний, под лицензией SIL Open Font License 1.1 (см. `packages/lvgl/fonts/OFL.txt`).
