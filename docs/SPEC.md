@@ -230,6 +230,12 @@ tests/
   run not started by the test (Home Assistant, queue) is shut down within 1 s with a WARN log. Service mode ends by
   EXIT SERVICE, by leaving the page, after 10 minutes without a test, or by a reboot (not restored). Blocking Home
   Assistant before it starts a valve needs the `gp_*` layer (stage 8).
+- **Screensaver** (D23, `packages/lvgl/screensaver.yaml`): a top-layer overlay, not a page, shown after
+  `screensaver_timeout` (5 min; 1 min in the emulator) without input: 40 px clock (token `clock`, custom font
+  `gp_font_clock` baked from the vendored Montserrat Bold with only `0123456789:-`), a status line ("24C - soil 58%"),
+  "Bed N" with a green dot while a bed runs, "Touch to wake". Any touch hides it and is swallowed by the overlay. It never
+  shows on the boot screen, over a confirm dialog or in service mode. No backlight dimming yet (needs a backlight pin
+  in the board profile) and no "next run" part (no schedules).
 - Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
   layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
   LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the

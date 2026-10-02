@@ -42,6 +42,8 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/display_sdl.yaml` | Emulator only: SDL display + mouse touch with the same ids and scripts as `display_touch.yaml` (keep in sync). |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`. |
 | `packages/lvgl/page_*.yaml` | One LVGL page per file under `lvgl: pages:`. |
+| `packages/lvgl/screensaver.yaml` | Idle screensaver overlay on the top layer + the `clock` font token (`gp_font_clock`); status line from `packages/greenhouse/screensaver_status.yaml`. |
+| `packages/lvgl/fonts/` | Vendored TTF (Montserrat Bold) + `OFL.txt` for the glyph-limited custom font. |
 | `packages/lvgl/dialog_confirm.yaml` | Confirm dialog on the LVGL top layer + `gp_confirm` script (pattern in its header). |
 | `packages/core/diagnostics.yaml` | Internal version / uptime / restart button for the Network page (no new HA entities). |
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`sprinkler`), LVGL page. |
@@ -64,10 +66,11 @@ introduced by roadmap tasks, not ad hoc.
 3. `lvgl_base` — LVGL wiring to those ids.
 4. `lvgl_page_boot` — first page = boot screen (shows Home on Wi-Fi connect or after `boot_offline_timeout`; needs
    `core_diagnostics` and the home page); then `lvgl_page_home`, other `lvgl_page_*`, `lvgl_dialog_confirm`,
+   `lvgl_screensaver`,
    `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`, `lvgl_boot_wifi`.
 5. `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) → `gh_bed_N` (+ optional
    `gh_bed_N_soil` after its bed) in valve order, at least 2 beds → `gh_lvgl_page` → `gh_sensors_air` →
-   `gh_sensors_soil` → `gh_sprinkler_lvgl` → `gh_valve_test` (Setup > SERVICE valve test).
+   `gh_sensors_soil` → `gh_sprinkler_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 `garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `core_diagnostics`, `display_sdl` and
@@ -95,6 +98,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - **Small, task-scoped edits;** no unrelated refactors.
 
 ### ESPHome gotchas (learned the hard way)
+- Custom fonts: vendored TTF under `packages/lvgl/fonts/` (never `gfonts://`: no network at config time), glyph-limited, one per design token (`clock` = `gp_font_clock`, screensaver only); `tests/test_screensaver.py` checks size, glyphs and checksum.
 - Built-in LVGL Montserrat fonts have only ASCII plus the LVGL symbols: no `·`, `…`, `×`, `‑` in UI texts
   (use `-`, `...`, `x`); `tests/test_screens.py` enforces it on the tokenized files.
 - Confirm dialog: `script.execute: gp_confirm {title, body, action, danger}` → `script.wait: gp_confirm` → `if` on

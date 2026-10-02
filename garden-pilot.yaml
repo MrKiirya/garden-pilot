@@ -46,6 +46,9 @@ packages:
   lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
   # Confirm dialog (top layer), Setup and Network pages. The Network page needs core_diagnostics + the dialog.
   lvgl_dialog_confirm: !include packages/lvgl/dialog_confirm.yaml
+  # Screensaver overlay after N idle minutes (substitution screensaver_timeout, default 5min); needs the dialog and
+  # gh_valve_test (guards) and, for its status line, gh_screensaver_status below.
+  lvgl_screensaver: !include packages/lvgl/screensaver.yaml
   lvgl_page_setup: !include packages/lvgl/page_setup.yaml
   lvgl_page_network: !include packages/lvgl/page_network.yaml
   # Wi-Fi rows of the Network page (device only; optional).
@@ -76,6 +79,7 @@ packages:
   gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml
   gh_sensors_soil: !include packages/greenhouse/sensors_soil.yaml
   gh_sprinkler_lvgl: !include packages/greenhouse/sprinkler_lvgl_status.yaml
+  gh_screensaver_status: !include packages/greenhouse/screensaver_status.yaml
   # Setup > SERVICE > Valve test (opens real valves for at most 10 s; service mode stops other watering).
   gh_valve_test: !include packages/greenhouse/lvgl_valve_test.yaml
 

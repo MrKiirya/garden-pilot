@@ -42,6 +42,7 @@ VARIANTS: dict[str, Variant] = {
     "no_touch_debug": Variant("without", ["touch_dot_test"]),
     "no_wifi_status": Variant("without", ["lvgl_network_wifi"]),
     "no_boot_wifi": Variant("without", ["lvgl_boot_wifi"]),
+    "no_screensaver": Variant("without", ["lvgl_screensaver", "gh_screensaver_status"]),
     "headless_diag": Variant("keep", [*CORE, "core_diagnostics"]),
     "beds_2_headless": Variant("keep", BEDS_2),
     "bed_soil_headless": Variant(

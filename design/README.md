@@ -35,14 +35,15 @@ GardenPilot is the on-device UI for a greenhouse and lawn irrigation controller:
 
 ## Type
 
-One family, Montserrat (LVGL's built-in bitmap fonts), four sizes:
+One family, Montserrat (LVGL's built-in bitmap fonts), four built-in sizes plus one custom clock size (five tokens):
 
 - `caption` 8px/400: captions, nav labels.
 - `label` 10px/600: status text, clock, button labels, titles.
 - `value` 12px/700: sensor readings, bed durations.
 - `value-lg` 14px/700: the one headline reading of a page.
+- `clock` 40px/44px/700: the screensaver clock only, digits, colon and dash only (custom font `gp_font_clock` from the vendored Montserrat Bold TTF, a few KB); don't use it elsewhere.
 
-Don't introduce other sizes: each one is an extra font baked into the firmware.
+Don't introduce other sizes (a new one needs the author's approval): each one is an extra font baked into the firmware.
 
 ## Layout
 

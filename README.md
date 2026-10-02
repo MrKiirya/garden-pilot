@@ -136,3 +136,5 @@ Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/comp
 
 ## License
 [MIT](LICENSE)
+
+The Montserrat Bold font in `packages/lvgl/fonts/` is third-party, under the SIL Open Font License 1.1 (see `packages/lvgl/fonts/OFL.txt`).
