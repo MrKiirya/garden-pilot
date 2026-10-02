@@ -77,6 +77,7 @@ def test_variants_differ_only_in_display_settings() -> None:
         cfg.get("build", {}).pop("dockerfile", None)
         cfg.get("build", {}).pop("context", None)
         cfg["mounts"] = [m for m in cfg.get("mounts", []) if not is_display_mount(m)]
+        cfg["runArgs"] = [a for a in cfg.get("runArgs", []) if not a.startswith("--publish=")]
         for key in DISPLAY_ENV:
             cfg.get("containerEnv", {}).pop(key, None)
         expected = copy.deepcopy(base)
@@ -198,3 +199,27 @@ def test_vscode_extensions_are_a_named_volume() -> None:
     for path in [DEFAULT, *VARIANTS]:
         assert f"{HOME}/.vscode-server/extensions" in volume_mounts(load(path)), path
     assert f"{HOME}/.vscode-server/extensions" in DOCKERFILE.read_text(encoding="utf-8")
+
+
+def test_sdl_variant_publishes_api_port() -> None:
+    sdl = load(DEVCONTAINER_DIR / "sdl" / "devcontainer.json")
+    published = [a for a in sdl["runArgs"] if a.startswith("--publish")]
+    assert published == ["--publish=${localEnv:GP_SIM_API_PUBLISH:127.0.0.1:6053}:6053"]
+    assert "--network=host" not in " ".join(sdl["runArgs"])
+    assert not [a for a in load(DEFAULT)["runArgs"] if "--publish" in a]
+
+
+def test_sim_script() -> None:
+    script = REPO_ROOT / "script" / "sim"
+    assert script.is_file() and script.stat().st_mode & 0o111
+    text = script.read_text(encoding="utf-8")
+    for needle in ("secrets.example.yaml", ".esphome/sim-build", "ESPHOME_PREFDIR", "DISPLAY", "WAYLAND_DISPLAY"):
+        assert needle in text, needle
+    # Never the real secrets: the only secrets file copied is the example one.
+    assert not re.search(r"cp\s+(-\w+\s+)*secrets\.yaml", text)
+    assert "cp secrets.example.yaml" in text
+    compile_text = (REPO_ROOT / "script" / "compile").read_text(encoding="utf-8")
+    sim_paths = re.search(r"for path in (.*?); do", text)
+    compile_paths = re.search(r"for path in (.*?); do", compile_text)
+    assert sim_paths and compile_paths
+    assert sim_paths.group(1).split()[1:] == compile_paths.group(1).split()[1:]
