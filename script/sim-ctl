@@ -1,0 +1,9 @@
+#!/bin/sh
+# List, read and set entities of the running PC emulator (script/sim) over the native API.
+#   script/sim-ctl list
+#   script/sim-ctl get greenhouse_soil_moisture
+#   script/sim-ctl set "Sim soil moisture" 35
+#   script/sim-ctl switch "Sim auto drift" on
+# Options: --host H (127.0.0.1), --port P (6053), --key K, --timeout S. See script/sim_ctl.py.
+set -eu
+exec uv run python "$(dirname "$0")/sim_ctl.py" "$@"
