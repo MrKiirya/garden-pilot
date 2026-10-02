@@ -30,4 +30,6 @@ addopts = ["--strict-markers", "--strict-config"]
 markers = [
     "unit: fast checks that need no ESPHome toolchain",
     "config: runs `esphome config` on the device configuration",
+    "cpp: builds and runs the C++ unit tests with the host compiler",
+    "host: compiles a test config for the host platform and runs it",
 ]

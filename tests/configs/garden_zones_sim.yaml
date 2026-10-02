@@ -1,0 +1,203 @@
+# Test harness for components/garden_zones — NOT a device configuration and never flashed.
+# Host (Linux) build with simulated relays; a scripted scenario logs machine-readable `GZTEST` lines that
+# tests/test_garden_zones.py asserts. Paths are repo-root relative: the file is only used staged at the repo root
+# (pytest copies it together with hardware/ and components/ into a staging directory, like script/config does).
+# Everything is logged at INFO because the test runs on the host only.
+
+esphome:
+  name: garden-zones-sim
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: gz_scenario
+
+packages:
+  hardware: !include hardware/sim.yaml
+
+logger:
+  level: INFO
+
+external_components:
+  - source: components
+    components: [garden_zones]
+
+garden_zones:
+  - id: gz_sim
+    main_switch: "GZ main"
+    auto_advance_switch: "GZ auto advance"
+    queue_enable_switch: "GZ queue"
+    valves:
+      - valve_switch: "GZ zone 1"
+        enable_switch:
+          id: gz_en_1
+          name: "GZ zone 1 enable"
+        run_duration: 2s
+        valve_switch_id: board_relay_1
+      - valve_switch: "GZ zone 2"
+        enable_switch:
+          id: gz_en_2
+          name: "GZ zone 2 enable"
+        run_duration: 2s
+        valve_switch_id: board_relay_2
+      - valve_switch: "GZ zone 3"
+        enable_switch:
+          id: gz_en_3
+          name: "GZ zone 3 enable"
+        run_duration: 2s
+        valve_switch_id: board_relay_3
+
+# Logs the active valve whenever it changes.
+interval:
+  - interval: 250ms
+    then:
+      - lambda: |-
+          static int last = -2;
+          auto active = id(gz_sim).active_valve();
+          int now = active.has_value() ? static_cast<int>(active.value()) : -1;
+          if (now != last) {
+            last = now;
+            if (now >= 0) {
+              ESP_LOGI("GZTEST", "active=%d", now);
+            } else {
+              ESP_LOGI("GZTEST", "active=none");
+            }
+          }
+
+script:
+  - id: gz_log_queue
+    parameters:
+      label: string
+    then:
+      - lambda: |-
+          std::string order;
+          for (size_t valve : id(gz_sim).queued_valves()) {
+            if (!order.empty()) order += ",";
+            order += std::to_string(valve);
+          }
+          ESP_LOGI("GZTEST", "%s=%s", label.c_str(), order.c_str());
+
+  - id: gz_log_paused
+    parameters:
+      label: string
+    then:
+      - lambda: |-
+          auto paused = id(gz_sim).paused_valve();
+          if (paused.has_value()) {
+            ESP_LOGI("GZTEST", "paused_%s=%d", label.c_str(), static_cast<int>(paused.value()));
+          } else {
+            ESP_LOGI("GZTEST", "paused_%s=none", label.c_str());
+          }
+
+  - id: gz_log_switches
+    parameters:
+      label: string
+    then:
+      - lambda: |-
+          ESP_LOGI("GZTEST", "switches %s auto=%d queue=%d", label.c_str(),
+                   static_cast<int>(id(gz_sim).auto_advance()), static_cast<int>(id(gz_sim).queue_enabled()));
+
+  - id: gz_scenario
+    then:
+      # 1. what was restored from the previous boot, then start clean
+      - script.execute:
+          id: gz_log_queue
+          label: restored
+      # a restored queue must not start by itself: watch it for a while before touching anything
+      - delay: 1500ms
+      - script.execute:
+          id: gz_log_queue
+          label: boot_queue
+      - garden_zones.clear_queued_valves: gz_sim
+      - switch.turn_on: gz_en_1
+      - switch.turn_on: gz_en_2
+      - switch.turn_on: gz_en_3
+      - delay: 500ms
+      # 2. open queue API
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=2"}
+      - garden_zones.queue_valve: {id: gz_sim, valve_number: 0, run_duration: 4s}
+      - garden_zones.queue_valve: {id: gz_sim, valve_number: 1, run_duration: 2s}
+      - garden_zones.queue_valve: {id: gz_sim, valve_number: 2, run_duration: 2s}
+      - script.execute:
+          id: gz_log_queue
+          label: queue
+      - lambda: |-
+          ESP_LOGI("GZTEST", "queued1=%d queued2=%d",
+                   static_cast<int>(id(gz_sim).is_valve_queued(1)), static_cast<int>(id(gz_sim).is_valve_queued(2)));
+      - garden_zones.remove_queued_valve: {id: gz_sim, valve_number: 2}
+      - script.execute:
+          id: gz_log_queue
+          label: queue
+      - lambda: |-
+          ESP_LOGI("GZTEST", "queued1=%d queued2=%d",
+                   static_cast<int>(id(gz_sim).is_valve_queued(1)), static_cast<int>(id(gz_sim).is_valve_queued(2)));
+      - garden_zones.queue_valve: {id: gz_sim, valve_number: 2, run_duration: 2s}
+      - script.execute:
+          id: gz_log_queue
+          label: queue
+      - switch.turn_off: gz_en_2
+      # 3. run from the queue, manual run in the middle, disabled valve 1 is skipped
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=3"}
+      - garden_zones.start_from_queue: gz_sim
+      - delay: 1s
+      - script.execute:
+          id: gz_log_switches
+          label: before_run
+      - garden_zones.run_valve: {id: gz_sim, valve_number: 2, run_duration: 2s}
+      - script.execute:
+          id: gz_log_switches
+          label: after_run
+      - wait_until:
+          condition:
+            lambda: 'return !id(gz_sim).active_valve().has_value() && id(gz_sim).queued_valves().empty();'
+          timeout: 30s
+      - delay: 1s
+      - script.execute:
+          id: gz_log_queue
+          label: queue_after_run
+      # 3b. a stale pause (valve 0 paused by the user, then valve 1 started from the queue): run_valve pauses the
+      # running valve 1 and the stale pause is dropped, so 1 resumes after the manual run and 0 is not resumed
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=3b"}
+      - switch.turn_on: gz_en_2
+      - garden_zones.queue_valve: {id: gz_sim, valve_number: 0, run_duration: 6s}
+      - garden_zones.start_from_queue: gz_sim
+      - delay: 1s
+      - garden_zones.pause: gz_sim
+      - delay: 500ms
+      - script.execute:
+          id: gz_log_paused
+          label: stale
+      - garden_zones.queue_valve: {id: gz_sim, valve_number: 1, run_duration: 4s}
+      - garden_zones.start_from_queue: gz_sim
+      - delay: 1s
+      - garden_zones.run_valve: {id: gz_sim, valve_number: 2, run_duration: 2s}
+      - wait_until:
+          condition:
+            lambda: 'return !id(gz_sim).active_valve().has_value() && !id(gz_sim).paused_valve().has_value();'
+          timeout: 30s
+      - delay: 1s
+      - script.execute:
+          id: gz_log_paused
+          label: end
+      # 4. manual run while idle: the queue is not started and stays as it is
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=4"}
+      - switch.turn_on: gz_en_2
+      - garden_zones.queue_valve: {id: gz_sim, valve_number: 0, run_duration: 2s}
+      - garden_zones.queue_valve: {id: gz_sim, valve_number: 1, run_duration: 2s}
+      - script.execute:
+          id: gz_log_queue
+          label: queue
+      - script.execute:
+          id: gz_log_switches
+          label: idle_before
+      - garden_zones.run_valve: {id: gz_sim, valve_number: 2, run_duration: 2s}
+      - delay: 5s
+      - script.execute:
+          id: gz_log_switches
+          label: idle_after
+      - script.execute:
+          id: gz_log_queue
+          label: queue_end
+      # 5. done; the queue (0,1) must be restored by the next boot
+      - lambda: |-
+          global_preferences->sync();
+          ESP_LOGI("GZTEST", "done");
