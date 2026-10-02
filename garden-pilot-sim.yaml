@@ -25,6 +25,8 @@
 substitutions:
   # Public dummy key (secrets.example.yaml; script/sim always stages the example secrets).
   api_encryption_key: !secret sim_api_encryption_key
+  # The emulator has no Wi-Fi: the boot screen takes the offline-timeout path.
+  boot_offline_timeout: 3s
 
 esphome:
   name: garden-pilot-sim
@@ -47,6 +49,7 @@ packages:
   display_sdl: !include packages/display_sdl.yaml
 
   lvgl_base: !include packages/lvgl/base.yaml
+  lvgl_page_boot: !include packages/lvgl/page_boot.yaml
   lvgl_page_home: !include packages/lvgl/page_home.yaml
   lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
   lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
@@ -75,6 +78,7 @@ packages:
     vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
   gh_sprinkler_lvgl: !include packages/greenhouse/sprinkler_lvgl_status.yaml
+  gh_valve_test: !include packages/greenhouse/lvgl_valve_test.yaml
 
   # Simulated sensors (settable numbers; display-free), auto drift, and their on-screen part.
   sim_sensors: !include packages/sim/sensors.yaml

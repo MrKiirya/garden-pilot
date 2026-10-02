@@ -479,12 +479,12 @@ def test_sim_entry_file() -> None:
     files = _package_files(data)
     assert files["hardware"] == "hardware/sim.yaml"
     keys = list(files)
-    required = ["core_api", "core_time_host", "display_sdl", "lvgl_base", "lvgl_page_home", "gh_irrigation",
+    required = ["core_api", "core_time_host", "display_sdl", "lvgl_base", "lvgl_page_boot", "lvgl_page_home", "gh_irrigation",
                 "gh_bed_1", "gh_bed_2", "gh_bed_3", "gh_lvgl_page", "gh_sprinkler_lvgl",
-                "core_diagnostics", "lvgl_dialog_confirm", "lvgl_page_setup", "lvgl_page_network"]
+                "core_diagnostics", "lvgl_dialog_confirm", "lvgl_page_setup", "lvgl_page_network", "gh_valve_test"]
     assert set(required) <= set(keys), sorted(set(required) - set(keys))
     first_page = [k for k in keys if k.startswith("lvgl_page_")][0]
-    assert first_page == "lvgl_page_home"
+    assert first_page == "lvgl_page_boot"
     forbidden = {"core_network", "core_ota", "core_time", "display_touch", "gh_sensors_air", "gh_sensors_soil"}
     assert not forbidden & set(keys), sorted(forbidden & set(keys))
     assert BED_SOIL_FILE not in files.values()
