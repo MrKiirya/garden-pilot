@@ -10,6 +10,7 @@ COPY --from=uv /uv /uvx /bin/
 
 # libsdl2-dev: SDL2 headers/libs for the ESPHome `host` + `display: sdl` builds (script/sdl-smoke, later harness).
 # build-essential, pkg-config: C/C++ toolchain for host builds and native Python wheels.
+# xvfb, xdotool: headless screenshots and taps of the emulator for script/sim-ui.
 # git: PlatformIO/ESP-IDF fetch components and tools with git.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -17,6 +18,8 @@ RUN apt-get update \
         git \
         libsdl2-dev \
         pkg-config \
+        xdotool \
+        xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-create the cache mount points owned by `vscode`, so named volumes copy up the right owner.
