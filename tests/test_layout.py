@@ -449,10 +449,15 @@ def test_core_split() -> None:
     data = load_esphome_yaml(REPO_ROOT / "packages/core/network.yaml")
     assert isinstance(data, dict) and set(data) == {"wifi", "captive_portal"}
     for rel, platform in (("packages/core/time.yaml", "homeassistant"), ("packages/core/time_host.yaml", "host")):
-        times = _single_top_level(rel, "time")
+        times = load_esphome_yaml(REPO_ROOT / rel)["time"]
         assert len(times) == 1, rel
         assert times[0]["platform"] == platform and times[0]["id"] == "ha_time", rel
-        assert "timezone" not in times[0], f"{rel}: a timezone would stop Home Assistant from pushing its own"
+    # The device sources carry the zone substitution; the emulator keeps the PC zone (host time is left alone).
+    ha = load_esphome_yaml(REPO_ROOT / "packages/core/time.yaml")
+    assert set(ha) == {"substitutions", "time"} and ha["substitutions"] == {"timezone": "UTC"}
+    assert ha["time"][0]["timezone"] == "${timezone}"
+    host = load_esphome_yaml(REPO_ROOT / "packages/core/time_host.yaml")
+    assert set(host) == {"time"} and "timezone" not in host["time"][0]
 
 
 def test_time_sntp_package() -> None:
@@ -460,6 +465,7 @@ def test_time_sntp_package() -> None:
     data = load_esphome_yaml(path)
     assert isinstance(data, dict) and set(data) == {"substitutions", "time"}
     assert data["substitutions"] == {
+        "timezone": "UTC",
         "sntp_server_1": "0.pool.ntp.org",
         "sntp_server_2": "1.pool.ntp.org",
         "sntp_server_3": "2.pool.ntp.org",
@@ -468,7 +474,8 @@ def test_time_sntp_package() -> None:
     item = data["time"][0]
     assert item["platform"] == "sntp" and item["id"] == "sntp_time"
     assert item["servers"] == ["${sntp_server_1}", "${sntp_server_2}", "${sntp_server_3}"]
-    for key in ("timezone", "update_interval", "on_time", "on_time_sync"):
+    assert item["timezone"] == "${timezone}"
+    for key in ("update_interval", "on_time", "on_time_sync"):
         assert key not in item, key
     assert not _has_secret_tag(data)
     assert "!secret" not in _strip_comments(path.read_text(encoding="utf-8"))

@@ -223,3 +223,37 @@ def test_sntp_servers_override(tmp_path: Path) -> None:
     assert "ntp.example.lan" in result.stdout
     assert "0.pool.ntp.org" not in result.stdout
     assert "1.pool.ntp.org" in result.stdout
+
+
+def _config_with_substitution(tmp_path: Path, line: str | None) -> str:
+    source = (REPO_ROOT / "garden-pilot.yaml").read_text(encoding="utf-8")
+    variant = build_variant(source, "keep", CORE)
+    if line:
+        assert "\nsubstitutions:\n" in variant
+        variant = variant.replace("\nsubstitutions:\n", f"\nsubstitutions:\n  {line}\n", 1)
+    (tmp_path / "garden-pilot.yaml").write_text(variant, encoding="utf-8")
+    for folder in ("packages", "hardware", "components"):
+        if (REPO_ROOT / folder).exists():
+            shutil.copytree(REPO_ROOT / folder, tmp_path / folder)
+    shutil.copy(REPO_ROOT / "secrets.example.yaml", tmp_path / "secrets.yaml")
+    result = subprocess.run(
+        ["sh", str(REPO_ROOT / "script" / "_esphome"), "config", str(tmp_path / "garden-pilot.yaml")],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+    return result.stdout
+
+
+# `esphome config` shows the zone normalized to a POSIX string (UTC -> UTC0, Europe/Moscow -> MSK-3).
+def test_timezone_default_is_utc_on_both_sources(tmp_path: Path) -> None:
+    out = _config_with_substitution(tmp_path, None)
+    assert out.count("    timezone: UTC0") == 2, out
+
+
+def test_timezone_override(tmp_path: Path) -> None:
+    out = _config_with_substitution(tmp_path, "timezone: Europe/Moscow")
+    assert out.count("    timezone: MSK-3") == 2, out
+    assert "timezone: UTC0" not in out
