@@ -129,10 +129,12 @@ The clock id `ha_time` is the only one features use. `packages/core/time.yaml` (
 device has valid time with Home Assistant offline as long as Wi-Fi reaches an NTP server. SNTP is on by default
 (comment out `core_time_sntp` for HA-only time); servers are the `sntp_server_1..3` substitutions, default
 `0/1/2.pool.ntp.org`. An SNTP sync does not fire `ha_time.on_time_sync`, so readers poll (the Home clock lags at
-most 30 s). **Timezone offline:** no `timezone:` is set, so Home Assistant pushes its zone when it connects; if it
-never answers after a reboot, local time uses the zone of the machine that built the firmware (likely UTC in the
-devcontainer). Setting `timezone:` would stop the HA push; deciding on a zone substitution is open. The emulator
-uses `time: host` (no `sntp` on `host`). An RTC chip for "no Wi-Fi at all" is a follow-up.
+most 30 s). **Timezone:** the `timezone` substitution
+(default `UTC`, an IANA name such as `Europe/Berlin` or a POSIX string) is applied as `timezone: ${timezone}` to both
+`ha_time` and `sntp_time`, so the zone is known after a reboot without Home Assistant. Because a timezone is set,
+Home Assistant no longer overrides the zone: users must set their own zone in the entry file (`substitutions:`),
+otherwise the clock shows UTC. The default carries no personal zone. The emulator
+uses `time: host` without `timezone` (it keeps the PC's zone detected at build time; no `sntp` on `host`). An RTC chip for "no Wi-Fi at all" is a follow-up.
 
 ### 4.2 Loading our own component
 ```yaml

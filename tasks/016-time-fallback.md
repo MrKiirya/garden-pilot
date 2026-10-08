@@ -171,6 +171,7 @@ No `cpp` / `host` checks: there is no C++ here, and `sntp` cannot run on `host`.
       and `*.example.lan` style examples).
 - [x] `docs/SPEC.md` and `CLAUDE.md` updated as listed under Files. SPEC §9 item 10 says SNTP is done (task 016) and
       RTC is a follow-up.
+- [x] Timezone substitution (open question 1): `timezone: ${timezone}` (default `UTC`) on `ha_time` and `sntp_time`; the config output shows it on both, an entry-file override replaces it on both; documented in SPEC 4.1a, the package headers and the entry file.
 - [ ] **Hardware (human, breadboard ESP32; cannot run in CI):** the verification matrix below is filled in under
       Implementation notes with "verified" or "not verified" per row. If it is not run, the PR description says so.
 
@@ -194,8 +195,6 @@ breadboard are irrelevant to it.
 - **RTC chip** (DS3231/DS1307/PCF8563 over I2C, written from `on_time_sync` of both sources, read at boot). It is
   needed only for "no Wi-Fi at all after a power cut". It requires I2C pins in `hardware/` and a part choice, which
   are the human's call. Follow-up task in stage 10.
-- **Timezone substitution** (`timezone` on both items, which disables the HA timezone push). It waits for Open
-  question 1.
 - A time-source / last-sync indicator on the Network or Setup page (would need `on_time_sync` of both sources, with
   LVGL only in `packages/lvgl/`).
 - Renaming `ha_time` to a neutral id (existing follow-up since task 006).
@@ -204,16 +203,11 @@ breadboard are irrelevant to it.
 - Any change to `garden-pilot-sim.yaml`, `time_host.yaml` or the LVGL pages.
 
 ## Open questions
-1. **Offline timezone.** Without HA, local time after a reboot is the zone of the build machine. For devcontainer
-   builds that is likely UTC, so the clock would be off by the UTC offset until HA connects. Options: (a) keep as is
-   and document it (this task's default); (b) add a `timezone` substitution (POSIX or `Region/City`) on both time
-   items, which stops HA from overriding it; (c) set `TZ` in the devcontainer so `detect_tz` picks the author's
-   zone. This is a product decision for the human. The hardware row "Timezone after a reboot" gives the data.
-2. **Default NTP servers.** This task uses the NTP Pool defaults (`0/1/2.pool.ntp.org`, same as ESPHome). The pool
-   asks vendors who ship many devices to request a vendor zone. For a DIY project that is repeated by individuals the
-   global pool is the usual choice. Confirm, or pick a different public default.
-3. Should SNTP stay enabled by default (this task: yes), or should users opt in? Users without internet access on
-   their Wi-Fi get harmless failed-sync attempts.
+Decided by the human 2026-10-08:
+1. **Offline timezone:** add a `timezone` substitution (default `UTC`, IANA name, overridable from the entry file)
+   applied to both time sources. This stops the Home Assistant timezone push; documented in SPEC 4.1a.
+2. **Default NTP servers:** the NTP Pool defaults (`0/1/2.pool.ntp.org`) are fine.
+3. **SNTP on by default:** yes.
 
 <!-- Filled in by implementer -->
 ## Implementation notes
@@ -221,4 +215,5 @@ breadboard are irrelevant to it.
 - New SPEC paragraph is "4.1a Time sources"; README files name no core packages, so unchanged.
 - Results: `pytest -m unit` 495 passed; `script/lint` ok; `script/test` 513 passed, 9 skipped (no SDL/compiler); device config output shows `homeassistant`/`ha_time` (no timezone) and `sntp`/`sntp_time` with the three pool servers.
 - Not run: `GP_ESPHOME=minimum script/config` (UV_OFFLINE, esphome 2026.6.3 not in the uv cache), `script/compile` (not attempted; CI), the before/after sim config diff (no file used by the sim entry changed: `garden-pilot-sim.yaml`, `time_host.yaml` and the sim packages are untouched), and the whole hardware verification matrix (all rows "not verified").
+- Timezone follow-up (2026-10-08; results: unit 497 passed, lint ok, script/test 517 passed / 9 skipped, also with UV_OFFLINE=1 GP_ESPHOME=minimum 2026.6.3; `esphome config` shows the zone normalized to POSIX, UTC0 on both sources): `timezone` default `UTC` is declared in both `time.yaml` and `time_sntp.yaml` (same value, so each works alone, e.g. the `headless_sntp_only` variant); the entry file shows a commented example. `time_host.yaml` is left alone: without `timezone` the host source keeps the PC zone detected at build time, and a `UTC` default would make the emulator clock wrong for most users. `test_core_split` no longer forbids `timezone` on the device source and instead asserts it on `time.yaml` and its absence on `time_host.yaml`. New config tests: `test_timezone_default_is_utc_on_both_sources`, `test_timezone_override`. Offline zone after reboot is still unverified on hardware.
 ## Follow-ups

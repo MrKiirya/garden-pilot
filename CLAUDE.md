@@ -105,7 +105,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - Confirm dialog: `script.execute: gp_confirm {title, body, action, danger}` → `script.wait: gp_confirm` → `if` on
   `gp_confirm_result` → the action (see `packages/lvgl/dialog_confirm.yaml`). `time.has_time` is not a condition:
   use `id(ha_time).now().is_valid()`.
-- `sntp` and `homeassistant` share the system clock: read `ha_time` only; an SNTP sync does not fire `ha_time.on_time_sync` (poll); `sntp` is not available on `host`.
+- `sntp` and `homeassistant` share the system clock: read `ha_time` only; an SNTP sync does not fire `ha_time.on_time_sync` (poll); `sntp` is not available on `host`. Both device sources get `timezone: ${timezone}` (default `UTC`, set your own in the entry file); that stops Home Assistant from pushing its zone. `time_host.yaml` has no `timezone` (the emulator keeps the PC zone).
 - Actions extended into a `script` run outside the `on_touch` trigger: don't use the trigger-only `touch`
   variable there; use `id(touch)->get_touch()`.
 - Don't call `lvgl.*` from a `number`'s `on_value` that can fire on restore/HA before LVGL is ready; poll from
