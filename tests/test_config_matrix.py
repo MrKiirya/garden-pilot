@@ -15,7 +15,7 @@ from conftest import REPO_ROOT, require_sdl_or_skip
 
 pytestmark = pytest.mark.config
 
-CORE = ["hardware", "core_api", "core_ota", "core_network", "core_time"]
+CORE = ["hardware", "core_api", "core_ota", "core_network", "core_time", "core_time_sntp"]
 BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"]
 SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3"]
 SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2"]
@@ -39,6 +39,8 @@ class Variant:
 VARIANTS: dict[str, Variant] = {
     "full": Variant("keep"),
     "headless": Variant("keep", CORE),
+    "no_sntp": Variant("without", ["core_time_sntp"]),
+    "headless_sntp_only": Variant("keep", ["hardware", "core_api", "core_ota", "core_network", "core_time_sntp"]),
     "no_touch_debug": Variant("without", ["touch_dot_test"]),
     "no_wifi_status": Variant("without", ["lvgl_network_wifi"]),
     "no_boot_wifi": Variant("without", ["lvgl_boot_wifi"]),
@@ -198,3 +200,26 @@ def test_variant_validates(name: str, tmp_path: Path) -> None:
         timeout=600,
     )
     assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+
+
+def test_sntp_servers_override(tmp_path: Path) -> None:
+    source = (REPO_ROOT / "garden-pilot.yaml").read_text(encoding="utf-8")
+    variant = build_variant(source, "keep", CORE)
+    assert "\nsubstitutions:\n" in variant
+    variant = variant.replace("\nsubstitutions:\n", "\nsubstitutions:\n  sntp_server_1: ntp.example.lan\n", 1)
+    (tmp_path / "garden-pilot.yaml").write_text(variant, encoding="utf-8")
+    for folder in ("packages", "hardware", "components"):
+        if (REPO_ROOT / folder).exists():
+            shutil.copytree(REPO_ROOT / folder, tmp_path / folder)
+    shutil.copy(REPO_ROOT / "secrets.example.yaml", tmp_path / "secrets.yaml")
+    result = subprocess.run(
+        ["sh", str(REPO_ROOT / "script" / "_esphome"), "config", str(tmp_path / "garden-pilot.yaml")],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+    assert "ntp.example.lan" in result.stdout
+    assert "0.pool.ntp.org" not in result.stdout
+    assert "1.pool.ntp.org" in result.stdout

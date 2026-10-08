@@ -452,6 +452,51 @@ def test_core_split() -> None:
         times = _single_top_level(rel, "time")
         assert len(times) == 1, rel
         assert times[0]["platform"] == platform and times[0]["id"] == "ha_time", rel
+        assert "timezone" not in times[0], f"{rel}: a timezone would stop Home Assistant from pushing its own"
+
+
+def test_time_sntp_package() -> None:
+    path = REPO_ROOT / "packages/core/time_sntp.yaml"
+    data = load_esphome_yaml(path)
+    assert isinstance(data, dict) and set(data) == {"substitutions", "time"}
+    assert data["substitutions"] == {
+        "sntp_server_1": "0.pool.ntp.org",
+        "sntp_server_2": "1.pool.ntp.org",
+        "sntp_server_3": "2.pool.ntp.org",
+    }
+    assert len(data["time"]) == 1
+    item = data["time"][0]
+    assert item["platform"] == "sntp" and item["id"] == "sntp_time"
+    assert item["servers"] == ["${sntp_server_1}", "${sntp_server_2}", "${sntp_server_3}"]
+    for key in ("timezone", "update_interval", "on_time", "on_time_sync"):
+        assert key not in item, key
+    assert not _has_secret_tag(data)
+    assert "!secret" not in _strip_comments(path.read_text(encoding="utf-8"))
+
+
+def test_time_ids_single_source() -> None:
+    allowed_ha = {"packages/core/time.yaml", "packages/core/time_host.yaml"}
+    sntp_file = "packages/core/time_sntp.yaml"
+    files = _yaml_files("packages", "hardware") + ENTRIES
+    for path in files:
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        text = _strip_comments(path.read_text(encoding="utf-8"))
+        if "sntp_time" in text or re.search(r"platform:\s*sntp", text):
+            assert rel == sntp_file, rel
+        defines_ha = re.search(r"^\s*-\s*platform:\s*(homeassistant|host)\s*\n\s*id:\s*ha_time", text, re.M)
+        if defines_ha:
+            assert rel in allowed_ha, rel
+    assert sntp_file in {p.relative_to(REPO_ROOT).as_posix() for p in files}
+
+
+def test_entry_time_sources() -> None:
+    data = load_esphome_yaml(ENTRY)
+    assert isinstance(data, dict)
+    files = _package_files(data)
+    keys = list(files)
+    assert files["core_time_sntp"] == "packages/core/time_sntp.yaml"
+    assert keys.index("core_time_sntp") == keys.index("core_time") + 1
+    assert not [k for k in data["substitutions"] if k.startswith("sntp_server_")]
 
 
 def _ids(items: list, platform: str | None = None) -> set[str]:
@@ -485,7 +530,7 @@ def test_sim_entry_file() -> None:
     assert set(required) <= set(keys), sorted(set(required) - set(keys))
     first_page = [k for k in keys if k.startswith("lvgl_page_")][0]
     assert first_page == "lvgl_page_boot"
-    forbidden = {"core_network", "core_ota", "core_time", "display_touch", "gh_sensors_air", "gh_sensors_soil"}
+    forbidden = {"core_network", "core_ota", "core_time", "core_time_sntp", "display_touch", "gh_sensors_air", "gh_sensors_soil"}
     assert not forbidden & set(keys), sorted(forbidden & set(keys))
     assert BED_SOIL_FILE not in files.values()
     sim_keys = [k for k in keys if k.startswith("sim_")]

@@ -16,7 +16,7 @@ def test_entry_file_is_a_package_list() -> None:
     assert isinstance(config, dict)
     assert set(config) == {"substitutions", "esphome", "logger", "packages"}, "keep the entry file to these sections"
     keys = list(config["packages"])
-    assert keys[:5] == ["hardware", "core_api", "core_ota", "core_network", "core_time"]
+    assert keys[:6] == ["hardware", "core_api", "core_ota", "core_network", "core_time", "core_time_sntp"]
     hardware = config["packages"]["hardware"]
     assert hardware["__tag__"] == "include" and hardware["value"].startswith("hardware/")
 
