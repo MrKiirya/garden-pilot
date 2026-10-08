@@ -123,6 +123,17 @@ So screens and HA do not depend on the engine. The current greenhouse page still
 directly; it moves to `gp_*` when the layer is introduced.
 The full list of `gp_*` actions and entities is a roadmap task.
 
+### 4.1a Time sources
+The clock id `ha_time` is the only one features use. `packages/core/time.yaml` (`time: homeassistant`) and
+`packages/core/time_sntp.yaml` (`time: sntp`, id `sntp_time`, task 016) both write the same system clock, so the
+device has valid time with Home Assistant offline as long as Wi-Fi reaches an NTP server. SNTP is on by default
+(comment out `core_time_sntp` for HA-only time); servers are the `sntp_server_1..3` substitutions, default
+`0/1/2.pool.ntp.org`. An SNTP sync does not fire `ha_time.on_time_sync`, so readers poll (the Home clock lags at
+most 30 s). **Timezone offline:** no `timezone:` is set, so Home Assistant pushes its zone when it connects; if it
+never answers after a reboot, local time uses the zone of the machine that built the firmware (likely UTC in the
+devcontainer). Setting `timezone:` would stop the HA push; deciding on a zone substitution is open. The emulator
+uses `time: host` (no `sntp` on `host`). An RTC chip for "no Wi-Fi at all" is a follow-up.
+
 ### 4.2 Loading our own component
 ```yaml
 external_components:
@@ -167,7 +178,7 @@ garden-pilot.yaml          # device entry file, modules commented out
 garden-pilot-sim.yaml      # PC emulator entry file (host + SDL), same packages
 hardware/                  # esp32-<board>.yaml (pins, relay drivers), sim.yaml
 packages/
-  core/                    # api, ota, network (Wi-Fi), time, time_host
+  core/                    # api, ota, network (Wi-Fi), time, time_sntp, time_host
   display_touch.yaml, display_sdl.yaml   # device display + touch; emulator window + mouse
   sim/                     # emulator only: simulated sensors, auto drift, SIM board page
   lvgl/                    # pages
@@ -282,7 +293,7 @@ tests/
 8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.
-10. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
+10. **Time without HA:** SNTP fallback (done, task 016, `packages/core/time_sntp.yaml`); RTC chip if needed (follow-up) so schedules work offline.
 11. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
     scenarios against the host build. Screenshots and taps under Xvfb exist (task 015, `script/sim-ui`, CI job
@@ -324,6 +335,8 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 - https://esphome.io/components/external_components/
 - https://esphome.io/components/host/
 - https://esphome.io/components/display/sdl/
+- https://esphome.io/components/time/sntp/
+- https://esphome.io/components/time/
 - https://docs.wokwi.com/wokwi-ci/github-actions
 - https://containers.dev/implementors/spec/
 - https://docs.astral.sh/uv/guides/integration/docker/
