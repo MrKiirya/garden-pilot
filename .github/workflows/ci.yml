@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   # Required status check names: `checks`, `compile (pinned)`, `compile (minimum)`. Do not rename casually.
+  # `sim-ui` is not required (yet): see .github/rulesets/master.json.
   checks:
     name: checks
     runs-on: ubuntu-24.04
@@ -51,6 +52,7 @@ jobs:
           env: |
             GP_SECRETS=example
             GP_REQUIRE_SDL=1
+            GP_SKIP_SIM_UI=1
 
   compile:
     name: compile (${{ matrix.target }})
@@ -99,3 +101,46 @@ jobs:
           env: |
             GP_SECRETS=example
             GP_ESPHOME=${{ matrix.target }}
+
+  # Headless emulator screenshots and taps (script/sim-ui under Xvfb). Not a required check.
+  sim-ui:
+    name: sim-ui
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prepare cache volumes
+        run: |
+          mkdir -p "$RUNNER_TEMP/gp-cache" "$RUNNER_TEMP/gp-platformio"
+          docker volume create --driver local --opt type=none --opt o=bind \
+            --opt device="$RUNNER_TEMP/gp-cache" garden-pilot-cache
+          docker volume create --driver local --opt type=none --opt o=bind \
+            --opt device="$RUNNER_TEMP/gp-platformio" garden-pilot-platformio
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gp-cache/uv
+          key: gp-uv-v1-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
+      - name: Emulator screenshots in the devcontainer
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
+        with:
+          imageName: garden-pilot-devcontainer
+          push: never
+          runCmd: uv run --no-sync pytest -m host -k sim_headless && uv cache prune --ci
+          env: |
+            GP_SECRETS=example
+            GP_REQUIRE_SIM_UI=1
+
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sim-ui-shots
+          path: .esphome/shots/
+          if-no-files-found: warn
