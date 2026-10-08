@@ -71,11 +71,12 @@ Decision: no intermediate MVP on the stock `sprinkler`; we copy `esphome/compone
   garden_zones:
     groups:
       - {id: greenhouse, max_parallel: all}
-      - {id: lawn, max_parallel: 1, pump: lawn_pump}
-    zones:
-      - {name: Bed 1, group: greenhouse, valve: valve_bed1}
+      - {id: lawn, max_parallel: 2, pump_switch_id: lawn_pump}   # lanes by round-robin: zone i -> lane i mod 2
+    zones:                       # inline zones; or one `garden_zone:` list item per package (see §5)
+      - {group: greenhouse, valve_switch: Bed 1, valve_switch_id: valve_bed1, run_duration: 10min}
   ```
-  To verify when planning: how a pump shared by zones in different controllers behaves.
+  Verified (task 012): all lanes of a block are registered with each other (stock `add_controller`), so a pump
+  shared by lanes stays on while any lane still needs it; a pump belongs to one group only for now.
 - **Safety:** a watchdog for maximum valve on-time (principle 4).
 - **Soil moisture (optional per zone):** any ESPHome sensor; if present and the soil is wet, the zone's run is
   skipped. Today (task 005) a bed can have such a sensor as a reporting-only `sensor` (`packages/greenhouse/
@@ -127,10 +128,10 @@ The full list of `gp_*` actions and entities is a roadmap task.
 ```yaml
 external_components:
   - source: components            # development and cloned repos
-    components: [garden_zones]
+    components: [garden_zones, garden_zone]
   # users without a clone pin a tag, never a branch:
   # - source: github://MrKiirya/garden-pilot@v1.0
-  #   components: [garden_zones]
+  #   components: [garden_zones, garden_zone]
 ```
 
 ## 5. Modularity
@@ -139,7 +140,8 @@ external_components:
 - A bed is one `packages/greenhouse/bed.yaml` (task 005) included N times through `!include` with `vars` (`bed`, `bed_name`, `relay`; an optional `bed_soil.yaml` adds a soil sensor). Inside:
   valve, sensors, heating thermostat, a `garden_zone:` entry for the component. For this the component uses
   `MULTI_CONF`, with a shared `garden_zones:` hub that owns the queue and groups.
-  **Verify with a first test build** that lists from different packages merge as expected.
+  Verified (task 012): lists from different packages concatenate in package order, so write `garden_zone:` as a list
+  item (`- group: ...`); two dict-form entries merge into one zone.
 - **Screens:** LVGL YAML has no loops. Bed layouts as fixed variants (1 / 2 / 3 / 6 beds, see design drafts
   D03–D05) or generated YAML — **open**.
 - Hardware is a separate package: `hardware/<board>.yaml` with real pins (also `esp32:` and the display/touch
@@ -278,7 +280,9 @@ tests/
    ON soil slowly dries and rises while that bed's relay runs). Both parts implemented (done once the PR merges: CI and the PC check are still open).
 7. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
    via lanes, watchdog, optional soil-moisture skip. Task 008: fork + open/persistent queue, manual run keeps the
-   queue, disabled zones skipped; groups/lanes 012, watchdog + soil 013, device switch 014.
+   queue, disabled zones skipped; task 012: `groups:` / `garden_zone:` config with generated lanes, shared pump and
+   group actions (in a host test build only); watchdog for valves and the pump
+   + soil 013, device switch 014.
 8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.

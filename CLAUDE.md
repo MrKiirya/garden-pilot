@@ -55,6 +55,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `docs/SPEC.md` | Product spec, architecture, roadmap, open questions. |
 | `.github/` | CI (`workflows/ci.yml`, weekly `canary.yml`) and `dependabot.yml`. |
 | `components/garden_zones/` | Fork of the stock `sprinkler`, GPLv3; patches listed in `PATCHES.md`, marked `GZ-PATCH` in the code. Not used by the device yet. |
+| `components/garden_zone/` | One `garden_zone:` entry of a `garden_zones` group (`MULTI_CONF`, schema only); MIT like the repo. |
 | `tasks/` | Task specs and reviews (see `tasks/README.md`). |
 | `tests/` | pytest repo checks; `script/*` wraps all commands. |
 
@@ -118,6 +119,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
   (`tests/test_service.py`); it is enforced by `run_duration` and by the separate `gp_valve_test_guard` script. Service
   mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the sprinkler opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
+- `garden_zone:` is always a list item (`- group: ...`): two dict-form entries from different packages merge into one zone.
 - `sprinkler` limitations (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
   queue, queued zones run even when disabled): SPEC §3.
 
