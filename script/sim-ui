@@ -1,0 +1,11 @@
+#!/bin/sh
+# Headless screenshots and taps of the PC emulator (script/sim) on a private Xvfb display; needs Xvfb and xdotool
+# (both are in the devcontainer image).
+#   script/sim-ui start            # builds if needed, starts Xvfb + the emulator, waits for the UI
+#   script/sim-ui shot home        # .esphome/shots/home.png (320x240)
+#   script/sim-ui tap 280 220      # tap in display pixels (x 0..319, y 0..239)
+#   script/sim-ui status
+#   script/sim-ui stop
+# See script/sim_ui.py. Combine with script/sim-ctl to change sensor values between shots.
+set -eu
+exec uv run python "$(dirname "$0")/sim_ui.py" "$@"

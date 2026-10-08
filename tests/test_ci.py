@@ -26,6 +26,7 @@ GITHUB_ACTIONS_APP_ID = 15368
 SPEC = REPO_ROOT / "docs" / "SPEC.md"
 DEVCONTAINER = REPO_ROOT / ".devcontainer" / "devcontainer.json"
 DOCKERFILE = REPO_ROOT / ".devcontainer" / "Dockerfile"
+NOT_REQUIRED_JOBS = {"sim-ui"}  # jobs that run in CI but are not in the ruleset's required checks
 SPEC_FLOOR = (2026, 2, 3)
 
 
@@ -197,7 +198,8 @@ def test_required_check_names_are_stable() -> None:
                 names.add(name.replace("${{ matrix.target }}", target))
         else:
             names.add(name)
-    assert names == {"checks", "compile (pinned)", "compile (minimum)"}
+    # `sim-ui` is deliberately not required (see test_sim_ui_job_is_not_required).
+    assert names == {"checks", "compile (pinned)", "compile (minimum)", "sim-ui"}
     strategy = jobs["compile"]["strategy"]
     assert strategy["matrix"]["target"] == ["pinned", "minimum"]
     assert strategy["fail-fast"] is False
@@ -432,7 +434,7 @@ def test_ruleset_requires_squash_pull_requests() -> None:
 def test_ruleset_required_checks_match_ci_jobs() -> None:
     checks = rules_by_type()["required_status_checks"]
     required = checks["required_status_checks"]
-    assert {c["context"] for c in required} == ci_check_names()
+    assert {c["context"] for c in required} == ci_check_names() - NOT_REQUIRED_JOBS
     assert all(c["integration_id"] == GITHUB_ACTIONS_APP_ID for c in required)
     assert checks["strict_required_status_checks_policy"] is False
 
@@ -446,3 +448,26 @@ def test_ci_compiles_the_sim() -> None:
     assert "uv cache prune --ci" in run_cmd[sim:]
     assert env_lines(devcontainer_steps(jobs["checks"])[0])["GP_REQUIRE_SDL"] == "1"
     assert env_lines(devcontainer_steps(jobs["compile"])[0])["GP_SECRETS"] == "example"
+
+
+def test_sim_ui_job_is_not_required() -> None:
+    jobs = load_yaml(CI)["jobs"]
+    assert "sim-ui" in jobs and jobs["sim-ui"].get("name", "sim-ui") == "sim-ui"
+    required = {c["context"] for c in rules_by_type()["required_status_checks"]["required_status_checks"]}
+    assert "sim-ui" not in required
+    assert "needs" not in jobs["sim-ui"], "sim-ui runs in parallel with checks"
+
+
+def test_sim_ui_job_runs_the_screen_test_and_uploads_shots() -> None:
+    jobs = load_yaml(CI)["jobs"]
+    step = devcontainer_steps(jobs["sim-ui"])[0]
+    assert "sim_headless" in step["with"]["runCmd"]
+    env = env_lines(step)
+    assert env["GP_REQUIRE_SIM_UI"] == "1" and env["GP_SECRETS"] == "example"
+    # `checks` has Xvfb in the same image, so it must skip the screen test that `sim-ui` runs.
+    assert env_lines(devcontainer_steps(jobs["checks"])[0])["GP_SKIP_SIM_UI"] == "1"
+    uploads = [s for s in steps(jobs["sim-ui"]) if s.get("uses", "").startswith("actions/upload-artifact@")]
+    assert len(uploads) == 1
+    upload = uploads[0]
+    assert upload.get("if") == "always()"
+    assert upload["with"]["path"] == ".esphome/shots/"

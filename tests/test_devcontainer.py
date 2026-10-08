@@ -234,3 +234,18 @@ def test_sim_ctl_script() -> None:
     py = (REPO_ROOT / "script" / "sim_ctl.py").read_text(encoding="utf-8")
     assert "secrets.example.yaml" in py
     assert not re.search(r"secrets\.yaml", py.replace("secrets.example.yaml", ""))
+
+
+def test_dockerfile_has_xvfb_and_xdotool() -> None:
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    block = text.split("apt-get install", 1)[1].split("rm -rf", 1)[0]
+    packages = set(re.findall(r"^\s*([a-z0-9][a-z0-9.+-]+)(?:\s*\\)?$", block, re.M))
+    assert {"xvfb", "xdotool"} <= packages
+
+
+def test_sim_ui_script() -> None:
+    script = REPO_ROOT / "script" / "sim-ui"
+    assert script.is_file() and script.stat().st_mode & 0o111
+    text = script.read_text(encoding="utf-8")
+    assert "uv run python" in text and "sim_ui.py" in text
+    assert "secrets.yaml" not in (REPO_ROOT / "script" / "sim_ui.py").read_text(encoding="utf-8")

@@ -113,6 +113,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
   Prefer small includes over deep `!extend` / `!remove` chains.
 - The sim entry file needs `sdl2-config` (SDL2 dev files) even for `esphome config`; `web_server` is not available on
   the `host` platform, and `on_time_sync` does not fire on `host` (poll the clock from an `interval`).
+- `xdotool click` is too short for LVGL to register a touch: use press, move, release with pauses (`script/sim-ui tap`). SDL `headless: true` disables the SDL touchscreen, so screenshots are X-level grabs under Xvfb instead.
 - Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
   (`tests/test_service.py`); it is enforced by `run_duration` and by the separate `gp_valve_test_guard` script. Service
@@ -139,6 +140,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 | Other ESPHome version | `GP_ESPHOME=pinned\|minimum\|latest\|YYYY.M.P` with `script/config` / `script/compile` |
 | PC emulator (host + SDL window) | `script/sim` (needs a display; always builds with `secrets.example.yaml`; Ctrl+C stops) |
 | Control the running emulator | `script/sim-ctl list \| get NAME \| set NAME VALUE \| switch NAME on\|off` (native API, `127.0.0.1:6053`, key from `secrets.example.yaml`; exit 1 = unreachable, 2 = usage) |
+| Headless emulator screenshots / taps | `script/sim-ui start \| shot [NAME] \| tap X Y \| status \| stop` (private Xvfb, PNGs in `.esphome/shots/`; needs Xvfb + xdotool, in the devcontainer image; exit 3 = already running / port 6053 busy) |
 | SDL window smoke check | `script/sdl-smoke` (needs a display: SDL devcontainer config or a desktop host) |
 | Devcontainer from CLI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . script/test` (add `--docker-path podman` and `PODMAN_USERNS=keep-id` for Podman; `--config .devcontainer/sdl/devcontainer.json` for SDL) |
 | Reproduce CI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . sh -c 'GP_SECRETS=example GP_ESPHOME=minimum script/compile'` |
@@ -153,9 +155,9 @@ Always pass the config path explicitly; run from the repo root.
 - `compile` — `script/compile`: ESP32 firmware build in CI with pinned + minimum ESPHome (the weekly canary builds the latest).
 - Sim entry order after the beds: `sim_bed_N_soil` right after `gh_bed_N`, then `sim_sensors`, `sim_drift`, `sim_sensors_lvgl`, `sim_page_board` (the last two are optional and LVGL-only; `sim_*` ids stay out of device files).
 - The emulator entry file is checked by `esphome config` rows (need `sdl2-config`; skipped without it unless `GP_REQUIRE_SDL=1`, set in CI) and compiled in the CI `compile` jobs.
+- The `host` level also has the emulator screen test (`test_sim_ui.py`: Xvfb + `script/sim-ui` shot, tap, shot). CI runs it in the separate, non-required job `sim-ui` (`GP_REQUIRE_SIM_UI=1`, screenshots uploaded as an artifact); `checks` sets `GP_SKIP_SIM_UI=1`. Elsewhere it skips without Xvfb/xdotool.
 - `cpp` (minimal header-only harness, `script/test-cpp`) and `host` (host compile + scenario of `tests/configs/`) exist for `garden_zones`; both skip when no C++ compiler is installed.
-- Later (roadmap): `host` + SDL
-  screenshot checks, `aioesphomeapi` integration scenarios.
+- Later (roadmap): reference-image comparison of the `script/sim-ui` screenshots, `aioesphomeapi` integration scenarios.
 
 ## ESPHome security baseline
 Per [Security Best Practices](https://esphome.io/guides/security_best_practices/); ESPHome is for a trusted LAN.

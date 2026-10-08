@@ -211,9 +211,11 @@ tests/
    runs. The sim-only `SIM` button (top layer) opens a page with relay indicators, one slider per value and the drift
    switch. `script/sim-ctl` (`aioesphomeapi`, no new dependency) lists, reads and sets entities of the running
    emulator; it is unit-tested with a fake client. The device config is unchanged (normalized `esphome config` diff).
-5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch (done, `display_sdl.yaml`); in CI
-   `headless: true` (2026.9.1 and later only) and BMP screenshots compared with references (stage 12).
-6. Integration scenarios through `aioesphomeapi` against the host build (stage 12; task 007 only unit-tests `sim-ctl` with a fake client, a real scenario needs a headless host build in CI).
+5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch (done, `display_sdl.yaml`); headless screenshots and taps
+   exist (task 015: `script/sim-ui` on a private Xvfb, X-level grab + xdotool press/move/release, works on every supported
+   ESPHome version; CI job `sim-ui`, not required, uploads the PNGs). SDL `headless: true` and `snapshot` (BMP) need
+   2026.9.0+ and `headless` has no touch, so they stay a stage 12 option for reference images, not a dependency.
+6. Integration scenarios through `aioesphomeapi` against the host build (stage 12; screenshots and taps exist since task 015, reference-image comparison and scenarios remain; task 007 only unit-tests `sim-ctl` with a fake client, a real scenario needs a headless host build in CI).
 7. Optional: Wokwi (ESP32 + ILI9341 emulation, `wokwi-cli` in GitHub Actions).
 
 ## 8. Design
@@ -283,7 +285,8 @@ tests/
 10. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
 11. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
-    scenarios against the host build.
+    scenarios against the host build. Screenshots and taps under Xvfb exist (task 015, `script/sim-ui`, CI job
+    `sim-ui`); remaining: reference-image comparison and `aioesphomeapi` scenarios.
 
 ### 9.1 Backlog (ideas, separate tasks once the base is ready)
 Optional modules; most can be built and tested without the physical sensors (`hardware/sim.yaml`):
