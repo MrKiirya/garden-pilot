@@ -1,8 +1,14 @@
 # Wall clock from Home Assistant (sets local time when the API is connected).
-# NTP fallback: time_sntp.yaml; both set the same system clock. No `timezone:` here, so Home Assistant's
-# timezone is applied when it connects.
+# NTP fallback: time_sntp.yaml; both set the same system clock.
+# Timezone: `timezone: ${timezone}` (IANA name such as Europe/Berlin, or a POSIX string). The default is UTC; set
+# your own under `substitutions:` in garden-pilot.yaml. With a timezone set here Home Assistant no longer overrides
+# the zone, and the zone is known after a reboot without Home Assistant. time_sntp.yaml uses the same substitution.
 # Triggers that update a display live with the display (see packages/lvgl/page_home.yaml).
+
+substitutions:
+  timezone: UTC
 
 time:
   - platform: homeassistant
     id: ha_time
+    timezone: ${timezone}

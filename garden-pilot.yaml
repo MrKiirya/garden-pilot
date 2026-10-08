@@ -8,6 +8,9 @@ substitutions:
   wifi_ssid: !secret wifi_ssid
   wifi_password: !secret wifi_password
   wifi_ap_password: !secret wifi_ap_password
+  # Your timezone (IANA name, e.g. Europe/Berlin). Default is UTC. With it set, Home Assistant no longer overrides
+  # the zone and the clock is right after a reboot without Home Assistant.
+  # timezone: Europe/Berlin
 
 esphome:
   name: garden-pilot
