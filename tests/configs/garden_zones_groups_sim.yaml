@@ -1,0 +1,306 @@
+# Test harness for the groups form of components/garden_zones — NOT a device configuration and never flashed.
+# Host (Linux) build with simulated relays; a scripted scenario logs machine-readable `GZTEST` lines that
+# tests/test_garden_zones.py asserts. Paths are repo-root relative: the file is only used staged at the repo root
+# (pytest copies it together with hardware/, components/ and garden_zone_entry.yaml into a staging directory).
+# Everything is logged at INFO because the test runs on the host only.
+#
+# Groups: beds (max_parallel all, zones from two includes of garden_zone_entry.yaml), lawn (max_parallel 2, shared
+# pump, lanes [[0,2],[1]]), solo (max_parallel 1, enable switches).
+
+esphome:
+  name: garden-zones-groups
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: gz_scenario
+
+packages:
+  hardware: !include hardware/sim.yaml
+  zone_1: !include
+    file: garden_zone_entry.yaml
+    vars: {zone_name: "GZ bed 1", relay: "1"}
+  zone_2: !include
+    file: garden_zone_entry.yaml
+    vars: {zone_name: "GZ bed 2", relay: "2"}
+
+logger:
+  level: INFO
+
+external_components:
+  - source: components
+    components: [garden_zones, garden_zone]
+
+switch:
+  - platform: template
+    id: gz_valve_4
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+  - platform: template
+    id: gz_valve_5
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+  - platform: template
+    id: gz_valve_6
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+  - platform: template
+    id: gz_valve_7
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+  - platform: template
+    id: gz_pump
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+
+garden_zones:
+  groups:
+    - id: beds
+      name: Beds
+      max_parallel: all
+    - id: lawn
+      name: Lawn
+      max_parallel: 2
+      pump_switch_id: gz_pump
+    - id: solo
+      name: Solo
+      max_parallel: 1
+  zones:
+    - group: lawn
+      valve_switch: "GZ lawn 1"
+      valve_switch_id: board_relay_3
+      run_duration: 2s
+    - group: lawn
+      valve_switch: "GZ lawn 2"
+      valve_switch_id: gz_valve_4
+      run_duration: 2s
+    - group: lawn
+      valve_switch: "GZ lawn 3"
+      valve_switch_id: gz_valve_5
+      run_duration: 2s
+    - group: solo
+      valve_switch: "GZ solo 1"
+      enable_switch:
+        id: gz_en_6
+        name: "GZ solo 1 enable"
+      valve_switch_id: gz_valve_6
+      run_duration: 2s
+    - group: solo
+      valve_switch: "GZ solo 2"
+      enable_switch:
+        id: gz_en_7
+        name: "GZ solo 2 enable"
+      valve_switch_id: gz_valve_7
+      run_duration: 2s
+
+# Logs "state=<v1..v7> pump=<0/1>" whenever one of the raw valves or the pump changes.
+interval:
+  - interval: 200ms
+    then:
+      - lambda: |-
+          static std::string last;
+          std::string now;
+          now += id(board_relay_1).state ? '1' : '0';
+          now += id(board_relay_2).state ? '1' : '0';
+          now += id(board_relay_3).state ? '1' : '0';
+          now += id(gz_valve_4).state ? '1' : '0';
+          now += id(gz_valve_5).state ? '1' : '0';
+          now += id(gz_valve_6).state ? '1' : '0';
+          now += id(gz_valve_7).state ? '1' : '0';
+          now += id(gz_pump).state ? "p1" : "p0";
+          if (now != last) {
+            last = now;
+            ESP_LOGI("GZTEST", "state=%.7s pump=%c", now.c_str(), now[8]);
+          }
+
+script:
+  # "<label> beds=<zones> lawn=<zones> solo=<zones>": the queues in round order
+  - id: gz_log_queues
+    parameters:
+      label: string
+    then:
+      - lambda: |-
+          auto join = [](const std::vector<size_t> &zones) {
+            std::string out;
+            for (size_t zone : zones) {
+              if (!out.empty()) out += ",";
+              out += std::to_string(zone);
+            }
+            return out;
+          };
+          ESP_LOGI("GZTEST", "%s beds=%s lawn=%s solo=%s", label.c_str(), join(id(beds).queued_zones()).c_str(),
+                   join(id(lawn).queued_zones()).c_str(), join(id(solo).queued_zones()).c_str());
+
+  - id: gz_clear_queues
+    then:
+      - lambda: |-
+          for (size_t zone : id(beds).queued_zones()) id(beds).remove_queued_zone(zone);
+          for (size_t zone : id(lawn).queued_zones()) id(lawn).remove_queued_zone(zone);
+          for (size_t zone : id(solo).queued_zones()) id(solo).remove_queued_zone(zone);
+
+  - id: gz_log_states
+    parameters:
+      label: string
+    then:
+      - lambda: |-
+          ESP_LOGI("GZTEST", "%s v1=%d v4=%d pump=%d", label.c_str(), static_cast<int>(id(board_relay_1).state),
+                   static_cast<int>(id(gz_valve_4).state), static_cast<int>(id(gz_pump).state));
+
+  - id: gz_scenario
+    then:
+      # 1. what was restored from the previous boot, then start clean
+      - script.execute:
+          id: gz_log_queues
+          label: restored
+      # a restored queue must not start by itself: watch it for a while before touching anything
+      - delay: 1500ms
+      - script.execute:
+          id: gz_log_queues
+          label: boot
+      - script.execute: gz_clear_queues
+      - switch.turn_on: gz_en_6
+      - switch.turn_on: gz_en_7
+      - delay: 500ms
+      # 2. beds, max_parallel all: two lanes run together
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=2"}
+      - garden_zones.queue_zone: {id: beds, zone_number: 0, run_duration: 3s}
+      - garden_zones.queue_zone: {id: beds, zone_number: 1, run_duration: 3s}
+      - script.execute:
+          id: gz_log_queues
+          label: queue
+      - garden_zones.start_group_queue: beds
+      - wait_until:
+          condition:
+            lambda: 'return id(board_relay_1).state || id(board_relay_2).state;'
+          timeout: 10s
+      - wait_until:
+          condition:
+            lambda: 'return !id(board_relay_1).state && !id(board_relay_2).state;'
+          timeout: 30s
+      - delay: 1s
+      # 3. lawn, max_parallel 2 with a shared pump: lanes [[0,2],[1]]
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=3"}
+      - garden_zones.queue_zone: {id: lawn, zone_number: 0, run_duration: 4s}
+      - garden_zones.queue_zone: {id: lawn, zone_number: 1, run_duration: 2s}
+      - garden_zones.queue_zone: {id: lawn, zone_number: 2, run_duration: 2s}
+      - script.execute:
+          id: gz_log_queues
+          label: queue
+      - if:
+          condition:
+            garden_zones.is_zone_queued: {id: lawn, zone_number: 2}
+          then:
+            - logger.log: {level: INFO, tag: GZTEST, format: "queued2=1"}
+          else:
+            - logger.log: {level: INFO, tag: GZTEST, format: "queued2=0"}
+      - garden_zones.remove_queued_zone: {id: lawn, zone_number: 2}
+      - script.execute:
+          id: gz_log_queues
+          label: queue
+      - if:
+          condition:
+            garden_zones.is_zone_queued: {id: lawn, zone_number: 2}
+          then:
+            - logger.log: {level: INFO, tag: GZTEST, format: "queued2=1"}
+          else:
+            - logger.log: {level: INFO, tag: GZTEST, format: "queued2=0"}
+      - garden_zones.queue_zone: {id: lawn, zone_number: 2, run_duration: 2s}
+      - script.execute:
+          id: gz_log_queues
+          label: queue
+      - garden_zones.start_group_queue: lawn
+      - wait_until:
+          condition:
+            lambda: 'return id(board_relay_3).state || id(gz_valve_4).state || id(gz_valve_5).state;'
+          timeout: 10s
+      - wait_until:
+          condition:
+            lambda: |-
+              return !id(board_relay_3).state && !id(gz_valve_4).state && !id(gz_valve_5).state &&
+                     id(lawn).queued_zones().empty() && id(lawn).active_zones().empty();
+          timeout: 40s
+      - delay: 3s
+      # 4. solo, max_parallel 1: one valve at a time; no cycle after the queue drains
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=4"}
+      - garden_zones.queue_zone: {id: solo, zone_number: 0, run_duration: 2s}
+      - garden_zones.queue_zone: {id: solo, zone_number: 1, run_duration: 2s}
+      - garden_zones.start_group_queue: solo
+      - wait_until:
+          condition:
+            lambda: 'return id(gz_valve_6).state || id(gz_valve_7).state;'
+          timeout: 10s
+      - wait_until:
+          condition:
+            lambda: 'return id(solo).queued_zones().empty() && id(solo).active_zones().empty();'
+          timeout: 40s
+      - delay: 8s
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=4b"}
+      - switch.turn_off: gz_en_7
+      - garden_zones.start_group_cycle: solo
+      - wait_until:
+          condition:
+            lambda: 'return id(gz_valve_6).state;'
+          timeout: 10s
+      - wait_until:
+          condition:
+            lambda: 'return id(solo).queued_zones().empty() && id(solo).active_zones().empty();'
+          timeout: 40s
+      - delay: 1s
+      - switch.turn_on: gz_en_7
+      # 5. a manual run in lane 0 keeps lane 1 running
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=5"}
+      - script.execute: gz_clear_queues
+      - garden_zones.queue_zone: {id: lawn, zone_number: 0, run_duration: 4s}
+      - garden_zones.queue_zone: {id: lawn, zone_number: 1, run_duration: 9s}
+      - garden_zones.start_group_queue: lawn
+      - wait_until:
+          condition:
+            lambda: 'return id(board_relay_3).state && id(gz_valve_4).state;'
+          timeout: 10s
+      - delay: 1s
+      - garden_zones.run_zone: {id: lawn, zone_number: 2, run_duration: 2s}
+      - wait_until:
+          condition:
+            lambda: |-
+              return !id(board_relay_3).state && !id(gz_valve_4).state && !id(gz_valve_5).state &&
+                     id(lawn).queued_zones().empty() && id(lawn).active_zones().empty();
+          timeout: 60s
+      - delay: 3s
+      # 6. a group shutdown stops only that group
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=6"}
+      - script.execute: gz_clear_queues
+      - garden_zones.run_zone: {id: beds, zone_number: 0, run_duration: 20s}
+      - garden_zones.queue_zone: {id: lawn, zone_number: 1, run_duration: 20s}
+      - garden_zones.start_group_queue: lawn
+      - wait_until:
+          condition:
+            lambda: 'return id(board_relay_1).state && id(gz_valve_4).state;'
+          timeout: 15s
+      - delay: 1s
+      - script.execute:
+          id: gz_log_states
+          label: before_shutdown
+      - garden_zones.shutdown_group: lawn
+      - delay: 1500ms
+      - script.execute:
+          id: gz_log_states
+          label: after_shutdown
+      - garden_zones.shutdown_group: beds
+      - delay: 3s
+      - script.execute:
+          id: gz_log_states
+          label: all_off
+      # 7. leave lawn 1 and 2 queued (not started); the next boot must restore them
+      - script.execute: gz_clear_queues
+      - garden_zones.queue_zone: {id: lawn, zone_number: 1, run_duration: 2s}
+      - garden_zones.queue_zone: {id: lawn, zone_number: 2, run_duration: 2s}
+      - script.execute:
+          id: gz_log_queues
+          label: end
+      - lambda: |-
+          global_preferences->sync();
+          ESP_LOGI("GZTEST", "done");
