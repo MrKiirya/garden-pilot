@@ -446,6 +446,22 @@ CONFIG_SCHEMA = cv.All(
     validate_sprinkler,
 )
 
+# GZ-PATCH-BEGIN(groups)
+from . import groups  # noqa: E402  (needs the schemas above; groups.py imports this module back)
+
+_STOCK_CONFIG_SCHEMA = CONFIG_SCHEMA
+
+
+def _config_schema(value):
+    if groups.is_groups_form(value):
+        return groups.GROUPS_SCHEMA(value)
+    return _STOCK_CONFIG_SCHEMA(value)
+
+
+CONFIG_SCHEMA = _config_schema
+FINAL_VALIDATE_SCHEMA = groups.final_validate_groups
+# GZ-PATCH-END(groups)
+
 
 @automation.register_action(
     "garden_zones.set_divider",
@@ -665,6 +681,11 @@ async def sprinkler_simple_action_to_code(config, action_id, template_arg, args)
 
 
 async def to_code(config):
+    # GZ-PATCH-BEGIN(groups)
+    if groups.is_groups_form(config):
+        await groups.to_code_groups(config)
+        return
+    # GZ-PATCH-END(groups)
     for sprinkler_controller in config:
         if len(sprinkler_controller[CONF_VALVES]) > 1:
             name = sprinkler_controller[CONF_MAIN_SWITCH][CONF_NAME]
