@@ -37,7 +37,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/greenhouse/bed_soil.yaml` | Optional per-bed soil moisture sensor (reports only), second include with `vars`. |
 | `packages/core/api.yaml`, `ota.yaml` | `api` (encryption) and `ota`; secrets arrive as substitutions. |
 | `packages/core/network.yaml` | `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`; device only. |
-| `packages/core/time.yaml`, `time_host.yaml` | `time: homeassistant` (device) or `time: host` (emulator), both id `ha_time`, no triggers. |
+| `packages/core/time.yaml`, `time_sntp.yaml`, `time_host.yaml` | `time: homeassistant` (device) or `time: host` (emulator), both id `ha_time`, no triggers; `time_sntp.yaml` (device only, optional) adds `sntp` as the fallback (id `sntp_time`, servers via `sntp_server_N`). |
 | `packages/display_touch.yaml` | SPI, `mipi_spi` ILI9341 display, XPT2046 touch, `touch_ui` / `touch_dot_overlay` scripts. |
 | `packages/display_sdl.yaml` | Emulator only: SDL display + mouse touch with the same ids and scripts as `display_touch.yaml` (keep in sync). |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`. |
@@ -62,7 +62,7 @@ The target layout (`components/garden_zones/`, `lawn.yaml`, `heating.yaml`, ...)
 introduced by roadmap tasks, not ad hoc.
 
 ### `packages:` order in `garden-pilot.yaml` (do not reorder lightly)
-1. `hardware` (board profile; exactly one), then `core_api`, `core_ota`, `core_network`, `core_time`, `core_diagnostics` — connectivity first.
+1. `hardware` (board profile; exactly one), then `core_api`, `core_ota`, `core_network`, `core_time`, `core_time_sntp`, `core_diagnostics` — connectivity first (the sim entry has no `core_time_sntp`).
 2. `display_touch` — creates `tft_spi`, `tft_display`, `touch` (required by LVGL).
 3. `lvgl_base` — LVGL wiring to those ids.
 4. `lvgl_page_boot` — first page = boot screen (shows Home on Wi-Fi connect or after `boot_offline_timeout`; needs
@@ -105,6 +105,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - Confirm dialog: `script.execute: gp_confirm {title, body, action, danger}` → `script.wait: gp_confirm` → `if` on
   `gp_confirm_result` → the action (see `packages/lvgl/dialog_confirm.yaml`). `time.has_time` is not a condition:
   use `id(ha_time).now().is_valid()`.
+- `sntp` and `homeassistant` share the system clock: read `ha_time` only; an SNTP sync does not fire `ha_time.on_time_sync` (poll); `sntp` is not available on `host`. Both device sources get `timezone: ${timezone}` (default `UTC`, set your own in the entry file); that stops Home Assistant from pushing its zone. `time_host.yaml` has no `timezone` (the emulator keeps the PC zone).
 - Actions extended into a `script` run outside the `on_touch` trigger: don't use the trigger-only `touch`
   variable there; use `id(touch)->get_touch()`.
 - Don't call `lvgl.*` from a `number`'s `on_value` that can fire on restore/HA before LVGL is ready; poll from
