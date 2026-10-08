@@ -1,4 +1,6 @@
 # Wall clock from Home Assistant (sets local time when the API is connected).
+# NTP fallback: time_sntp.yaml; both set the same system clock. No `timezone:` here, so Home Assistant's
+# timezone is applied when it connects.
 # Triggers that update a display live with the display (see packages/lvgl/page_home.yaml).
 
 time:
