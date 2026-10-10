@@ -199,3 +199,67 @@ Reviewed: uncommitted working tree on top of 140f93a (round-1 fixes included), `
   build cache).
 - This is the last review round: R2-1 goes to the human per the workflow (fix in 013, or restrict `valve-handover`
   to `start_delay_ == 0` now and track the pump-start-delay handover as a follow-up before 014 uses pump delays).
+
+# 013 — Review (round 3, verification)
+
+Verdict: APPROVE
+
+Reviewed: `git diff 140f93a 7ad3c0a` (round 3 started on the uncommitted tree; the main session then committed it without
+code changes, verified: `sprinkler.h` / `.cpp` diff against `task/012-groups-and-lanes` is the same at `7ad3c0a`).
+Checked against the task's "Review round 2 fixes" and "Human decision 2026-10-10" sections.
+
+## Checks run (round 3, `gp-dev-012`)
+- `script/lint` → `esphome config OK: garden-pilot.yaml`, yamllint clean.
+- `script/test-cpp` → `26 test cases, 0 failed checks`.
+- `UV_OFFLINE=1 GP_REQUIRE_CXX=1 script/test` → `4 failed, 613 passed, 1 skipped in 353.64s`. All 4 failures are
+  `test_public_hygiene` (`test_no_private_ip_addresses`, `test_no_local_absolute_paths`) on `tasks/018-gp-layer.md` and
+  `tasks/019-schedules.md`, untracked files of other tasks that were in the working tree during the run and are not part
+  of 013 (no longer in the checkout). Every 013 and 012 check passed, including all host scenarios; the skip is
+  `test_sim_ui` (no Xvfb).
+
+## Round-2 items and human decisions
+- **R2-1 (handover with pump start delays): resolved by removal.** `sprinkler.h` / `.cpp` against
+  `task/012-groups-and-lanes` now differ only by the documented `zone-skip` region (`skip_cycle_valves_`, the
+  skip-check hook, the queue-pop lambda inside the existing `queue-skip-disabled` region, `<functional>` in `includes`).
+  No `handover()` or `valve-handover` remains in code, PATCHES.md, README or SPEC; the README and SPEC §3 describe the
+  accepted stock overlap (decision (a)).
+- **Pump scenario** (`tests/configs/garden_zones_pump_sim.yaml`, `test_pump_start_delays_host_scenario`): groups `pa`
+  (`pump_start_pump_delay: 1s`) and `vb` (`pump_start_valve_delay: 1s`), events timestamped in the switches' own
+  `on_state`. It asserts each valve is open 2.9-4.5 s (full 3 s run), one pump session, no gap between v1 off and v2
+  on above 100 ms, pump at most 1.3 s before the first valve and 0.3 s after the last. The round-1 handover would fail
+  it twice (valve open `run - D` = 2 s, and a 1 s pump-without-valve gap), so it proves the point.
+- **Overlap bounds:** `plain` < 100 ms and `pair` `max_ms < 100` measured in callbacks; `ovl` (`valve_overlap: 1s`)
+  900-1300 ms, so the deliberate overlap still exists.
+- **`never` (decision (b)):** `_limit` accepts only the literal string `never` (case-insensitive); anything else goes
+  through `positive_time_period_milliseconds` + `Range(1 s, 30 days)`, so `0s` is rejected (`max-on-time-zero`) and
+  `31d` too (`max-on-time-over-30-days`). Defaults remain 60 min / 2 h / 10 s. Each disabled limit logs a
+  `watchdog disabled by config` WARN in `watchdog.h` `dump_config`. Lockout and the other limits stay active (C++ case
+  `a disabled zone limit (never) does not trip, other zones still do`). CLAUDE.md principle 4 and the gotcha line are
+  reworded.
+- **30-day maximum:** sound. 30 d = 2,592,000,000 ms. That is below the uint32 wrap (4,294,967,295 ms, about 49.7 d), so
+  `now - since` in `OnTimer::on_for` trips before it can wrap. It is also below the `DISABLED = UINT32_MAX` sentinel,
+  so a real limit can never collide with it. It is documented in `safety_rules.py` (comment), the README table and
+  notes, and the task file.
+- **012 assertion change:** only steps 3-5 of `test_groups_host_scenario` changed (`not any(both on)` →
+  `_brief_overlap_only`). `garden_zones_groups_sim.yaml` is untouched. See suggestion 1.
+
+## Findings
+### Required
+None.
+
+### Suggestions
+1. `_brief_overlap_only` (`tests/test_garden_zones.py:901`) limits the number of consecutive both-on entries, not how
+   long they last. The 012 state log is a 200 ms poll that logs only on change, so a long overlap with no other valve
+   change in between would still be a single entry and pass. The duration bound is covered in the 013 scenarios
+   (`pair max_ms < 100`, overlap `plain` < 100 ms, pump-scenario gap check), so this does not block. Optional fix:
+   log `millis()` with each 012 state line and bound the both-on entry to under about 250 ms, or say in the docstring
+   that the duration is checked by the 013 scenarios.
+2. The pump scenario merges a pump off/on within 50 ms into one session (the stock handover can toggle a shared pump
+   within one loop pass). That is stock behaviour and harmless for a relay that cannot react that fast, but it is worth
+   one line in README "Accepted by design" so whoever wires a contactor or VFD knows about it.
+
+### Follow-ups (not blocking)
+- `tasks/018-gp-layer.md` / `tasks/019-schedules.md` (other tasks) failed `test_public_hygiene` (private IP pattern,
+  local absolute path) while they were in the working tree. Fix them before they are committed.
+- Clean up `.esphome/review-013/` (git-ignored; now also holds `r3-test.log`).
+- Nothing was verified on a real device (host scenarios only).
