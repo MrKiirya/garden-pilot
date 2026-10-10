@@ -11,7 +11,7 @@ from esphome import automation
 from esphome.automation import maybe_simple_id
 import esphome.codegen as cg
 from esphome.components import garden_zones as gz
-from esphome.components import number, switch
+from esphome.components import number, sensor, switch
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ID,
@@ -21,12 +21,16 @@ from esphome.const import (
     CONF_NAME,
     CONF_RESTORE_VALUE,
     CONF_RUN_DURATION,
+    CONF_SENSOR_ID,
     CONF_SET_ACTION,
     CONF_STEP,
+    CONF_TRIGGER_ID,
+    CONF_UNIT_OF_MEASUREMENT,
 )
 from esphome.core import CORE, ID
 from esphome.helpers import fnv1_hash
 
+from . import safety_rules as rules
 from .lane_plan import LanePlanError, plan_lanes
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,10 +41,22 @@ CONF_LANE = "lane"
 CONF_MAX_PARALLEL = "max_parallel"
 CONF_ZONES = "zones"
 CONF_ZONE_NUMBER = "zone_number"
+CONF_MAX_AGE = "max_age"
+CONF_MAX_ON_TIME = "max_on_time"
+CONF_ON_WATCHDOG_TRIP = "on_watchdog_trip"
+CONF_PUMP_IDLE_TIMEOUT = "pump_idle_timeout"
+CONF_PUMP_MAX_ON_TIME = "pump_max_on_time"
+CONF_SKIP_ABOVE = "skip_above"
+CONF_SOIL_MOISTURE = "soil_moisture"
+CONF_WHEN_UNAVAILABLE = "when_unavailable"
 ZONE_KEY = "garden_zone"
 
 group_ns = gz.sprinkler_ns
 GardenZonesGroup = group_ns.class_("GardenZonesGroup", cg.Component)
+GroupWatchdog = group_ns.class_("GroupWatchdog", cg.Component)
+WatchdogTripTrigger = group_ns.class_("WatchdogTripTrigger", automation.Trigger.template(int, cg.std_string))
+ResetWatchdogAction = group_ns.class_("ResetWatchdogAction", automation.Action)
+WatchdogTrippedCondition = group_ns.class_("WatchdogTrippedCondition", automation.Condition)
 QueueZoneAction = group_ns.class_("QueueZoneAction", automation.Action)
 RemoveQueuedZoneAction = group_ns.class_("RemoveQueuedZoneAction", automation.Action)
 RunZoneAction = group_ns.class_("RunZoneAction", automation.Action)
@@ -57,12 +73,54 @@ _zone_base = {
     if str(key) not in _ZONE_EXCLUDED
 }
 
+
+
+def _on_time(maximum_ms):
+    """A time period of 1 s .. `maximum_ms`."""
+    return cv.All(
+        cv.positive_time_period_milliseconds,
+        cv.Range(
+            min=cv.TimePeriod(milliseconds=rules.ON_TIME_MIN_MS),
+            max=cv.TimePeriod(milliseconds=maximum_ms),
+        ),
+    )
+
+
+def _limit(value):
+    """A watchdog limit: any duration from 1 s, or `never` (disabled explicitly, like `update_interval: never`)."""
+    if isinstance(value, str) and value.strip().lower() == rules.NEVER:
+        return rules.NEVER
+    return _on_time(rules.ON_TIME_MAX_MS)(value)
+
+
+def _limit_ms(value):
+    """Milliseconds of a validated limit, or None when it is `never`."""
+    return None if value == rules.NEVER else _ms(value)
+
+
+def _limit_code(value):
+    """C++ argument of a limit: milliseconds, or the DISABLED constant of the watchdog core."""
+    ms = _limit_ms(value)
+    return cg.RawExpression("::esphome::garden_zones::watchdog::DISABLED") if ms is None else ms
+
+
+SOIL_SCHEMA = cv.Schema(
+    {
+        cv.Required(CONF_SENSOR_ID): cv.use_id(sensor.Sensor),
+        cv.Required(CONF_SKIP_ABOVE): cv.float_,
+        cv.Optional(CONF_MAX_AGE, default="30min"): _on_time(24 * 60 * 60 * 1000),
+        cv.Optional(CONF_WHEN_UNAVAILABLE, default="water"): cv.one_of("water", "skip", lower=True),
+    }
+)
+
 ZONE_SCHEMA = cv.Schema(
     {
         **_zone_base,
         cv.Required(CONF_GROUP): cv.use_id(GardenZonesGroup),
         cv.Required(gz.CONF_VALVE_SWITCH_ID): cv.use_id(switch.Switch),
         cv.Optional(CONF_LANE): cv.int_range(min=0),
+        cv.Optional(CONF_MAX_ON_TIME): _limit,
+        cv.Optional(CONF_SOIL_MOISTURE): SOIL_SCHEMA,
     }
 )
 
@@ -91,7 +149,22 @@ def _max_parallel(value):
     return cv.positive_int(value)
 
 
-GROUP_SCHEMA = cv.Schema(
+def _validate_group(group):
+    """Pump-only keys need a pump; with a pump they get their safe defaults."""
+    name = _group_name(group)
+    error = rules.pump_keys_error(
+        name, gz.CONF_PUMP_SWITCH_ID in group, [key for key in (CONF_PUMP_MAX_ON_TIME, CONF_PUMP_IDLE_TIMEOUT) if key in group]
+    )
+    if error:
+        raise cv.Invalid(error)
+    group = dict(group)
+    if gz.CONF_PUMP_SWITCH_ID in group:
+        group.setdefault(CONF_PUMP_MAX_ON_TIME, cv.TimePeriod(hours=2))  # = rules.PUMP_MAX_ON_TIME_DEFAULT_MS
+        group.setdefault(CONF_PUMP_IDLE_TIMEOUT, cv.TimePeriod(seconds=10))  # = rules.PUMP_IDLE_TIMEOUT_DEFAULT_MS
+    return group
+
+
+_group_base = cv.Schema(
     {
         cv.Required(CONF_ID): cv.declare_id(GardenZonesGroup),
         cv.Optional(CONF_NAME): cv.string,
@@ -110,8 +183,16 @@ GROUP_SCHEMA = cv.Schema(
             gz.CONF_PUMP_STOP_VALVE_DELAY, "pump_stop_xxxx_delay"
         ): cv.positive_time_period_seconds,
         cv.Optional(gz.CONF_PERSIST_QUEUE, default=True): cv.boolean,
+        cv.Optional(CONF_MAX_ON_TIME, default="60min"): _limit,
+        cv.Optional(CONF_PUMP_MAX_ON_TIME): _limit,
+        cv.Optional(CONF_PUMP_IDLE_TIMEOUT): _limit,
+        cv.Optional(CONF_ON_WATCHDOG_TRIP): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(WatchdogTripTrigger)}
+        ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
+
+GROUP_SCHEMA = cv.All(_group_base, _validate_group)
 
 GROUPS_SCHEMA = cv.Schema(
     {
@@ -162,6 +243,101 @@ def plan_group(group, zones):
     return plan
 
 
+def watchdog_id_name(group_id):
+    return f"{group_id}_watchdog"
+
+
+def _ms(value):
+    return int(value.total_milliseconds)
+
+
+def _zone_label(name, number, zone):
+    switch_conf = zone.get(gz.CONF_VALVE_SWITCH)
+    label = switch_conf.get(CONF_NAME) if isinstance(switch_conf, dict) else None
+    return f"group '{name}' zone {number} ('{label or zone[gz.CONF_VALVE_SWITCH_ID].id}')"
+
+
+def zone_max_on(group, zone):
+    """The zone's validated limit (its own override, else the group's): a TimePeriod or "never"."""
+    return zone.get(CONF_MAX_ON_TIME, group[CONF_MAX_ON_TIME])
+
+
+def zone_max_on_ms(group, zone):
+    return _limit_ms(zone_max_on(group, zone))
+
+
+def _restore_mode(full, switch_id):
+    """The resolved restore_mode of the switch with this id; raises when it cannot be determined (never fail open)."""
+    for conf in full.get("switch", []) or []:
+        declared = conf.get(CONF_ID) if isinstance(conf, dict) else None
+        if declared is not None and declared.id == switch_id:
+            mode = conf.get("restore_mode")
+            if mode is None:
+                break
+            return mode
+    raise cv.Invalid(
+        f"cannot determine the restore_mode of switch '{switch_id}' (not found under switch:); the watchdog needs "
+        "to know that the actuator is OFF after boot"
+    )
+
+
+def _validate_safety(full, group, zones, name):
+    """Watchdog limits against the configured runs, and the OFF-after-boot rule for the raw actuators."""
+    # Delays that keep a valve open longer than its run: both start delays (conservative: only the one that opens the
+    # valve first really adds) plus pump_stop_valve_delay (the pump stops first, the valve stays open).
+    start_delay = 0
+    for key in (gz.CONF_PUMP_START_PUMP_DELAY, gz.CONF_PUMP_START_VALVE_DELAY):
+        if key in group:
+            start_delay = max(start_delay, _ms(group[key]))
+    if gz.CONF_PUMP_STOP_VALVE_DELAY in group:
+        start_delay += _ms(group[gz.CONF_PUMP_STOP_VALVE_DELAY])
+    limits = {}
+    for number, zone in enumerate(zones):
+        label = _zone_label(name, number, zone)
+        limit = zone_max_on_ms(group, zone)  # None = `never`: the run-vs-limit checks are skipped for this zone
+        if limit is not None:
+            limits[label] = limit
+        if CONF_RUN_DURATION in zone:
+            run_ms, from_number = _ms(zone[CONF_RUN_DURATION]), False
+        else:
+            number_conf = zone[gz.CONF_RUN_DURATION_NUMBER]
+            run_ms = rules.longest_run_ms(
+                None, number_conf[CONF_MAX_VALUE], number_conf.get(CONF_UNIT_OF_MEASUREMENT, "s")
+            )
+            from_number = True
+        error = None if limit is None else rules.zone_limit_error(label, run_ms, start_delay, limit, from_number)
+        if error:
+            raise cv.Invalid(error)
+        valve = zone[gz.CONF_VALVE_SWITCH_ID].id
+        mode = _restore_mode(full, valve)
+        error = rules.restore_mode_error(valve, "valve", mode)
+        if error:
+            raise cv.Invalid(f"{label}: {error}")
+    if gz.CONF_PUMP_SWITCH_ID in group:
+        pump_max = _limit_ms(group[CONF_PUMP_MAX_ON_TIME])
+        error = None if pump_max is None else rules.pump_limit_error(name, pump_max, limits)
+        if error:
+            raise cv.Invalid(error)
+        idle = _limit_ms(group[CONF_PUMP_IDLE_TIMEOUT])
+        error = (
+            None
+            if idle is None
+            else rules.pump_idle_error(
+                name,
+                idle,
+                _ms(group[gz.CONF_PUMP_START_VALVE_DELAY]) if gz.CONF_PUMP_START_VALVE_DELAY in group else 0,
+                _ms(group[gz.CONF_PUMP_STOP_PUMP_DELAY]) if gz.CONF_PUMP_STOP_PUMP_DELAY in group else 0,
+            )
+        )
+        if error:
+            raise cv.Invalid(error)
+        pump = group[gz.CONF_PUMP_SWITCH_ID].id
+        mode = _restore_mode(full, pump)
+        error = rules.restore_mode_error(pump, "pump", mode)
+        if error:
+            raise cv.Invalid(f"group '{name}': {error}")
+
+
 def final_validate_groups(config):
     """Cross-zone rules over inline zones and `garden_zone:` entries; see tasks/012."""
     import esphome.final_validate as fv
@@ -193,6 +369,15 @@ def final_validate_groups(config):
             # Lane controllers are generated components. They must be known before the core `to_code` emits
             # ESPHOME_COMPONENT_COUNT, so they are declared here (final validation runs before any `to_code`).
             CORE.component_ids.add(lane_name)
+        watchdog_name = watchdog_id_name(group[CONF_ID].id)
+        if watchdog_name in declared:
+            raise cv.Invalid(
+                f"the generated watchdog id '{watchdog_name}' of group '{name}' clashes with an id declared elsewhere; "
+                "rename the group or the other id"
+            )
+        declared.add(watchdog_name)
+        CORE.component_ids.add(watchdog_name)  # see the lane ids above
+        _validate_safety(full, group, zones, name)
         if gz.CONF_PUMP_SWITCH_ID in group:
             pump = group[gz.CONF_PUMP_SWITCH_ID].id
             if pump in pump_owner:
@@ -294,6 +479,25 @@ async def is_zone_queued_to_code(config, condition_id, template_arg, args):
 
 
 @automation.register_action(
+    "garden_zones.reset_watchdog",
+    ResetWatchdogAction,
+    GROUP_ACTION_SCHEMA,
+    synchronous=True,
+)
+async def reset_watchdog_to_code(config, action_id, template_arg, args):
+    paren = await cg.get_variable(config[CONF_ID])
+    return cg.new_Pvariable(action_id, template_arg, paren)
+
+
+@automation.register_condition(
+    "garden_zones.watchdog_tripped", WatchdogTrippedCondition, GROUP_ACTION_SCHEMA
+)
+async def watchdog_tripped_to_code(config, condition_id, template_arg, args):
+    paren = await cg.get_variable(config[CONF_ID])
+    return cg.new_Pvariable(condition_id, template_arg, paren)
+
+
+@automation.register_action(
     "garden_zones.start_group_queue",
     StartGroupQueueAction,
     GROUP_ACTION_SCHEMA,
@@ -348,6 +552,12 @@ async def to_code_groups(config):
         await cg.register_component(group_var, group)
 
         zone_table = {}
+        lane_vars = []
+        # the id is added to CORE.component_ids during final validation (see final_validate_groups)
+        watchdog_decl = ID(watchdog_id_name(gid), is_declaration=True, type=GroupWatchdog)
+        watchdog = cg.new_Pvariable(watchdog_decl, name)
+        await cg.register_component(watchdog, {})
+        cg.add(group_var.set_watchdog(watchdog))
         pump = None
         if gz.CONF_PUMP_SWITCH_ID in group:
             pump = await cg.get_variable(group[gz.CONF_PUMP_SWITCH_ID])
@@ -359,7 +569,13 @@ async def to_code_groups(config):
             await cg.register_component(lane, {})
             cg.add(lane.set_lane_mode(True))
             all_lanes.append(lane)
+            lane_vars.append(lane)
             cg.add(group_var.add_lane(lane))
+            cg.add(
+                lane.set_valve_skip_check(
+                    cg.RawExpression(f"[](size_t valve) {{ return {gid}->skip_reason({lane_index}, valve); }}")
+                )
+            )
 
             cg.add(lane.set_persist_queue(group[gz.CONF_PERSIST_QUEUE]))
             valve_ids = ",".join(zones[z][gz.CONF_VALVE_SWITCH_ID].id for z in lane_zones)
@@ -405,6 +621,37 @@ async def to_code_groups(config):
         for zone_number in range(len(zones)):
             lane_index, valve_index = zone_table[zone_number]
             cg.add(group_var.add_zone(lane_index, valve_index))
+            zone = zones[zone_number]
+            raw = await cg.get_variable(zone[gz.CONF_VALVE_SWITCH_ID])
+            cg.add(
+                watchdog.add_zone(
+                    raw,
+                    lane_vars[lane_index],
+                    _zone_label(name, zone_number, zone),
+                    _limit_code(zone_max_on(group, zone)),
+                )
+            )
+            soil = zone.get(CONF_SOIL_MOISTURE)
+            if soil is not None:
+                source = await cg.get_variable(soil[CONF_SENSOR_ID])
+                cg.add(
+                    group_var.set_zone_soil(
+                        zone_number,
+                        source,
+                        soil[CONF_SKIP_ABOVE],
+                        _ms(soil[CONF_MAX_AGE]),
+                        soil[CONF_WHEN_UNAVAILABLE] == "skip",
+                    )
+                )
+        if pump is not None:
+            cg.add(
+                watchdog.set_pump(
+                    pump, _limit_code(group[CONF_PUMP_MAX_ON_TIME]), _limit_code(group[CONF_PUMP_IDLE_TIMEOUT])
+                )
+            )
+        for conf in group.get(CONF_ON_WATCHDOG_TRIP, []):
+            trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], watchdog)
+            await automation.build_automation(trigger, [(int, "zone"), (cg.std_string, "reason")], conf)
 
     for lane in all_lanes:
         for other in all_lanes:

@@ -10,10 +10,11 @@ against the `sprinkler` sources of the installed ESPHome package and fails on an
 `GZ-PATCH-BEGIN(<id>)` ... `GZ-PATCH-END(<id>)` (blank lines are ignored). Regions do not nest.
 
 ## includes
-- Purpose: pull the new helper and the preferences API into `sprinkler.h`.
+- Purpose: pull the new helpers and the preferences API into `sprinkler.h`.
 - Files: `sprinkler.h` (include block).
 - Behaviour change: none.
-- Re-port notes: re-add the two `#include` lines after upstream's include block.
+- Re-port notes: re-add the three `#include` lines (`preferences.h`, `queue_ops.h`, `<functional>`) after upstream's
+  include block.
 
 ## queue-api
 - Purpose: open queue API.
@@ -36,11 +37,12 @@ against the `sprinkler` sources of the installed ESPHome package and fails on an
 - Re-port notes: re-add `save_queue_()` after every place upstream mutates `queued_valves_`.
 
 ## queue-skip-disabled
-- Purpose: disabled zones are skipped when the queue reaches them.
+- Purpose: disabled zones (and zones rejected by the `zone-skip` check) are skipped when the queue reaches them.
 - Files: `sprinkler.cpp` (start of `load_next_valve_run_request_`).
-- Behaviour change: disabled valves at the head of the queue are dropped (INFO log) before the queue is read; the
-  first enabled entry stays queued and is then taken by the unchanged upstream branch. If nothing is left, the
-  upstream cycle branch runs as for an empty queue. Queuing a disabled zone is still accepted.
+- Behaviour change: disabled valves, and valves for which the `zone-skip` check returns a reason, at the head of the
+  queue are dropped (INFO log) before the queue is read; the first remaining entry stays queued and is then taken by
+  the unchanged upstream branch. If nothing is left, the upstream cycle branch runs as for an empty queue. Queuing a
+  disabled zone is still accepted.
 - Re-port notes: keep the block before the `next_req_.has_request()` check.
 
 ## manual-run
@@ -80,3 +82,15 @@ against the `sprinkler` sources of the installed ESPHome package and fails on an
   it explicitly.
 - Re-port notes: re-add the early return in `set_auto_advance()` and the branch before `return true` in
   `auto_advance()`.
+
+## zone-skip
+- Purpose: let the owner of a controller veto a valve when its turn comes (watchdog lockout, soil moisture; task 013).
+- Files: `sprinkler.h` (`set_valve_skip_check()`, member, `valve_skip_reason_()`, `skip_cycle_valves_()` declaration),
+  `sprinkler.cpp` (`skip_cycle_valves_()` and its call in the cycle branch of `load_next_valve_run_request_`; the queue
+  side lives in the adjusted `queue-skip-disabled` region), `__init__.py` (`AUTO_LOAD` gets `sensor`, because
+  `group.h` includes `sensor/sensor.h`).
+- Behaviour change: only with a check set (the groups code generation sets one per lane): a valve whose check returns
+  a reason is dropped from the queue head, or marked cycle-complete before the cycle picks it (INFO log
+  `Valve N skipped: <reason>`). Manual runs and pending requests never reach those branches. The check is not used
+  for cycle repeats (`repeat_count_`); lanes have no repeat entity. Without a check behaviour is unchanged.
+- Re-port notes: re-add `skip_cycle_valves_(first_valve)` at the top of the `auto_advance() && multiplier()` branch.

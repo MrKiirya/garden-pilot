@@ -14,6 +14,7 @@
 // GZ-PATCH-BEGIN(includes)
 #include "esphome/core/preferences.h"
 #include "queue_ops.h"
+#include <functional>
 // GZ-PATCH-END(includes)
 
 #include <vector>
@@ -346,6 +347,12 @@ class Sprinkler final : public Component {
   void set_lane_mode(bool lane_mode) { this->lane_mode_ = lane_mode; }
   // GZ-PATCH-END(lanes)
 
+  // GZ-PATCH-BEGIN(zone-skip)
+  /// Per-valve skip check, asked when a valve's turn comes in the queue or in a cycle (never for manual runs).
+  /// Returns nullptr to run the valve, or the reason text for the log to skip it.
+  void set_valve_skip_check(std::function<const char *(size_t valve)> check) { this->valve_skip_check_ = std::move(check); }
+  // GZ-PATCH-END(zone-skip)
+
   // GZ-PATCH-BEGIN(queue-persist)
   /// persist the queue across reboots (restored in setup(), never started automatically)
   void set_persist_queue(bool persist_queue) { this->persist_queue_ = persist_queue; }
@@ -605,6 +612,15 @@ class Sprinkler final : public Component {
   bool lane_mode_{false};
   bool lane_auto_advance_{false};
   // GZ-PATCH-END(lanes)
+
+  // GZ-PATCH-BEGIN(zone-skip)
+  std::function<const char *(size_t valve)> valve_skip_check_;
+  const char *valve_skip_reason_(size_t valve) const {
+    return this->valve_skip_check_ ? this->valve_skip_check_(valve) : nullptr;
+  }
+  /// marks the valves that the skip check rejects as complete, so the cycle moves on to the next one
+  void skip_cycle_valves_(optional<size_t> first_valve);
+  // GZ-PATCH-END(zone-skip)
 
   // GZ-PATCH-BEGIN(manual-run)
   /// a valve started with run_valve() is running (or about to run)
