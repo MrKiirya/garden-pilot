@@ -1,6 +1,6 @@
 # 013 — `garden_zones` safety: max on-time watchdog (valves and pump) and per-zone soil-moisture skip
 
-Status: planned
+Status: in-review
 Roadmap: SPEC §9 item 7 "`garden_zones` component" (part 3 of 4: 008 core, 012 groups/lanes, **013 watchdog + soil**,
 014 device switch)
 Spec sections: SPEC §3, §4 (garden_zones: Safety, Soil moisture, pump), §6, §7 items 3-4, §9 item 7; CLAUDE.md core
@@ -22,7 +22,7 @@ real state, independent of the sprinkler state machine and its run durations, an
 on longer than its `max_on_time`, when the pump has been on longer than `pump_max_on_time`, or when the pump is on with
 no open valve of its group for longer than `pump_idle_timeout`. A trip is logged at ERROR, fires an `on_watchdog_trip`
 trigger and latches a lockout (zone, or whole group for a pump trip) until `garden_zones.reset_watchdog` or a reboot.
-Every limit has a safe default and a hard range; the watchdog cannot be disabled. Second, a zone can have an optional
+Every limit has a safe default and a hard range; the watchdog is on by default and can be disabled only explicitly with `never` (human decision 2026-10-10, see below). Second, a zone can have an optional
 **soil-moisture sensor**: when the zone's turn comes in a queue or a cycle and the soil is wetter than the threshold,
 the zone is skipped (logged); an unavailable or stale reading has a defined, configurable behaviour. Pure logic is unit
 tested in C++ and Python; a host scenario proves that the actuators really go off.
@@ -53,9 +53,12 @@ tested in C++ and Python; a host scenario proves that the actuators really go of
 - Between two zones of one lane without a switching delay the next valve starts in the same transition
   (`fsm_transition_from_valve_run_`), so a shared pump typically stays on **continuously for a whole queue**:
   `pump_max_on_time` bounds a watering session, not one zone. Documented in the README.
-- Pump-before-valve and valve-before-pump phases: `pump_start_pump_delay` (pump on first) and `pump_stop_pump_delay`
-  (pump stays on after the valve) make "pump on, no valve open" a legal state for that long; `pump_*_valve_delay`
-  only makes "valve on, pump off" legal. Hence the validation rule for `pump_idle_timeout` below.
+- Pump-before-valve and valve-after-pump phases (checked in the fork: `set_valve_start_delay` /
+  `pump_start_valve_delay` sets `start_delay_is_valve_delay_`, and `SprinklerValveOperator::start()` then calls
+  `pump_on_()` first): `pump_start_valve_delay` is the "pump on, no valve open yet" phase and `pump_stop_pump_delay`
+  (pump stays on after the valve) the "valve closed, pump still on" phase, so "pump on, no valve open" is a legal
+  state for that long. `pump_start_pump_delay` (valve first) and `pump_stop_valve_delay` (pump off first, valve stays
+  open) only make "valve on" last longer than the run. Hence the validation rules below.
 - **Where a zone's turn is decided** (`Sprinkler::load_next_valve_run_request_`): the `queue-skip-disabled` region
   drops disabled entries from the queue head with `queue_ops::pop_next_enabled(queue, predicate)`; the cycle branch
   picks `next_valve_number_in_cycle_()`, which skips valves that are disabled or already `valve_cycle_complete`.
@@ -106,18 +109,20 @@ garden_zones:
         max_age: 30min            # optional, default 30min, range 1s..24h; an older reading counts as unavailable
         when_unavailable: water   # water | skip, default water
 ```
-- There is **no way to disable** the watchdog (no `0s`, no `never`); `max_on_time` and `pump_max_on_time` are capped at
-  4 h, `pump_idle_timeout` at 5 min. `pump_max_on_time` / `pump_idle_timeout` without `pump_switch_id` → error.
+- **Superseded by the human decision 2026-10-10:** no 4 h / 5 min caps; any duration from 1 s (technical maximum 30 days)
+  or `never` (disabled explicitly, WARN at boot, run-vs-limit checks skipped). Original text: no way to disable the
+  watchdog, `max_on_time` and `pump_max_on_time` capped at 4 h, `pump_idle_timeout` at 5 min. `pump_max_on_time` / `pump_idle_timeout` without `pump_switch_id` → error.
 - Validation (pure rules in a new `components/garden_zones/safety_rules.py`, standard library only, called from
   `final_validate_groups()` and from the group/zone schemas; messages name the group and zone):
-  - **Zone limit vs. configured run:** `longest_run + start_delay + 2 s <= max_on_time`, where `longest_run` =
+  - **Zone limit vs. configured run:** `longest_run + pump_delays + 2 s <= max_on_time`, where `longest_run` =
     `run_duration`, or the `run_duration_number`'s `max_value` (× 60 when its `unit_of_measurement` is `min`, as
-    `Sprinkler::valve_run_duration` does), and `start_delay` = the group's `pump_start_pump_delay` or
-    `pump_start_valve_delay` (0 if none). A zone with the stock default number `max_value` (86400 s) therefore fails
+    `Sprinkler::valve_run_duration` does), and `pump_delays` = the larger of the group's `pump_start_pump_delay` /
+    `pump_start_valve_delay` (conservative) plus its `pump_stop_valve_delay` (0 if none); the limit is the zone's own
+    `max_on_time` if set, else the group's. A zone with the stock default number `max_value` (86400 s) therefore fails
     under the default limit: the message tells the user to lower `max_value` or raise `max_on_time`. Run durations
     passed at runtime (`queue_zone` / `run_zone` `run_duration`) are not checked here; the watchdog catches them.
   - `pump_max_on_time >=` every zone's effective `max_on_time` in the group (else one normal zone run trips the pump).
-  - `pump_idle_timeout >= max(pump_start_pump_delay, pump_stop_pump_delay) + 2 s`.
+  - `pump_idle_timeout >= max(pump_start_valve_delay, pump_stop_pump_delay) + 2 s`.
   - The raw `valve_switch_id` and `pump_switch_id` switches must resolve to `restore_mode` `ALWAYS_OFF` or
     `RESTORE_DEFAULT_OFF`; any other mode → error ("an actuator must be OFF after boot").
 - The 008 **list form** of `garden_zones:` gets no watchdog and no soil skip (it stays a test-only path); README and
@@ -250,7 +255,7 @@ steps of the scenario and all C++/unit checks are not cuttable.
 | cpp | "unavailable" | no value / NaN / `age_ms` 3001 with `max_age_ms` 3000 → `RUN_UNAVAILABLE` (WATER) or `SKIP_UNAVAILABLE` (SKIP); `age_ms` == `max_age_ms` is fresh; `age_ms(1000, 0xFFFFFC18)` = 2000. |
 | cpp | `test_cpp_unit_tests` (existing) | Wrapper still runs all cases (old and new). |
 | unit | `test_safety_rules_zone_limit` | `safety_rules` (imported by path): run 1 s / limit 3 s → ok; run 2 s / limit 3 s → error (2 + 0 + 2 > 3); `run_duration_number` `max_value` 120 `min` with the 60 min default → error naming `max_value` and `max_on_time`; 50 `min` → ok; a `pump_start_pump_delay` is added to the run. |
-| unit | `test_safety_rules_pump` | `pump_max_on_time` below a zone's effective limit → error; `pump_idle_timeout` 3 s with `pump_start_pump_delay` 2 s → error, 4 s → ok; `pump_*` keys without a pump → error. |
+| unit | `test_safety_rules_pump` | `pump_max_on_time` below a zone's effective limit → error; `pump_idle_timeout` 3 s with `pump_start_valve_delay` 2 s → error, 4 s → ok; `pump_*` keys without a pump → error. |
 | unit | `test_safety_rules_restore_mode` | `ALWAYS_OFF`, `RESTORE_DEFAULT_OFF` ok; `ALWAYS_ON`, `RESTORE_DEFAULT_ON`, `RESTORE_INVERTED_DEFAULT_OFF`, `RESTORE_INVERTED_DEFAULT_ON`, `DISABLED` → error naming the switch id. |
 | unit | `test_safety_files_are_esphome_free` | `safety_rules.py` imports only the standard library; `watchdog_core.h`, `soil_skip.h` include only `<...>` standard headers. |
 | unit | `test_watchdog_not_persisted` | `watchdog_core.h`, `watchdog.h` (and `.cpp`) contain no `preference` / `global_preferences`. |
@@ -260,7 +265,7 @@ steps of the scenario and all C++/unit checks are not cuttable.
 | unit | `test_device_unchanged` (existing) | Still passes. |
 | config | `test_safety_config[pinned\|minimum]` | Staged safety config passes `esphome config`; in the printed config zone 1 of `beds` shows the soil defaults `max_age: 30min` and `when_unavailable: water`. |
 | config | `test_safety_defaults[pinned]` | The staged 012 groups config (no safety keys) passes `esphome config`; the printed config shows `max_on_time: 60min` on every group, `pump_max_on_time: 2h` and `pump_idle_timeout: 10s` on `lawn` only. |
-| config | `test_safety_config_errors[...]` (pinned) | Generated configs fail with the expected message: run duration too close to `max_on_time`; default number `max_value` with default limit; `max_on_time: 0s`; `max_on_time: 5h`; `pump_max_on_time` without pump; `pump_max_on_time` < zone limit; `pump_idle_timeout` too short for `pump_start_pump_delay`; unknown soil `sensor_id`; `when_unavailable: maybe`; valve switch `restore_mode: ALWAYS_ON`; pump `restore_mode: RESTORE_DEFAULT_ON`. |
+| config | `test_safety_config_errors[...]` (pinned) | Generated configs fail with the expected message: run duration too close to `max_on_time`; default number `max_value` with default limit; `max_on_time: 0s`; `max_on_time: 5h`; `pump_max_on_time` without pump; `pump_max_on_time` < zone limit; `pump_idle_timeout` too short for `pump_start_valve_delay`; `pump_stop_valve_delay` pushes a run over `max_on_time`; per-zone `max_on_time` override too short for the run / above `pump_max_on_time`; unknown soil `sensor_id`; `when_unavailable: maybe`; valve switch `restore_mode: ALWAYS_ON`; pump `restore_mode: RESTORE_DEFAULT_ON`. |
 | config | `test_safety_codegen[pinned\|minimum]` | `compile --only-generate` of the safety config: `main.cpp` has one `GroupWatchdog` per group (3), the configured limits in ms (3000, 5000, 2000), one `set_valve_skip_check` per lane, one `add_on_state_callback` per soil zone (2). |
 | config | `test_groups_codegen` (012, existing) | Still passes unchanged. |
 | host | `test_safety_host_compile` (pinned) | Safety config compiles for `host` (own fixed staging dir under `.esphome/`). |
@@ -312,24 +317,24 @@ Global assertion over the whole run: no state line shows a valve continuously at
 (the stuck relay in step 9 excepted), and the pump never more than 6000 ms.
 
 ## Acceptance criteria
-- [ ] `sh script/test-cpp` → builds with `-Wall -Wextra -Werror`; all cases (old and new) pass. Ran in the devcontainer
+- [x] `sh script/test-cpp` → builds with `-Wall -Wextra -Werror`; all cases (old and new) pass. Ran in the devcontainer
       or another environment with a compiler (say which).
-- [ ] `uv run pytest -m unit` → all pass.
-- [ ] `GP_REQUIRE_CXX=1 uv run pytest tests/test_garden_zones.py` → all pass, no skips; `minimum` rows pass or are
+- [x] `uv run pytest -m unit` → all pass.
+- [x] `GP_REQUIRE_CXX=1 uv run pytest tests/test_garden_zones.py` → all pass, no skips; `minimum` rows pass or are
       `xfail(strict=True)` under the Gate with the error recorded.
-- [ ] `script/lint` → clean; `esphome config OK: garden-pilot.yaml`.
-- [ ] `script/test` → all pass; local wall time before/after in Implementation notes.
-- [ ] `git diff task/012-groups-and-lanes --stat -- garden-pilot.yaml garden-pilot-sim.yaml packages hardware .github
+- [x] `script/lint` → clean; `esphome config OK: garden-pilot.yaml`.
+- [x] `script/test` → all pass; local wall time before/after in Implementation notes.
+- [x] `git diff task/012-groups-and-lanes --stat -- garden-pilot.yaml garden-pilot-sim.yaml packages hardware .github
       script tests/configs/garden_zones_sim.yaml tests/configs/garden_zones_groups_sim.yaml
       tests/configs/garden_zone_entry.yaml` → empty.
-- [ ] `git grep -n 'GZ-PATCH-BEGIN' -- components` → ids are exactly `includes`, `queue-api`, `queue-persist`,
-      `queue-skip-disabled`, `manual-run`, `groups`, `lanes`, `zone-skip`, each with a `PATCHES.md` section.
-- [ ] `git grep -n -i 'preference' -- 'components/garden_zones/watchdog*'` → no hits.
-- [ ] `components/garden_zones/README.md` documents keys, defaults, ranges, validation rules, trip/lockout/reset, the
+- [x] `git grep -n 'GZ-PATCH-BEGIN' -- components` → ids are exactly `includes`, `queue-api`, `queue-persist`,
+      `queue-skip-disabled`, `manual-run`, `groups`, `lanes`, `zone-skip`, each with a `PATCHES.md` section (the `valve-handover` region of review round 1 was removed in round 3).
+- [x] `git grep -n -i 'preference' -- 'components/garden_zones/watchdog*'` → no hits.
+- [x] `components/garden_zones/README.md` documents keys, defaults, ranges, validation rules, trip/lockout/reset, the
       pump session meaning of `pump_max_on_time`, soil skip scope (queue/cycle only) and the unavailable policy;
       `docs/SPEC.md` §4 and §9 item 7 updated as listed, nothing else.
 - [ ] CI on the PR green for `checks`, `compile (pinned)`, `compile (minimum)`; CI timings recorded against the Gate.
-- [ ] Implementation notes say that nothing ran on a real device and list the scenario results.
+- [x] Implementation notes say that nothing ran on a real device and list the scenario results.
 
 Needs real hardware: nothing in this task. Watchdog trips on real relays (and that `RESTORE_DEFAULT_OFF` relays come up
 off after a reboot during watering) belong to the 014 hardware check.
@@ -370,4 +375,82 @@ off after a reboot during watering) belong to the 014 hardware check.
 
 <!-- Filled in by implementer -->
 ## Implementation notes
+- Where checks ran: dev container `gp-dev-012` (podman, this checkout mounted), `UV_OFFLINE=1`, `GP_REQUIRE_CXX=1`. Nothing ran on a real device.
+- Results: `script/test-cpp` 24 cases ok (-Wall -Wextra -Werror); `script/lint` clean (`esphome config OK: garden-pilot.yaml`);
+  `script/test`: 598 passed, 1 skipped in ~5m35 (012 branch baseline not re-measured here; the new rows are ~1.5 min host scenario + ~1 min host build, pinned only). Includes `minimum` (2026.6.3) rows for `test_safety_config` and `test_safety_codegen`: they pass, no xfail needed.
+- Safety scenario results: all ten steps pass (valve limit via sprinkler, lockout, raw turn-on forced off, reset, pump idle, pump session limit, soil skip queue/cycle/manual/NaN/stale, stuck relay with at most one retry per second).
+- Decisions/deviations: (a) `AUTO_LOAD.append("sensor")` in `__init__.py` (zone-skip region) because `group.h` includes `sensor/sensor.h`. (b) Duration lower bounds in the scenario are relaxed by 100 ms (50 ms state-log sampling). (c) A raw turn-on of a locked relay is cut before the 50 ms log can see it, so step 3 logs the state right after the call and 500 ms later. (d) Default pump limits are built as `TimePeriod(hours=2)` / `(seconds=10)` so the printed config shows `2h` / `10s`. (e) `skip_reason` is also called per cycle pick; the unavailable WARN can repeat per check. (f) `gz_attempt` needs `script.wait` in the scenario. (g) CLAUDE.md got the one gotcha line; no other CLAUDE.md change.
+- Cut order not needed: nothing was cut.
+- CI timings / CI green: not measured here (no push by the implementer).
+- Hardware to check in 014: forced trip on a real relay, reboot during watering, `RESTORE_DEFAULT_OFF` relays off after boot.
 ## Follow-ups
+- Soil re-check on cycle repeats; stopping a running zone when soil gets wet (out of scope here).
+
+## Review round 1 fixes
+Implementation notes (round 1):
+- **Required 1 (lane race), also fixes 012's flaky `test_groups_host_scenario`.** New `GZ-PATCH` region `valve-handover`
+  (`SprinklerValveOperator::handover()` + a loop in `fsm_transition_from_valve_run_`): when a run timer finished and
+  `valve_overlap` is **not** set, the finished valve is switched off right before the next valve starts (shared pump
+  untouched). With `valve_overlap` the deliberate overlap is unchanged (human constraint: water hammer / pump
+  protection); also unchanged: interrupted runs, and a stop delay that is a valve delay with a pump. The reproduced
+  same-lane overlap of the 012 flake ("assert not True", `state=0000011`) is exactly this window, so the fix covers
+  012's flake; 012's scenario was not edited. Deterministic checks (not a 200 ms poll): the new `pair` group
+  (`max_parallel: 1`, two zones) in the safety scenario counts overlaps in the valves' own `on_state` callbacks
+  (`handover starts=4 overlaps=0`); verified that this check fails with the handover loop disabled. A new host config
+  `tests/configs/garden_zones_overlap_sim.yaml` (list form) covers both cases: `plain` -> 0 overlaps, `ovl` with
+  `valve_overlap: 1s` -> overlap still present (`test_valve_handover_host_scenario`). The groups form does not expose
+  `valve_overlap`, so lanes always get the handover. Documented in PATCHES.md, README, SPEC §3.
+- **Required 2:** `pump_idle_timeout` rule now uses `pump_start_valve_delay` (pump-first phase) in `groups.py`,
+  `safety_rules.py`, README, the `idle-too-short` case and the Context bullet of this task.
+- **Required 3:** the zone-limit rule adds `pump_stop_valve_delay` (case `stop-valve-delay`, unit rows).
+- **Required 4:** the safety config's `pair` zone 2 has `max_on_time: 5s` (group 3 s): codegen asserts
+  `add_zone(..., 5000)`; config-error cases `zone-override-too-short` and `pump-below-zone-override`.
+- Suggestions done: error assertions use the rules' own wording or ESPHome's message (not echoed text); watchdog and
+  guard reuse member buffers (no per-loop allocation once warmed up); an unresolvable restore-mode switch is a config
+  error (never skipped); README note on soil staleness (`heartbeat`); stale soil readings are dropped for good by the
+  group's `loop()` (no 49.7-day wrap); the soil unavailable WARN is limited to once a minute per zone.
+- Results (round 1, `gp-dev-012`): `script/test-cpp` 24 cases ok; `script/lint` clean; `script/test` 607 passed, 1 skipped
+  (`test_sim_ui`, no Xvfb) in 5m44. Flake check: the 012 `test_groups_host_scenario` and the 013 `test_safety_host_scenario`
+  were run together 6 times in a row (separate pytest invocations), 6/6 passed for each (before the reviewer saw 1 of 12
+  runs overlap); plus the full run and the overlap scenario. Nothing ran on a real device.
+
+### Review round 2 fixes (round 3 of work; human decision 2026-10-10)
+- **Human decision on R2-1:** keep the ORIGINAL stock handover. A brief overlap of two valves of a lane (up to one main-loop
+  pass) is accepted by design; the priority is that the pump never runs against closed valves (water hammer). The
+  `valve-handover` GZ-PATCH region of round 1 is removed entirely (`sprinkler.h`, `sprinkler.cpp` are stock again in that
+  place; PATCHES.md section, README item and patch-id list entry are gone). The round-1 statement above that the patch also
+  fixes 012's flake is superseded: the flake is the accepted stock overlap, and the test is made tolerant instead.
+- **Tests of the accepted behaviour:** `tests/configs/garden_zones_overlap_sim.yaml` now measures, in the valves' own
+  `on_state` callbacks, the longest time both valves of a controller were on: `plain` < 100 ms, `ovl` with
+  `valve_overlap: 1s` between 900 and 1300 ms (deliberate overlap still happens). The safety scenario's `pair` group
+  asserts `max_ms < 100` instead of `overlaps=0`.
+- **012 `test_groups_host_scenario` (only its assertions changed, `garden_zones_groups_sim.yaml` untouched):** the three
+  "never together" asserts (steps 3, 4, 5) use `_brief_overlap_only()`: a both-on entry in the on-change state log is
+  allowed only as a single entry, never two in a row. It no longer depends on the 200 ms poll catching the handover.
+- **Pump scenario (reviewer request, adapted):** new `tests/configs/garden_zones_pump_sim.yaml` +
+  `test_pump_start_delays_host_scenario`: groups `pa` (`pump_start_pump_delay: 1s`) and `vb` (`pump_start_valve_delay: 1s`),
+  two 3 s zones each. Events come from the switches' state callbacks. Asserts: each valve open 2.9-4.5 s (a full run,
+  plus the start delay for the first valve of `pa`), the pump has one session (a same-millisecond off/on at the handover
+  is merged), no gap between the zones in which the pump runs without a valve, the pump runs at most 1.3 s before the first
+  valve (the configured start phase) and at most 0.3 s after the last.
+- Round 2 suggestions: 1-2 no longer apply (they concern `handover()`).
+- Results (`gp-dev-012`): see the end of this section.
+
+### Human decision 2026-10-10: limits can be disabled with `never`
+- Replaces "the watchdog cannot be disabled": no 4 h cap on `max_on_time` / `pump_max_on_time`, no 5 min cap on
+  `pump_idle_timeout`; any positive duration from 1 s is accepted (technical maximum 30 days, the longest a 32-bit ms timer
+  tracks wrap-safely; longer values must use `never`). `never` (the `update_interval: never` idiom) disables a limit at group
+  level, zone level (`max_on_time`) or for the pump. Defaults stay on (60 min / 2 h / 10 s). Each disabled limit logs a WARN
+  `watchdog disabled by config` naming the group/zone from `dump_config`; the run-vs-limit checks are skipped for such a
+  zone/pump. Lockout, stuck-relay retries and the other limits stay active.
+- Code: `watchdog::DISABLED` (zone sentinel) and empty optionals (pump) in `watchdog_core.h`; `_limit` validator and
+  `_limit_code` in `groups.py`; codegen emits `::esphome::garden_zones::watchdog::DISABLED`.
+- Tests: C++ (`disabled zone limit`, `disabled pump limits ... 6 h`), `test_safety_never_and_long_limits_config` (never at
+  group, zone and both pump limits; 6 h; a 5 h run; zone `never` with the stock 86400 s number max), `test_safety_never_codegen`
+  (4 x DISABLED, 21600000 for the 6 h group), error case `max-on-time-over-30-days` replaces `max-on-time-5h`.
+- Docs: README, SPEC §4, CLAUDE.md gotcha line and core principle 4 updated.
+
+Results (round 3 incl. the `never` decision, `gp-dev-012`): `script/test-cpp` 26 cases ok; `script/lint` clean; `script/test`
+617 passed, 1 skipped (`test_sim_ui`) in 6m25; the 012 `test_groups_host_scenario`, the 013 safety scenario, the overlap
+scenario and the pump-start-delay scenario ran together 5 more times after the full run (5/5), and 5/5 before the `never`
+change. Nothing ran on a real device.
