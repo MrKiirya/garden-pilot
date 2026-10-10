@@ -1,0 +1,572 @@
+# Test harness for the watchdog and the soil moisture skip of components/garden_zones — NOT a device configuration and
+# never flashed. Host (Linux) build with simulated relays; a scripted scenario logs machine-readable `GZTEST` lines
+# that tests/test_garden_zones.py asserts. Paths are repo-root relative: the file is only used staged at the repo root
+# (pytest copies it together with hardware/ and components/ into a staging directory).
+# Everything is logged at INFO because the test runs on the host only.
+#
+# Groups (all run durations 1 s, max_on_time 3 s so the scenario stays short):
+#   beds  max_parallel all, soil sensors on zones 1 and 2
+#   lawn  max_parallel 2 with a shared pump (pump_max_on_time 5 s, pump_idle_timeout 2 s)
+#   stuck one zone on a "welded" relay that ignores turn_off
+#   pair  max_parallel 1, two zones in one lane: the stock handover check (two valves of a lane are on together only
+#         for a very short handover), measured in the switches' own state callbacks instead of a polled log
+
+esphome:
+  name: garden-zones-safety
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: gz_scenario
+
+packages:
+  hardware: !include hardware/sim.yaml
+
+logger:
+  level: INFO
+
+external_components:
+  - source: components
+    components: [garden_zones, garden_zone]
+
+globals:
+  - id: stuck_flag
+    type: bool
+    initial_value: "false"
+  - id: stuck_off
+    type: int
+    initial_value: "0"
+  - id: pair_overlaps
+    type: int
+    initial_value: "0"
+  - id: pair_max_ms
+    type: unsigned int
+    initial_value: "0"
+  - id: pair_since
+    type: unsigned int
+    initial_value: "0"
+  - id: pair_starts
+    type: int
+    initial_value: "0"
+
+switch:
+  - platform: template
+    id: gz_valve_4
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+  - platform: template
+    id: gz_valve_5
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+  - platform: template
+    id: gz_pump
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+  # the "pair" lane: every state change counts the valves that are on at that moment (no polling involved)
+  - platform: template
+    id: gz_valve_6
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: |-
+          if (x) id(pair_starts) += 1;
+          if (id(gz_valve_6).state && id(gz_valve_7).state) id(pair_overlaps) += 1;
+          if (id(gz_valve_6).state && id(gz_valve_7).state) {
+            if (id(pair_since) == 0) id(pair_since) = millis();
+          } else if (id(pair_since) != 0) {
+            id(pair_max_ms) = std::max(id(pair_max_ms), millis() - id(pair_since));
+            id(pair_since) = 0;
+          }
+  - platform: template
+    id: gz_valve_7
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: |-
+          if (x) id(pair_starts) += 1;
+          if (id(gz_valve_6).state && id(gz_valve_7).state) id(pair_overlaps) += 1;
+          if (id(gz_valve_6).state && id(gz_valve_7).state) {
+            if (id(pair_since) == 0) id(pair_since) = millis();
+          } else if (id(pair_since) != 0) {
+            id(pair_max_ms) = std::max(id(pair_max_ms), millis() - id(pair_since));
+            id(pair_since) = 0;
+          }
+  # a welded relay: it turns on, but turn_off only counts the attempt
+  - platform: template
+    id: gz_stuck
+    internal: true
+    restore_mode: ALWAYS_OFF
+    lambda: 'return id(stuck_flag);'
+    turn_on_action:
+      - lambda: 'id(stuck_flag) = true;'
+    turn_off_action:
+      - lambda: 'id(stuck_off) += 1;'
+
+sensor:
+  - platform: template
+    id: gz_soil_1
+    update_interval: never
+  - platform: template
+    id: gz_soil_2
+    update_interval: never
+
+garden_zones:
+  groups:
+    - id: beds
+      name: Beds
+      max_parallel: all
+      max_on_time: 3s
+      on_watchdog_trip:
+        - logger.log:
+            level: INFO
+            tag: GZTEST
+            format: "trip group=beds zone=%d reason=%s t=%u"
+            args: ['zone', 'reason.c_str()', 'millis()']
+    - id: lawn
+      name: Lawn
+      max_parallel: 2
+      pump_switch_id: gz_pump
+      max_on_time: 3s
+      pump_max_on_time: 5s
+      pump_idle_timeout: 2s
+      on_watchdog_trip:
+        - logger.log:
+            level: INFO
+            tag: GZTEST
+            format: "trip group=lawn zone=%d reason=%s t=%u"
+            args: ['zone', 'reason.c_str()', 'millis()']
+    - id: stuck
+      name: Stuck
+      max_parallel: 1
+      max_on_time: 3s
+      on_watchdog_trip:
+        - logger.log:
+            level: INFO
+            tag: GZTEST
+            format: "trip group=stuck zone=%d reason=%s t=%u"
+            args: ['zone', 'reason.c_str()', 'millis()']
+    - id: pair
+      name: Pair
+      max_parallel: 1
+      max_on_time: 3s
+      on_watchdog_trip:
+        - logger.log:
+            level: INFO
+            tag: GZTEST
+            format: "trip group=pair zone=%d reason=%s t=%u"
+            args: ['zone', 'reason.c_str()', 'millis()']
+  zones:
+    - group: beds
+      valve_switch: "GZ bed 1"
+      valve_switch_id: board_relay_1
+      run_duration: 1s
+    - group: beds
+      valve_switch: "GZ bed 2"
+      valve_switch_id: board_relay_2
+      run_duration: 1s
+      soil_moisture:
+        sensor_id: gz_soil_1
+        skip_above: 60
+    - group: beds
+      valve_switch: "GZ bed 3"
+      valve_switch_id: board_relay_3
+      run_duration: 1s
+      soil_moisture:
+        sensor_id: gz_soil_2
+        skip_above: 60
+        max_age: 3s
+        when_unavailable: skip
+    - group: lawn
+      valve_switch: "GZ lawn 1"
+      valve_switch_id: gz_valve_4
+      run_duration: 1s
+    - group: lawn
+      valve_switch: "GZ lawn 2"
+      valve_switch_id: gz_valve_5
+      run_duration: 1s
+    - group: pair
+      valve_switch: "GZ pair 1"
+      valve_switch_id: gz_valve_6
+      run_duration: 1s
+    - group: pair
+      valve_switch: "GZ pair 2"
+      valve_switch_id: gz_valve_7
+      run_duration: 1s
+      max_on_time: 5s  # per-zone override (the group has 3s); the codegen test checks that it reaches the watchdog
+    - group: stuck
+      valve_switch: "GZ stuck 1"
+      valve_switch_id: gz_stuck
+      run_duration: 1s
+
+# Logs "t=<millis> state=<relay1,relay2,relay3,v4,v5,stuck> pump=<0/1>" whenever a raw actuator changes.
+interval:
+  - interval: 50ms
+    then:
+      - lambda: |-
+          static std::string last;
+          std::string now;
+          now += id(board_relay_1).state ? '1' : '0';
+          now += id(board_relay_2).state ? '1' : '0';
+          now += id(board_relay_3).state ? '1' : '0';
+          now += id(gz_valve_4).state ? '1' : '0';
+          now += id(gz_valve_5).state ? '1' : '0';
+          now += id(gz_stuck).state ? '1' : '0';
+          now += id(gz_pump).state ? "p1" : "p0";
+          if (now != last) {
+            last = now;
+            ESP_LOGI("GZTEST", "t=%u state=%.6s pump=%c", millis(), now.c_str(), now[7]);
+          }
+
+script:
+  - id: gz_mark
+    parameters:
+      label: string
+    then:
+      - lambda: 'ESP_LOGI("GZTEST", "mark=%s t=%u", label.c_str(), millis());'
+
+  - id: gz_log_tripped
+    parameters:
+      label: string
+    then:
+      - lambda: |-
+          ESP_LOGI("GZTEST", "tripped %s beds=%d lawn=%d stuck=%d", label.c_str(), id(beds).watchdog_tripped(),
+                   id(lawn).watchdog_tripped(), id(stuck).watchdog_tripped());
+
+  - id: gz_log_queue
+    parameters:
+      label: string
+    then:
+      - lambda: |-
+          std::string out;
+          for (size_t zone : id(beds).queued_zones()) {
+            if (!out.empty()) out += ",";
+            out += std::to_string(zone);
+          }
+          ESP_LOGI("GZTEST", "queue %s beds=%s", label.c_str(), out.c_str());
+
+  # queue one beds zone, start the queue, give it 3 s: skipped zones never switch their relay
+  - id: gz_attempt
+    parameters:
+      zone: int
+      label: string
+    then:
+      - script.execute:
+          id: gz_mark
+          label: !lambda 'return label + "_a";'
+      - garden_zones.queue_zone: {id: beds, zone_number: !lambda 'return zone;'}
+      - script.execute:
+          id: gz_log_queue
+          label: !lambda 'return label + "_queued";'
+      - garden_zones.start_group_queue: beds
+      - delay: 3s
+      - script.execute:
+          id: gz_log_queue
+          label: !lambda 'return label + "_after";'
+      - script.execute:
+          id: gz_mark
+          label: !lambda 'return label + "_b";'
+
+  # pump session: valves alternate every 1.5 s (each far below max_on_time), the pump stays on
+  - id: gz_alternate
+    then:
+      - switch.turn_on: gz_valve_4
+      - delay: 1500ms
+      - switch.turn_off: gz_valve_4
+      - switch.turn_on: gz_valve_5
+      - delay: 1500ms
+      - switch.turn_off: gz_valve_5
+      - switch.turn_on: gz_valve_4
+      - delay: 1500ms
+      - switch.turn_off: gz_valve_4
+      - switch.turn_on: gz_valve_5
+      - delay: 1500ms
+      - switch.turn_off: gz_valve_5
+      - switch.turn_on: gz_valve_4
+      - delay: 1500ms
+      - switch.turn_off: gz_valve_4
+
+  - id: gz_scenario
+    then:
+      - delay: 1s
+      # 1. nothing tripped, everything off
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=1"}
+      - script.execute:
+          id: gz_log_tripped
+          label: start
+      - if:
+          condition:
+            garden_zones.watchdog_tripped: beds
+          then:
+            - logger.log: {level: INFO, tag: GZTEST, format: "cond beds=1"}
+          else:
+            - logger.log: {level: INFO, tag: GZTEST, format: "cond beds=0"}
+
+      # 2. valve limit through the sprinkler: a 20 s run is cut at max_on_time
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=2"}
+      - script.execute:
+          id: gz_mark
+          label: s2_a
+      - garden_zones.run_zone: {id: beds, zone_number: 0, run_duration: 20s}
+      - wait_until:
+          condition:
+            lambda: 'return id(board_relay_1).state;'
+          timeout: 10s
+      - wait_until:
+          condition:
+            lambda: 'return !id(board_relay_1).state;'
+          timeout: 10s
+      - delay: 300ms
+      - script.execute:
+          id: gz_mark
+          label: s2_b
+      - lambda: 'ESP_LOGI("GZTEST", "active_after=%u", static_cast<unsigned>(id(beds).active_zones().size()));'
+      - delay: 3s
+      - script.execute:
+          id: gz_mark
+          label: s2_c
+      - script.execute:
+          id: gz_log_tripped
+          label: after_trip
+
+      # 3. lockout: nothing of zone 0 starts, a raw turn-on is forced off, reset clears it
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=3"}
+      - script.execute:
+          id: gz_mark
+          label: s3_a
+      - garden_zones.run_zone: {id: beds, zone_number: 0}
+      - delay: 1500ms
+      - garden_zones.queue_zone: {id: beds, zone_number: 0}
+      - garden_zones.start_group_queue: beds
+      - delay: 2s
+      - script.execute:
+          id: gz_log_queue
+          label: locked_after
+      - script.execute:
+          id: gz_mark
+          label: s3_raw
+      # the watchdog cuts it before the 50 ms state log can see it: log the state right after the call and 500 ms later
+      - lambda: |-
+          id(board_relay_1).turn_on();
+          ESP_LOGI("GZTEST", "raw_on state=%d", static_cast<int>(id(board_relay_1).state));
+      - delay: 500ms
+      - lambda: 'ESP_LOGI("GZTEST", "raw_after state=%d", static_cast<int>(id(board_relay_1).state));'
+      - delay: 1000ms
+      - script.execute:
+          id: gz_mark
+          label: s3_b
+      - garden_zones.reset_watchdog: beds
+      - if:
+          condition:
+            garden_zones.watchdog_tripped: beds
+          then:
+            - logger.log: {level: INFO, tag: GZTEST, format: "cond_after_reset beds=1"}
+          else:
+            - logger.log: {level: INFO, tag: GZTEST, format: "cond_after_reset beds=0"}
+      - script.execute:
+          id: gz_mark
+          label: s3_run
+      - garden_zones.run_zone: {id: beds, zone_number: 0}
+      - delay: 4s
+      - script.execute:
+          id: gz_mark
+          label: s3_c
+
+      # 4. independent of the sprinkler: a raw turn-on is cut at max_on_time
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=4"}
+      - script.execute:
+          id: gz_mark
+          label: s4_a
+      - switch.turn_on: board_relay_3
+      - wait_until:
+          condition:
+            lambda: 'return id(board_relay_3).state;'
+          timeout: 5s
+      - wait_until:
+          condition:
+            lambda: 'return !id(board_relay_3).state;'
+          timeout: 10s
+      - delay: 500ms
+      - script.execute:
+          id: gz_mark
+          label: s4_b
+      - garden_zones.reset_watchdog: beds
+
+      # 5. normal pump use: two zones of one pump group, no trip
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=5"}
+      - script.execute:
+          id: gz_mark
+          label: s5_a
+      - garden_zones.queue_zone: {id: lawn, zone_number: 0}
+      - garden_zones.queue_zone: {id: lawn, zone_number: 1}
+      - garden_zones.start_group_queue: lawn
+      - wait_until:
+          condition:
+            lambda: 'return id(gz_valve_4).state || id(gz_valve_5).state;'
+          timeout: 10s
+      - wait_until:
+          condition:
+            lambda: |-
+              return !id(gz_valve_4).state && !id(gz_valve_5).state && !id(gz_pump).state &&
+                     id(lawn).queued_zones().empty() && id(lawn).active_zones().empty();
+          timeout: 20s
+      - delay: 1s
+      - script.execute:
+          id: gz_mark
+          label: s5_b
+      - script.execute:
+          id: gz_log_tripped
+          label: after_pump_run
+
+      # 6. pump idle: the pump on with no open valve is cut after pump_idle_timeout, and the group is locked
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=6"}
+      - script.execute:
+          id: gz_mark
+          label: s6_a
+      - switch.turn_on: gz_pump
+      - wait_until:
+          condition:
+            lambda: 'return id(gz_pump).state;'
+          timeout: 5s
+      - wait_until:
+          condition:
+            lambda: 'return !id(gz_pump).state;'
+          timeout: 10s
+      - delay: 300ms
+      - script.execute:
+          id: gz_mark
+          label: s6_b
+      - garden_zones.run_zone: {id: lawn, zone_number: 0}
+      - delay: 1500ms
+      - script.execute:
+          id: gz_mark
+          label: s6_c
+      - garden_zones.reset_watchdog: lawn
+
+      # 7. pump session limit: valves alternate, no zone limit is reached, the pump limit trips
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=7"}
+      - script.execute:
+          id: gz_mark
+          label: s7_a
+      - switch.turn_on: gz_pump
+      - script.execute: gz_alternate
+      - wait_until:
+          condition:
+            lambda: 'return id(gz_pump).state;'
+          timeout: 5s
+      - wait_until:
+          condition:
+            lambda: 'return !id(gz_pump).state;'
+          timeout: 10s
+      - script.stop: gz_alternate
+      - delay: 1500ms
+      - script.execute:
+          id: gz_mark
+          label: s7_b
+      - garden_zones.reset_watchdog: lawn
+
+      # 8. soil skip (queue), manual runs ignore it, cycle
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=8"}
+      - sensor.template.publish: {id: gz_soil_1, state: 72}
+      - script.execute:
+          id: gz_attempt
+          zone: 1
+          label: s8a
+      - script.wait: gz_attempt
+      - sensor.template.publish: {id: gz_soil_1, state: 40}
+      - script.execute:
+          id: gz_attempt
+          zone: 1
+          label: s8b
+      - script.wait: gz_attempt
+      - sensor.template.publish: {id: gz_soil_1, state: 72}
+      - script.execute:
+          id: gz_mark
+          label: s8c_a
+      - garden_zones.run_zone: {id: beds, zone_number: 1}
+      - delay: 3s
+      - script.execute:
+          id: gz_mark
+          label: s8c_b
+      - sensor.template.publish: {id: gz_soil_1, state: !lambda 'return NAN;'}
+      - script.execute:
+          id: gz_attempt
+          zone: 1
+          label: s8d
+      - script.wait: gz_attempt
+      # gz_soil_2 has never reported: unavailable, policy skip
+      - script.execute:
+          id: gz_attempt
+          zone: 2
+          label: s8e
+      - script.wait: gz_attempt
+      - sensor.template.publish: {id: gz_soil_2, state: 40}
+      - script.execute:
+          id: gz_attempt
+          zone: 2
+          label: s8f
+      - script.wait: gz_attempt
+      - delay: 4s  # the reading is now older than max_age (3 s)
+      - script.execute:
+          id: gz_attempt
+          zone: 2
+          label: s8g
+      - script.wait: gz_attempt
+      - sensor.template.publish: {id: gz_soil_1, state: 72}
+      - sensor.template.publish: {id: gz_soil_2, state: 40}
+      - script.execute:
+          id: gz_mark
+          label: s8h_a
+      - garden_zones.start_group_cycle: beds
+      - delay: 4s
+      - script.execute:
+          id: gz_mark
+          label: s8h_b
+
+      # 9. a stuck relay: the trip is logged once, the forced off is retried at most once a second
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=9"}
+      - script.execute:
+          id: gz_mark
+          label: s9_a
+      - switch.turn_on: gz_stuck
+      - delay: 3600ms
+      - lambda: 'ESP_LOGI("GZTEST", "stuck_count_1=%d state=%d", id(stuck_off), static_cast<int>(id(gz_stuck).state));'
+      - delay: 4s
+      - lambda: 'ESP_LOGI("GZTEST", "stuck_count_2=%d state=%d", id(stuck_off), static_cast<int>(id(gz_stuck).state));'
+      - lambda: 'id(stuck_flag) = false;'
+      - wait_until:
+          condition:
+            lambda: 'return !id(gz_stuck).state;'
+          timeout: 3s
+      - delay: 1500ms
+      - lambda: 'ESP_LOGI("GZTEST", "stuck_count_3=%d state=%d", id(stuck_off), static_cast<int>(id(gz_stuck).state));'
+      - script.execute:
+          id: gz_log_tripped
+          label: stuck_latched
+      - garden_zones.reset_watchdog: stuck
+      - script.execute:
+          id: gz_log_tripped
+          label: stuck_reset
+
+      # 9b. handover: four runs back to back in one lane; the valves overlap only for the brief stock handover
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=10"}
+      - garden_zones.queue_zone: {id: pair, zone_number: 0}
+      - garden_zones.queue_zone: {id: pair, zone_number: 1}
+      - garden_zones.queue_zone: {id: pair, zone_number: 0}
+      - garden_zones.queue_zone: {id: pair, zone_number: 1}
+      - garden_zones.start_group_queue: pair
+      - delay: 1s
+      - wait_until:
+          condition:
+            lambda: 'return !id(gz_valve_6).state && !id(gz_valve_7).state && id(pair).queued_zones().empty();'
+          timeout: 20s
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "handover starts=%d overlaps=%d max_ms=%u", id(pair_starts),
+                   id(pair_overlaps), id(pair_max_ms));
+
+      # 11.
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}

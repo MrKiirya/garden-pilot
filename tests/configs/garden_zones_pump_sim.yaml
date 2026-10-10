@@ -1,0 +1,115 @@
+# Test harness for pump start delays of components/garden_zones groups — NOT a device configuration and never flashed.
+# Host (Linux) build with template relays; two groups with a pump, one lane of two 3 s zones each:
+#   pa  pump_start_pump_delay: 1s
+#   vb  pump_start_valve_delay: 1s
+# Every actuator logs `ev <id> <0/1> t=<millis>` from its own state callback (no polling), so the test can check each
+# zone's open time and that the pump never runs with no valve open between the zones (only in the configured start
+# phase at the beginning of a cycle). Paths are repo-root relative: staged at the repo root by
+# tests/test_garden_zones.py.
+# Logged at INFO (host only).
+
+esphome:
+  name: garden-zones-pump
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: gz_scenario
+
+packages:
+  hardware: !include hardware/sim.yaml
+
+logger:
+  level: INFO
+
+external_components:
+  - source: components
+    components: [garden_zones, garden_zone]
+
+switch:
+  - platform: template
+    id: pa_v1
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: 'ESP_LOGI("GZTEST", "ev pa_v1 %d t=%u", static_cast<int>(x), millis());'
+  - platform: template
+    id: pa_v2
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: 'ESP_LOGI("GZTEST", "ev pa_v2 %d t=%u", static_cast<int>(x), millis());'
+  - platform: template
+    id: pa_pump
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: 'ESP_LOGI("GZTEST", "ev pa_pump %d t=%u", static_cast<int>(x), millis());'
+  - platform: template
+    id: vb_v1
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: 'ESP_LOGI("GZTEST", "ev vb_v1 %d t=%u", static_cast<int>(x), millis());'
+  - platform: template
+    id: vb_v2
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: 'ESP_LOGI("GZTEST", "ev vb_v2 %d t=%u", static_cast<int>(x), millis());'
+  - platform: template
+    id: vb_pump
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: 'ESP_LOGI("GZTEST", "ev vb_pump %d t=%u", static_cast<int>(x), millis());'
+
+garden_zones:
+  groups:
+    - id: pa
+      max_parallel: 1
+      pump_switch_id: pa_pump
+      pump_start_pump_delay: 1s
+    - id: vb
+      max_parallel: 1
+      pump_switch_id: vb_pump
+      pump_start_valve_delay: 1s
+  zones:
+    - {group: pa, valve_switch: "GZ pa 1", valve_switch_id: pa_v1, run_duration: 3s}
+    - {group: pa, valve_switch: "GZ pa 2", valve_switch_id: pa_v2, run_duration: 3s}
+    - {group: vb, valve_switch: "GZ vb 1", valve_switch_id: vb_v1, run_duration: 3s}
+    - {group: vb, valve_switch: "GZ vb 2", valve_switch_id: vb_v2, run_duration: 3s}
+
+script:
+  - id: gz_scenario
+    then:
+      - delay: 1s
+      - garden_zones.queue_zone: {id: pa, zone_number: 0}
+      - garden_zones.queue_zone: {id: pa, zone_number: 1}
+      - garden_zones.start_group_queue: pa
+      - delay: 1s
+      - wait_until:
+          condition:
+            lambda: |-
+              return !id(pa_v1).state && !id(pa_v2).state && !id(pa_pump).state &&
+                     id(pa).queued_zones().empty();
+          timeout: 30s
+      - delay: 1s
+      - logger.log: {level: INFO, tag: GZTEST, format: "group_done pa"}
+      - garden_zones.queue_zone: {id: vb, zone_number: 0}
+      - garden_zones.queue_zone: {id: vb, zone_number: 1}
+      - garden_zones.start_group_queue: vb
+      - delay: 1s
+      - wait_until:
+          condition:
+            lambda: |-
+              return !id(vb_v1).state && !id(vb_v2).state && !id(vb_pump).state &&
+                     id(vb).queued_zones().empty();
+          timeout: 30s
+      - delay: 1s
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}
