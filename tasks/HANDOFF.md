@@ -8,8 +8,8 @@ everything below is resolved.
 | Task | Branch | State |
 |---|---|---|
 | 012 groups and lanes | `task/012-groups-and-lanes` | draft PR #20, CI green, review APPROVE — **merge first** |
-| 013 watchdog + soil skip | `task/013-watchdog-and-soil-skip` (on 012) | committed; review round 3 running at the time of writing; draft PR after it |
-| 014 device + emulator → `garden_zones` | `task/014-switch-to-garden-zones` (on 013) | spec committed; implementation planned for the night run |
+| 013 watchdog + soil skip | `task/013-watchdog-and-soil-skip` (on 012) | draft PR #22 (base: 012 branch), review round 3 APPROVE, CI started via workflow_dispatch |
+| 014 device + emulator → `garden_zones` | `task/014-switch-to-garden-zones` (on 013) | implementation running (2026-10-11 night); emulator checks in a fresh dev container `gp-dev-014` (image with Xvfb) |
 | 016 SNTP time fallback | `task/016-time-fallback` | draft PR #19, CI green, review APPROVE |
 | 017 screen decisions (docs) | `task/017-screens-decision` | draft PR #21 |
 | 018 `gp_*` layer, 019 schedules | this branch `handoff/2026-10-10` | **specs only, need the author's approval** |
