@@ -560,20 +560,73 @@ TEST_CASE("resume_only_on_first_valid_tick_even_with_master_off_at_boot") {
   CHECK(fx.s.state(0).pending == 0x6u);
 }
 
-TEST_CASE("awaiting_decision_stop_keeps_pending_and_a_restart_resumes_it") {
-  // TODAY'S BEHAVIOUR, not a decision: a user STOP ends the zone with completed=false, so no zone_done call reaches
-  // the core and the zone stays pending; a restart inside the window runs it again. If the author decides that a STOP
-  // settles the slot, flip the two expectations below (and add the core call that clears the pending zones).
+TEST_CASE("stop_settles_the_slot_and_nothing_resumes_after_a_restart") {
+  // Human decision 2026-10-11: a user STOP (or entering service mode) settles today's pending zones of every slot
+  // ("stopped", not "missed"); a restart inside the window runs nothing. Only a power cut leaves zones pending.
+  Fx fx;
+  fx.n = 2;
+  fx.cfg[0] = slot(6, 0, 0x7);
+  fx.cfg[1] = slot(6, 30, 0x3);
+  fx.at(MON, 5, 59, 59);
+  fx.at(MON, 6, 0, 0);
+  fx.s.zone_done(0);  // zone 1 completed; the user then pressed STOP during zone 2
+  CHECK(fx.s.state(0).pending == 0x6u);
+  const std::vector<uint8_t> stopped = fx.s.stop_pending();
+  REQUIRE(stopped.size() == 1);  // slot 2 has not fired yet: nothing to settle
+  CHECK(stopped[0] == 0);
+  CHECK(fx.s.state(0).pending == 0u);
+  CHECK(fx.s.state(0).result == gs::Result::STOPPED);
+  CHECK(fx.s.state(0).last_fired_day == MON);  // still "handled today": no catch-up, no second run
+  CHECK(fx.s.stop_pending().empty());
+  const std::vector<gs::DayRun> runs = fx.s.day_runs(0, fx.cfg, 2);
+  REQUIRE(runs.size() == 2);
+  CHECK(runs[0].state == gs::DayRunState::STOPPED);
+  CHECK(runs[1].state == gs::DayRunState::PENDING);
+  Fx rebooted;
+  rebooted.n = 2;
+  rebooted.cfg[0] = slot(6, 0, 0x7);
+  rebooted.cfg[1] = slot(6, 30, 0x3);
+  rebooted.s.restore(0, MON, fx.s.state(0).pending);
+  gs::Events e = rebooted.at(MON, 6, 10, 0);
+  CHECK(e.fires.empty());
+  CHECK(e.missed.empty());
+}
+
+TEST_CASE("stop_settles_every_slot_with_pending_zones") {
+  Fx fx;
+  fx.n = 2;
+  fx.cfg[0] = slot(6, 0, 0x1);
+  fx.cfg[1] = slot(6, 0, 0x2);
+  fx.at(MON, 5, 59, 59);
+  CHECK(fx.at(MON, 6, 0, 0).fires.size() == 2);  // the second slot's zones wait in the engine queue
+  const std::vector<uint8_t> stopped = fx.s.stop_pending();
+  REQUIRE(stopped.size() == 2);
+  CHECK(fx.s.state(0).pending == 0u);
+  CHECK(fx.s.state(1).pending == 0u);
+  CHECK(fx.s.state(1).result == gs::Result::STOPPED);
+}
+
+TEST_CASE("a_power_cut_without_a_stop_still_resumes_the_pending_zones") {
   Fx fx;
   fx.cfg[0] = slot(6, 0, 0x7);
   fx.at(MON, 5, 59, 59);
   fx.at(MON, 6, 0, 0);
-  fx.s.zone_done(0);  // zone 1 completed; the user then pressed STOP during zone 2: no zone_done for 2 and 3
-  CHECK(fx.s.state(0).pending == 0x6u);
+  fx.s.zone_done(0);
   Fx rebooted;
   rebooted.cfg[0] = slot(6, 0, 0x7);
   rebooted.s.restore(0, MON, fx.s.state(0).pending);
   gs::Events e = rebooted.at(MON, 6, 10, 0);
   REQUIRE(e.fires.size() == 1);
   CHECK(e.fires[0].zone_mask == 0x6u);
+}
+
+TEST_CASE("a_stopped_slot_does_not_fire_again_today_but_fires_tomorrow") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0, 0x7);
+  fx.at(MON, 5, 59, 59);
+  fx.at(MON, 6, 0, 0);
+  fx.s.stop_pending();
+  CHECK(fx.at(MON, 12, 0, 0).fires.empty());
+  fx.at(MON + 1, 5, 59, 59);
+  CHECK(fx.at(MON + 1, 6, 0, 0).fires.size() == 1);
 }

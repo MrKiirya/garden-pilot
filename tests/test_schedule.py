@@ -111,9 +111,12 @@ def test_schedule_package_shape() -> None:
     assert sensors["gh_next_run_text"]["name"] == "Greenhouse next run text"
     assert sensors["gh_last_schedule"]["name"] == "Greenhouse last schedule"
     # the done mark comes from the gp hook script (extended here)
-    script, = config["script"]
-    assert script["id"]["__tag__"] == "extend" and script["id"]["value"] == "gp_gh_zone_done"
-    assert "garden_schedule.zone_done" in str(script["then"])
+    scripts = {item["id"]["value"]: item for item in config["script"]}
+    assert set(scripts) == {"gp_gh_zone_done", "gp_gh_stopped"}
+    assert all(item["id"]["__tag__"] == "extend" for item in scripts.values())
+    assert "garden_schedule.zone_done" in str(scripts["gp_gh_zone_done"]["then"])
+    # a user STOP / service mode settles the slots and clears the engine queue (decision 1, 2026-10-11)
+    assert [next(iter(step)) for step in scripts["gp_gh_stopped"]["then"]] == ["garden_schedule.cancel_pending", "gp.clear_queue"]
 
 
 @pytest.mark.unit
@@ -209,7 +212,11 @@ def test_schedule_scenario_config_shape() -> None:
     packages = config["packages"]
     for key, path in (("gh_schedule", SCHEDULE_PKG), ("core_gp", "packages/core/gp.yaml"), ("gh_gp", "packages/greenhouse/gp.yaml")):
         assert packages[key]["value"] == path
-    assert [k for k in packages if k.startswith("gh_schedule_slot_")] == ["gh_schedule_slot_1", "gh_schedule_slot_2"]
+    assert [k for k in packages if k.startswith("gh_schedule_slot_")] == [
+        "gh_schedule_slot_1",
+        "gh_schedule_slot_2",
+        "gh_schedule_slot_3",
+    ]
 
 
 # --------------------------------------------------------------------------------------------------- config / codegen
@@ -224,6 +231,8 @@ def test_schedule_codegen(version: str, tmp_path: Path) -> None:
     assert "garden_schedule::RunTrigger(" in main_cpp
     assert "gp::EnqueueZonesAction" in main_cpp and "gp::InhibitedCondition" in main_cpp
     assert "garden_schedule::ZoneDoneAction" in main_cpp
+    assert "garden_schedule::CancelPendingAction" in main_cpp and "gp::StopTrigger(" in main_cpp
+    assert "gp::ClearQueueAction" in main_cpp
     assert "gh_schedule->set_catch_up_window(60)" in main_cpp
     # the schedule header never names the engine
     assert "garden_zones" not in (HUB / "garden_schedule.h").read_text(encoding="utf-8")
@@ -310,3 +319,46 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     assert "done" in three, three[-20:]
     assert "phase=3" in three
     assert _relays(three) == [] and "quiet=1" in three
+
+    # phase 4: STOP in the middle of slot 2 settles the slot ("stopped"), nothing stays queued
+    four = _run_program(schedule_program, prefs, timeout=240)
+    assert "done" in four, four[-20:]
+    assert "phase=4" in four
+    rel4 = _relays(four)
+    assert any(row[2] == 1 for row in rel4) and any(row[3] == 1 for row in rel4), "slot 2 ran zones 1 and 2"
+    assert all(row[4] == 0 for row in rel4)
+    assert "stopped_idle=1 queue=0" in four, four[-10:]
+    assert _value(four, "last").endswith("#2 stopped"), four
+
+    # phase 5: restart inside the window: the stopped slot does not resume (decision 1)
+    five = _run_program(schedule_program, prefs, timeout=420)
+    assert "done" in five, five[-30:]
+    assert "phase=5" in five
+    assert "quiet=1 queue=0" in five, "a STOP settles the slot: nothing runs after a restart"
+    # (a) a deferred queue start is cancelled by STOP
+    assert "deferred=1 enq=1 queue=0" in five, "enqueue + start during a manual cycle are held back, nothing is queued"
+    assert "cycle_stop_quiet=1 queue=0 deferred=0 enq=0" in five, five
+    # (b) a slot firing during a manual full cycle is queued after it (decision 2)
+    at_fire = next(m for m in five if m.startswith("at_fire "))
+    assert "r2=1" in at_fire and "deferred=1 enq=1 queue=0" in at_fire, at_fire
+    cycle_t = int(re.match(r"cycle_start t=(\d+)", next(m for m in five if m.startswith("cycle_start "))).group(1))
+    rel5 = [row for row in _relays(five) if row[0] >= cycle_t]
+    # relay changes after the cycle started: cycle bed 1, cycle bed 2, then the slot's bed 1 and bed 2
+    seq = [(i, row) for i, row in enumerate(rel5)]
+    events = []
+    previous = (0, 0, 0)
+    for t, _sec, r1, r2, r3 in rel5:
+        for number, (old, new) in enumerate(zip(previous, (r1, r2, r3)), start=1):
+            if old != new:
+                events.append((number, new, t))
+        previous = (r1, r2, r3)
+    assert [(n, v) for n, v, _t in events] == [(1, 1), (1, 0), (2, 1), (2, 0), (1, 1), (1, 0), (2, 1), (2, 0)], (events, seq)
+    cycle_bed1 = events[1][2] - events[0][2]
+    cycle_bed2 = events[3][2] - events[2][2]
+    queued_bed1 = events[5][2] - events[4][2]
+    queued_bed2 = events[7][2] - events[6][2]
+    assert cycle_bed1 >= 55000 and cycle_bed2 >= 55000, "the cycle runs to its end undisturbed"
+    assert 3000 <= queued_bed1 <= 12000 and 3000 <= queued_bed2 <= 12000, "the slot's beds run at 10 %"
+    assert events[4][2] >= events[3][2] + 4000, "the slot's zones start only after the cycle ended"
+    assert "end_quiet=1 queue=0 deferred=0" in five, five
+    assert _value(five, "last").endswith("#3 ran"), five

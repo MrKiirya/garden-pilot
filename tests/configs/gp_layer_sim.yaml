@@ -256,7 +256,8 @@ script:
       - gp.start_queue: gp_greenhouse
       - delay: 8s
       - script.execute: {id: gp_mark, label: s9_b}
-      # 9b. a queue run ended by stop_all (also with clear_queue): completed=0
+      # 9b. a queue run ended by stop_all (also with clear_queue): completed=0 (the schedule package settles the slots
+      # on the group's on_stop instead of leaving the zone pending; see tests/configs/schedule_sim.yaml)
       - gp.enqueue_zone: {id: gp_greenhouse, zone: 1, duration: 30s}
       - gp.start_queue: gp_greenhouse
       - wait_until:

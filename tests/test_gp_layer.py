@@ -126,11 +126,12 @@ def test_lvgl_only_from_pollers() -> None:
 def test_gp_yaml_shape() -> None:
     config = _load(GH_GP)
     group, = config["gp"]["groups"]
-    # on_zone_finished is the hook for the schedule's done marks (task 019); the rest is the group declaration
-    assert {k: v for k, v in group.items() if k != "on_zone_finished"} == {
+    # on_zone_finished / on_stop are the hooks for the schedule (done marks, STOP settles the slots; task 019)
+    assert {k: v for k, v in group.items() if k not in ("on_zone_finished", "on_stop")} == {
         "id": "gp_greenhouse", "name": "Greenhouse", "key": "greenhouse", "garden_zones_id": "gh_zones"
     }
     assert "gp_gh_zone_done" in str(group["on_zone_finished"])
+    assert group["on_stop"] == [{"script.execute": "gp_gh_stopped"}]
     assert config["binary_sensor"][0]["condition"] == {"gp.watchdog_tripped": "gp_greenhouse"}
     assert config["binary_sensor"][0]["name"] == "Greenhouse watchdog" and config["binary_sensor"][0]["device_class"] == "problem"
     button = config["button"][0]
@@ -177,8 +178,20 @@ def test_zone_switches_replace_engine_switches() -> None:
 
 
 @pytest.mark.unit
+def test_stop_and_deferred_start_are_documented_and_wired() -> None:
+    readme = (COMPONENT / "README.md").read_text(encoding="utf-8")
+    for needle in ("gp.clear_queue", "on_stop", "deferred", "held back"):
+        assert needle in readme, needle
+    source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+    assert '"gp.clear_queue"' in source and 'CONF_ON_STOP = "on_stop"' in source
+    gp_yaml = (REPO_ROOT / GH_GP).read_text(encoding="utf-8")
+    assert "on_stop:" in gp_yaml and "gp_gh_stopped" in gp_yaml
+    assert (REPO_ROOT / "tests" / "cpp" / "test_gp_deferred_start.cpp").is_file()
+
+
+@pytest.mark.unit
 def test_pure_headers() -> None:
-    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h"):
+    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h", "deferred_start.h"):
         text = (COMPONENT / name).read_text(encoding="utf-8")
         assert "esphome/" not in re.sub(r"namespace esphome::", "", text), f"{name} must stay free of ESPHome includes"
         assert not re.search(r'#include\s+"esphome/', text), name
@@ -390,7 +403,7 @@ def test_gp_layer_host_scenario(gp_program: Path, tmp_path: Path) -> None:
 
     # a queue run that ends by itself is done
     assert fins("s9_a", "s9_b") == ["fin zone=0 completed=1"], fins("s9_a", "s9_b")
-    # stop_all (even with clear_queue) is not done: the zone stays pending for the schedule
+    # stop_all (even with clear_queue) is not a done mark; the schedule settles the slots on the group's on_stop
     assert fins("s9_b", "s9_c") == ["fin zone=1 completed=0"], fins("s9_b", "s9_c")
     # a manual run is never a done mark
     assert fins("s9_c", "s9_d") == ["fin zone=2 completed=0"], fins("s9_c", "s9_d")
