@@ -1,6 +1,6 @@
 # 019 — Watering schedules on the device (slots per group, HA-editable, next run)
 
-Status: planned
+Status: in-review
 Roadmap: SPEC §9 item 11 "Schedules (WATER tab) with the now/next + day timeline widget" — **schedules part 1 of 2**
 (019: engine, entities, HA editing, next-run data; the WATER tab editor and the now/next + timeline widget are stage 9
 screen tasks). Bed heating and alerts are separate tasks.
@@ -285,20 +285,20 @@ with timeouts:
   text patterns work.
 
 ## Acceptance criteria
-- [ ] `script/test-cpp` → `test_schedule` all pass (and the existing C++ tests).
-- [ ] `uv run pytest -m unit` → all pass.
-- [ ] `script/lint` → clean; `esphome config OK` for both entry files.
-- [ ] `script/test` → all pass incl. the new config rows and the host scenario (devcontainer, `GP_REQUIRE_SDL=1
+- [x] `script/test-cpp` → `test_schedule` all pass (and the existing C++ tests).
+- [x] `uv run pytest -m unit` → all pass.
+- [x] `script/lint` → clean; `esphome config OK` for both entry files.
+- [x] `script/test` → all pass incl. the new config rows and the host scenario (devcontainer, `GP_REQUIRE_SDL=1
       GP_REQUIRE_CXX=1`: no skips); wall time before/after recorded.
-- [ ] `GP_SECRETS=example script/compile` and `GP_SECRETS=example GP_ESPHOME=minimum script/compile` → ESP32 OK; same
+- [x] `GP_SECRETS=example script/compile` and `GP_SECRETS=example GP_ESPHOME=minimum script/compile` → ESP32 OK; same
       for `garden-pilot-sim.yaml`; flash/RAM delta recorded.
-- [ ] `git grep -n -e 'garden_zones\.' -e 'sprinkler\.' -- packages/greenhouse/schedule*.yaml components/garden_schedule*`
+- [x] `git grep -n -e 'garden_zones\.' -e 'sprinkler\.' -- packages/greenhouse/schedule*.yaml components/garden_schedule*`
       → no hits (principle 2).
-- [ ] `git grep -n 'on_time:' -- packages` → no new cron trigger for watering.
-- [ ] Emulator checks E1-E4 done and reported (E5 if HA is at hand).
+- [x] `git grep -n 'on_time:' -- packages` → no new cron trigger for watering.
+- [x] Emulator checks E1-E4 done and reported (E5 if HA is at hand).
 - [ ] CI green (`checks`, `compile (pinned)`, `compile (minimum)`).
-- [ ] Docs updated (SPEC §4, §8, §9 item 11, §11; CLAUDE.md; READMEs in sync; component README).
-- [ ] Implementation notes state what ran on the breadboard device.
+- [x] Docs updated (SPEC §4, §8, §9 item 11, §11; CLAUDE.md; READMEs in sync; component README).
+- [x] Implementation notes state what ran on the breadboard device.
 
 **Needs real hardware (not CI):** a slot fires on time with HA stopped and SNTP as the only clock source (016); power
 cut 10 min after a missed start → catch-up once; power cut 2 h after → "missed", no run; after an OTA reboot the clock is
@@ -334,4 +334,63 @@ valid immediately (log line). Unverifiable here: DST change on the device (cover
 
 <!-- Filled in by implementer -->
 ## Implementation notes
+Milestone log.
+- M1 (pure core): `components/garden_schedule/schedule_core.h` + `tests/cpp/test_schedule.cpp` (fake clock; 19 cases incl. DST, jumps,
+  mono wrap, per-zone pending / restart rules). `script/test-cpp` green (63 cases).
+- M2 (glue): `garden_schedule.h` (hub: 1 s tick, entity reads, preference + `global_preferences->sync()` after every mark change,
+  next-run publishing, `skip_if`, `on_run`), `garden_schedule/__init__.py`, `garden_schedule_slot/__init__.py`;
+  `packages/greenhouse/schedule.yaml`, `schedule_slot.yaml`; both entry files include the hub and slots 1, 2.
+- M3 (tests/docs): `tests/test_schedule.py` (unit shape, python component, codegen pinned+minimum, host scenario),
+  `tests/configs/schedule_sim.yaml`, config-matrix rows (`schedule_headless`, `schedule_no_slots`, `schedule_window_zero`,
+  `schedule_window_too_long` and `schedule_bad_slot` expected failures, `sim_schedule_api_only`), `sim-ctl text` / `time`
+  (+ tests), SPEC 4 / 8 / 9 / 11, CLAUDE.md, READMEs, `components/garden_schedule/README.md`.
+- M4 (checks): `script/lint` ok; host scenario 1 passed (~2 min, three program runs on one preferences dir);
+  ESP32 pinned compile OK: flash 1228839 -> 1248859 (+20020, 68.1 % of the app partition), RAM 123339 -> 126227. Full
+  `script/test`: first run 739 passed / 3 failed (old tests needing the new packages: substitution check, external_components rule, entity-name filter); adapted, re-run of those green; second full run: 742 passed in 17:05 (UV_OFFLINE=1, GP_REQUIRE_CXX=1); lint ok.
+
+Decisions / deviations (018 names win; each marked where it differs from the spec's guesses):
+- Human decisions implemented: 2 slots by default (max 8); zone list + one multiplier 10-200 %; days = 7 switches per slot
+  (so no `parse_days`; `parse_zones` and its cpp test remain); catch-up 60 min (`gh_schedule_catch_up_window`); per-zone done
+  mark: a fired slot keeps a `pending` zone mask (persisted with `last_fired_day`, saved + synced at once), `garden_schedule.zone_done`
+  clears a zone, a restart inside the window re-fires only the pending zones, outside it they are logged as missed;
+  master switch "Greenhouse schedules" default ON, slots default OFF; slot entities `entity_category: config`.
+- D1: `gp.enqueue_zones {mask, pct}` added to `components/gp` (018 had none): fresh engine read, zones queued or running are
+  not queued again, run = zone run duration x pct cut to the zone maximum (018's clamp). No change to the GPL fork.
+- D2 (to verify): `gp.start_queue` on a lane that is already running from the queue is a no-op (stock `start_from_queue`); on a lane
+  running a full cycle it switches it to queue mode. Not exercised.
+- D3/D4: 018 ships the service mode as `gp.inhibit` plus the global `gp_service_mode`; the skip condition is a new
+  `gp.inhibited` condition (so the schedule works in headless configs without LVGL). No next-run entity existed in 018: the hub's
+  entities are the source.
+- Completion hook: `gp` group option `on_zone_finished (zone, completed)`; `completed` = queue-sourced run that was not ended by
+  `stop_all` within 3 s. `packages/greenhouse/gp.yaml` calls the hook script `gp_gh_zone_done`, which `schedule.yaml` extends with
+  `garden_schedule.zone_done` (script `!extend` appends the action). A manual run of a pending zone does not count.
+- `on_run` uses the `gp.*` actions directly (018 has actions, not `gp_*` scripts), so the shape test asserts `gp.enqueue_zones` + `gp.start_queue` only.
+- Zone count for zone lists: hub option `zone_count`, default = number of `gp_zone` entries (so adding a bed needs no edit).
+- Next run: text sensor with ISO timestamp (offset from `recalc_timestamp_local`); the emulator showed `2026-10-11T06:28:00+00:00` (UTC
+  container); HA rendering still to verify. The "last schedule" text is `06:28 #1 ran` / `ran (catch-up)` / `missed (40 min late)` /
+  `skipped: service mode` (the spec's "missed (clock)" wording dropped: the minutes are more useful).
+- Host scenario (spec step 3 was a leftover note): now three runs on one preferences directory: phase 1 fires slot 1 (zones 1 2 at 10 %),
+  zone 1 completes, the program is killed inside zone 2; phase 2 restarts: only zone 2 runs (catch-up), zone 1 does not; phase 3: nothing
+  runs. Slot 2 (disabled, zone 3) never runs. The `gp_service_mode` skip is covered by the emulator (E4) and cpp (`mark_skipped`), not the host run.
+- Cuts: none of the cut list (`sim-ctl` text/time support was implemented, 3 small subcommands `text` / `time`).
+  Not done: HA by IP (E5), `GP_ESPHOME=minimum` ESP32 compile (codegen test covers minimum; CI compiles it), sim ESP32/host compile outside the emulator run, wall-time
+  before/after comparison of `script/test`.
+
+Emulator (script/sim-ui + sim-ctl, fresh `ESPHOME_PREFDIR`, container clock UTC):
+- E1 ok: slot 1 start now+2 min, zones "1 3", multiplier 10, enabled: next run text "Sun 06:28", at 06:28:00 `SIM relay_1 ON`, 30 s later relay_3, relay_2
+  never; "last schedule" = `06:28 #1 ran`, next run text = tomorrow.
+- E2 ok: restart 1.5 min after the run: no second run, settings restored.
+- E3 ok: slot 2 at now+4 min, emulator stopped, restarted 1 min after the start: catch-up fired once ("ran (catch-up)"). With
+  `GP_SIM_SUBST=gh_schedule_catch_up_window=0s` and a slot 40 min late: WARN "slot 1 missed: 40 min late, not run", nothing ran.
+  (The E3 wording of the spec was fixed: the slot is not set "to now - 10 min" while stopped; the persisted start is set while running and the 60 s flash batching is waited out.)
+- E4 ok: SETUP > SERVICE (valve test) -> `starts inhibited (service mode)`; slot 2 fired -> "skipped: service mode", no relay.
+- E5 not done (no HA).
+Not verified on hardware: everything (breadboard run, SNTP-only clock, power cut, valid clock after OTA reboot).
+
 ## Follow-ups
+- Rain skip / HA rain delay entity (the `skip_if` list is the hook); global multiplier entity (setter exists).
+- Per-slot per-zone minutes; the WATER tab editor and now/next + timeline widget consume `next_run()` / `day_runs()`.
+- `gp.start_queue` while a full cycle runs on the lane switches it to queue mode (D2): decide in the widget / engine task.
+- A zone skipped by the engine (wet soil, disabled) never completes, so it stays pending and re-queues after a restart inside the window.
+- Verify on a device: HA renders "Greenhouse next run" (timestamp, empty when none); clock valid after an OTA reboot.
+- Slot entities per slot: 11 (days are 7 switches); add a card/grouping on the HA side if it is too noisy.
