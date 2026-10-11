@@ -219,7 +219,8 @@ def test_entity_names_kept(tmp_path: Path) -> None:
     }
     assert expected <= names, sorted(expected - names)
     irrigation_like = {
-        n for n in names if n.startswith("Greenhouse") and re.search(r"irrigation|advance|bed|watchdog|valve|zone", n, re.I)
+        n for n in names if n.startswith("Greenhouse") and "schedule" not in n.lower()
+            and re.search(r"irrigation|advance|bed|watchdog|valve|zone", n, re.I)
     }
     assert irrigation_like == expected, sorted(irrigation_like ^ expected)
 

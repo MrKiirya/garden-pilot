@@ -68,6 +68,8 @@ BED_FILE = "packages/greenhouse/bed.yaml"
 BED_SOIL_FILE = "packages/greenhouse/bed_soil.yaml"
 SIM_BED_SOIL = REPO_ROOT / "packages" / "sim" / "bed_soil.yaml"
 SIM_BED_SOIL_FILE = "packages/sim/bed_soil.yaml"
+SCHEDULE_SLOT = REPO_ROOT / "packages" / "greenhouse" / "schedule_slot.yaml"
+SCHEDULE_SLOT_FILE = "packages/greenhouse/schedule_slot.yaml"
 _EXAMPLE_START = re.compile(r"^  # ([A-Za-z0-9_]+): !include\s*$")
 _EXAMPLE_CONT = re.compile(r"^  #   ")
 
@@ -380,6 +382,7 @@ def test_substitutions_resolve() -> None:
         BED: set().union(*(set(i["vars"]) for i in _entry_includes(BED_FILE))),
         BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(BED_SOIL_FILE))),
         SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
+        SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
     }
     missing = set()
     for path in package_files:

@@ -125,9 +125,12 @@ def test_lvgl_only_from_pollers() -> None:
 @pytest.mark.unit
 def test_gp_yaml_shape() -> None:
     config = _load(GH_GP)
-    assert config["gp"]["groups"] == [
-        {"id": "gp_greenhouse", "name": "Greenhouse", "key": "greenhouse", "garden_zones_id": "gh_zones"}
-    ]
+    group, = config["gp"]["groups"]
+    # on_zone_finished is the hook for the schedule's done marks (task 019); the rest is the group declaration
+    assert {k: v for k, v in group.items() if k != "on_zone_finished"} == {
+        "id": "gp_greenhouse", "name": "Greenhouse", "key": "greenhouse", "garden_zones_id": "gh_zones"
+    }
+    assert "gp_gh_zone_done" in str(group["on_zone_finished"])
     assert config["binary_sensor"][0]["condition"] == {"gp.watchdog_tripped": "gp_greenhouse"}
     assert config["binary_sensor"][0]["name"] == "Greenhouse watchdog" and config["binary_sensor"][0]["device_class"] == "problem"
     button = config["button"][0]
