@@ -83,6 +83,22 @@ garden_zone:                                                # one list item per 
 - The 008 list form above keeps working; it cannot be combined with `garden_zone:` entries. **It has no watchdog and
   no soil skip**: a device must use the groups form.
 
+## Group entities and read accessors (groups form, task 014)
+A group takes the same entity sub-schemas as the stock controller (`SprinklerControllerSwitch`, same defaults):
+- `main_switch: <name or {id, name, icon, on_turn_on, ...}>`: ON starts a full cycle of the group (`start_group_cycle`),
+  OFF shuts the group down; its state is "any zone of the group is active". Difference to stock: no "resume a paused
+  run" (groups have no pause).
+- `auto_advance_switch: <name or {...}>` (`entity_category: config`, default `RESTORE_DEFAULT_OFF`): one switch per
+  group. ON: every lane goes on to its next zone; OFF: every lane stops after its current zone. It writes the stored
+  auto-advance of every lane (also the restored state at boot); its state is "any lane has auto-advance", so
+  `start_group_queue` (which turns auto-advance off, as in the stock component) is reflected by the switch.
+
+Action `garden_zones.clear_group_queue: <group>` drops every queued zone of the group (a running zone keeps running).
+Read accessors on the group object for lambdas: `active_zones()`, `queued_zones()`, `auto_advance()`,
+`any_zone_active()`, `watchdog_tripped()`, `zone_locked(zone)`, `time_remaining_zone(zone)` (seconds, when that zone is
+the active zone of its lane), `time_remaining()` (largest over the lanes) and `queue_time()` (largest over the lanes: they
+run in parallel).
+
 ## Safety: watchdog and soil moisture skip (groups form)
 
 Every group gets a watchdog, on by default (a limit is disabled only explicitly with `never`, like
@@ -161,6 +177,8 @@ garden_zone:
 5. `groups:` form with generated lanes (`groups`); lane mode: a controller without an auto-advance switch keeps its
    own auto-advance state, default off (`lanes`).
 6. A per-valve skip check, asked when a valve's turn comes in the queue or a cycle (`zone-skip`).
+7. A restored run-duration number outside `min_value..max_value` is clamped (and logged at WARN) instead of published
+   as saved (`number-clamp`): a value saved under an older, larger max must not outrun the watchdog.
 
 **Accepted by design (stock handover):** when a run ends, the next valve of the same lane opens before the finished one
 is switched off, so two valves of a lane can be on together for up to one main-loop pass. Pump protection comes first:

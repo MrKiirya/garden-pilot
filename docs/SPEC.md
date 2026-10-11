@@ -48,6 +48,8 @@ Checked against `esphome/components/sprinkler/` on the `dev` branch, 2026-10-01:
   The current greenhouse page uses it for its RUN buttons.
 - Queued zones run **even if their enable switch is off**.
 - The `Sprinkler` class is `final` (since July 2026): it cannot be subclassed.
+- The device and the emulator no longer use the stock `sprinkler` (task 014); the limits above are kept for reference
+  (the forked engine works around them, see §4).
 - Forked into `components/garden_zones/` from tag 2026.9.1 (task 008): open persistent queue, manual run that keeps
   the queue, disabled zones skipped; see `components/garden_zones/PATCHES.md`.
 - No functional changes since spring 2026. The `millis()` overflow fix (esphome#14299) shipped in
@@ -130,8 +132,9 @@ script:
 # entities: gp_bed1_state, gp_queue_text, ...
 ```
 
-So screens and HA do not depend on the engine. The current greenhouse page still calls the stock `sprinkler`
-directly; it moves to `gp_*` when the layer is introduced.
+So screens and HA do not depend on the engine. The current greenhouse page, the Home status, the valve test and the
+screensaver status still call `garden_zones.*` on the group `gh_zones` directly (task 014, a mechanical rename of the
+old `sprinkler.*` calls); they move to `gp_*` when the layer is introduced (stage 8).
 The full list of `gp_*` actions and entities is a roadmap task.
 
 ### 4.2 Loading our own component
@@ -161,10 +164,12 @@ external_components:
   and adds `core/time_host.yaml` (PC clock, same id `ha_time`) and `packages/display_sdl.yaml` (SDL window + mouse
   touch, same ids as `display_touch.yaml`).
   Task 005 adds (done):
-  - `packages/greenhouse/bed.yaml`, included once per bed with `vars` (`bed`, `bed_name`, `relay`); it adds one
-    valve to the stock `gh_sprinkler` with `!extend` (lists in an extended item are concatenated in package order,
-    so the order of the bed blocks is the valve order). At least 2 beds with the stock sprinkler (it forbids the
-    controller switches and the enable switch with one valve); a 1-bed greenhouse comes with `garden_zones`.
+  - `packages/greenhouse/bed.yaml`, included once per bed with `vars` (`bed`, `bed_name`, `relay`); since task 014 it is
+    one `garden_zone:` list item of the group `gh_zones` declared in `packages/greenhouse/irrigation.yaml` (the order
+    of the bed blocks is the zone order). One bed is enough (headless; the greenhouse page still expects beds 1-3).
+    The group has the substitutions `gh_max_parallel` (default `"1"`: one valve at a time; `"all"` = every bed at once),
+    `gh_max_on_time` (watchdog, default `60min`, `never` disables it), `gh_bed_run_max` (run-duration number max, minutes,
+    default `55`) and `gh_bed_run_initial` (default `5`); `gh_bed_run_max * 60 s + 2 s <= gh_max_on_time` is enforced.
   - optional `packages/greenhouse/bed_soil.yaml` per bed (reporting soil moisture sensor; vars `bed`, `bed_name`,
     `adc_pin`, `cal_dry_v`, `cal_wet_v`); one ADC pin serves one probe.
   - the board profile holds the raw relay drivers as internal switches `board_relay_N` (the same ids in every
@@ -223,6 +228,10 @@ tests/
    runs. The sim-only `SIM` button (top layer) opens a page with relay indicators, one slider per value and the drift
    switch. `script/sim-ctl` (`aioesphomeapi`, no new dependency) lists, reads and sets entities of the running
    emulator; it is unit-tested with a fake client. The device config is unchanged (normalized `esphome config` diff).
+   **Watchdog fault injection (task 014):** the watchdog never trips in normal use, so the emulator has a sim-only switch
+   "Sim rogue relay 1" (`packages/sim/fault.yaml`) that turns `board_relay_1` on outside the engine, and
+   `GP_SIM_SUBST="key=value ..."` (`script/sim`, `script/sim-ui start` inherits it) overrides substitutions for the run,
+   e.g. `gh_max_on_time=125s gh_bed_run_max=2 gh_bed_run_initial=1` for a short limit.
 5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch (done, `display_sdl.yaml`); headless screenshots and taps
    exist (task 015: `script/sim-ui` on a private Xvfb, X-level grab + xdotool press/move/release, works on every supported
    ESPHome version; CI job `sim-ui`, not required, uploads the PNGs). SDL `headless: true` and `snapshot` (BMP) need
@@ -241,7 +250,7 @@ tests/
   stay closed. It shows Home on Wi-Fi connect (`wifi: on_connect`, device only) or after `boot_offline_timeout`
   (30 s; 3 s in the emulator, which has no Wi-Fi). It never touches an actuator. Home Assistant is not awaited.
 - **Valve test and service mode** (`valve_test_page`, D18; Setup > SERVICE): TEST opens one greenhouse valve (beds 1-3)
-  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the sprinkler opens the valve ~2 s after the tap, so it is open ~8 s and the countdown stops near 2 s); every start
+  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the lane opens the valve ~2 s after the tap (switching delay, unchanged by task 014), so it is open ~8 s and the countdown stops near 2 s; since task 014 TEST runs `garden_zones.run_zone` on the group `gh_zones`, a bed locked by the watchdog is refused and its row stays "closed"); every start
   shuts down the previous valve first. While the page is open `gp_service_mode` is on: the queue is cleared and any
   run not started by the test (Home Assistant, queue) is shut down within 1 s with a WARN log. Service mode ends by
   EXIT SERVICE, by leaving the page, after 10 minutes without a test, or by a reboot (not restored). Blocking Home
@@ -292,7 +301,8 @@ tests/
    via lanes, watchdog, optional soil-moisture skip. Task 008: fork + open/persistent queue, manual run keeps the
    queue, disabled zones skipped; task 012: `groups:` / `garden_zone:` config with generated lanes, shared pump and
    group actions (in a host test build only); task 013: watchdog for valves and the pump and the per-zone soil-moisture
-   skip (host test build only); device switch 014.
+   skip (host test build only); task 014: the device and the emulator run the greenhouse on `garden_zones` (group `gh_zones`,
+   group entities with the old names plus "Greenhouse watchdog" and its reset button, watchdog 60 min by default).
 8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.
