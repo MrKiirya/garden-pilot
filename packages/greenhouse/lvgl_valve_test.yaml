@@ -1,22 +1,23 @@
 # Valve test and service mode (draft D18; task 010). ACTUATOR-FACING: a TEST button opens one real valve.
-# Opened from Setup > SERVICE. Greenhouse-specific (it uses gh_sprinkler); rows for beds 1-3 only, like the
-# greenhouse page, until stage 8 moves this to the gp_* layer (principle 2: the direct sprinkler.* calls here are
+# Opened from Setup > SERVICE. Greenhouse-specific (it uses gh_zones); rows for beds 1-3 only, like the
+# greenhouse page, until stage 8 moves this to the gp_* layer (principle 2: the direct garden_zones.* calls here are
 # legacy on purpose).
 #
 # SAFETY (human's call to change):
 # - `valve_test_max_time` is the longest a test valve stays open. It MUST NOT exceed 10 s (tests/test_service.py).
-#   It is enforced twice: `run_duration` of sprinkler.start_single_valve and the independent
+#   It is enforced twice: `run_duration` of garden_zones.run_zone and the independent
 #   `gp_valve_test_guard` script that shuts everything down after the same time (holds even if run_duration were
 #   ignored).
-# - Timing: the guard counts from the tap, but the sprinkler opens the valve about 2 s later (start delay after
-#   the shutdown), so a test valve is really open about 8 s and the "OPEN - N s" countdown stops near 2 s.
-# - One valve at a time: every start shuts the sprinkler down first.
+# - Timing: the guard counts from the tap, but the lane opens the valve about 2 s later (switching delay after
+#   the shutdown; measured again in the emulator for task 014), so a test valve is really open about 8 s and the
+#   "OPEN - N s" countdown stops near 2 s.
+# - One valve at a time: every start shuts the group down first.
 # - Service mode (`gp_service_mode`, not restored: a reboot always leaves it) is on while the page is open. On entry
 #   everything is stopped and the queue cleared. A 1 s poller shuts down any run that was not started by the test
 #   (Home Assistant, queue) with a WARN log. Service mode ends by EXIT SERVICE, by leaving the page, after 10 min of
-#   no test (`gp_service_session`) or by a reboot; each end shuts the sprinkler down.
-# - Only sprinkler.start_single_valve / shutdown / clear_queued_valves on gh_sprinkler; never a raw relay or a
-#   zone switch.
+#   no test (`gp_service_session`) or by a reboot; each end shuts the group down.
+# - Only garden_zones.run_zone / shutdown_group / clear_group_queue on gh_zones; never a raw relay or a
+#   zone switch. A bed locked by the watchdog is refused by run_zone (its row stays "closed").
 # Needs gh_irrigation, the beds 1-3 and lvgl_page_setup (the SERVICE tile). Tokens only; ASCII only.
 
 substitutions:
@@ -32,8 +33,8 @@ script:
   - id: gp_service_enter
     mode: restart
     then:
-      - sprinkler.shutdown: gh_sprinkler
-      - sprinkler.clear_queued_valves: gh_sprinkler
+      - garden_zones.shutdown_group: gh_zones
+      - garden_zones.clear_group_queue: gh_zones
       - globals.set:
           id: gp_service_mode
           value: "true"
@@ -49,12 +50,12 @@ script:
           condition:
             lambda: "return id(gp_service_mode);"
           then:
-            - sprinkler.shutdown: gh_sprinkler
+            - garden_zones.shutdown_group: gh_zones
             # The guard starts before the valve opens, so the open time can only be shorter than the limit.
             - script.execute: gp_valve_test_guard
-            - sprinkler.start_single_valve:
-                id: gh_sprinkler
-                valve_number: !lambda "return valve;"
+            - garden_zones.run_zone:
+                id: gh_zones
+                zone_number: !lambda "return valve;"
                 run_duration: ${valve_test_max_time}
             - script.execute: gp_service_session
 
@@ -63,13 +64,13 @@ script:
     mode: restart
     then:
       - delay: ${valve_test_max_time}
-      - sprinkler.shutdown: gh_sprinkler
+      - garden_zones.shutdown_group: gh_zones
 
   - id: gp_valve_test_stop
     mode: restart
     then:
       - script.stop: gp_valve_test_guard
-      - sprinkler.shutdown: gh_sprinkler
+      - garden_zones.shutdown_group: gh_zones
 
   - id: gp_service_session
     mode: restart
@@ -82,7 +83,7 @@ script:
     then:
       - script.stop: gp_valve_test_guard
       - script.stop: gp_service_session
-      - sprinkler.shutdown: gh_sprinkler
+      - garden_zones.shutdown_group: gh_zones
       - globals.set:
           id: gp_service_mode
           value: "false"
@@ -94,7 +95,7 @@ script:
     then:
       - script.stop: gp_valve_test_guard
       - script.stop: gp_service_session
-      - sprinkler.shutdown: gh_sprinkler
+      - garden_zones.shutdown_group: gh_zones
       - globals.set:
           id: gp_service_mode
           value: "false"
@@ -108,8 +109,7 @@ interval:
             and:
               - lambda: "return id(gp_service_mode);"
               - lambda: |-
-                  return id(gh_sprinkler)->active_valve().has_value() ||
-                         id(gh_sprinkler)->queued_valve().has_value();
+                  return !id(gh_zones)->active_zones().empty() || !id(gh_zones)->queued_zones().empty();
               - not:
                   script.is_running: gp_valve_test_guard
           then:
@@ -117,19 +117,19 @@ interval:
                 level: WARN
                 tag: gp_service
                 format: "service mode: external start blocked"
-            - sprinkler.shutdown: gh_sprinkler
-            - sprinkler.clear_queued_valves: gh_sprinkler
+            - garden_zones.shutdown_group: gh_zones
+            - garden_zones.clear_group_queue: gh_zones
       - if:
           condition:
             lambda: |-
-              auto v = id(gh_sprinkler)->active_valve();
-              return v.has_value() && v.value() == 0;
+              auto az = id(gh_zones)->active_zones();
+              return std::find(az.begin(), az.end(), (size_t) 0) != az.end();
           then:
             - lvgl.label.update:
                 id: valve_test_bed1_status
                 text: !lambda |-
                   char buf[20];
-                  auto tr = id(gh_sprinkler)->time_remaining_active_valve();
+                  auto tr = id(gh_zones)->time_remaining_zone((size_t) 0);
                   snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
                   return std::string(buf);
                 text_color: 0x78dc77
@@ -141,14 +141,14 @@ interval:
       - if:
           condition:
             lambda: |-
-              auto v = id(gh_sprinkler)->active_valve();
-              return v.has_value() && v.value() == 1;
+              auto az = id(gh_zones)->active_zones();
+              return std::find(az.begin(), az.end(), (size_t) 1) != az.end();
           then:
             - lvgl.label.update:
                 id: valve_test_bed2_status
                 text: !lambda |-
                   char buf[20];
-                  auto tr = id(gh_sprinkler)->time_remaining_active_valve();
+                  auto tr = id(gh_zones)->time_remaining_zone((size_t) 1);
                   snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
                   return std::string(buf);
                 text_color: 0x78dc77
@@ -160,14 +160,14 @@ interval:
       - if:
           condition:
             lambda: |-
-              auto v = id(gh_sprinkler)->active_valve();
-              return v.has_value() && v.value() == 2;
+              auto az = id(gh_zones)->active_zones();
+              return std::find(az.begin(), az.end(), (size_t) 2) != az.end();
           then:
             - lvgl.label.update:
                 id: valve_test_bed3_status
                 text: !lambda |-
                   char buf[20];
-                  auto tr = id(gh_sprinkler)->time_remaining_active_valve();
+                  auto tr = id(gh_zones)->time_remaining_zone((size_t) 2);
                   snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
                   return std::string(buf);
                 text_color: 0x78dc77

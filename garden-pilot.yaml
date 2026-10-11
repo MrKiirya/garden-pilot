@@ -58,8 +58,11 @@ packages:
 
   # Greenhouse (all under packages/greenhouse/ — include each fragment explicitly).
   # Needs display_touch + the LVGL pages above until stage 8; irrigation must come before its page.
-  # Irrigation controller first, then one block per bed (at least 2 with the stock sprinkler). The order of the
-  # bed blocks is the valve order; the greenhouse page expects exactly beds 1-3 until stage 9.
+  # Irrigation group first (garden_zones group gh_zones), then one block per bed (at least 1). The order of the bed
+  # blocks is the zone order; the greenhouse page expects exactly beds 1-3 until stage 9. Defaults to override in the
+  # `substitutions:` above when needed (see packages/greenhouse/irrigation.yaml): gh_max_parallel ("1" = one valve at a
+  # time, "all" = every bed at once), gh_max_on_time (watchdog, default 60min), gh_bed_run_max (default 55 min; keep
+  # gh_bed_run_max * 60 s + 2 s <= gh_max_on_time).
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
   gh_bed_1: !include
     file: packages/greenhouse/bed.yaml

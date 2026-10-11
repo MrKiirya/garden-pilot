@@ -60,6 +60,8 @@ packages:
   lvgl_page_setup: !include packages/lvgl/page_setup.yaml
   lvgl_page_network: !include packages/lvgl/page_network.yaml
 
+  # garden_zones group gh_zones; override gh_max_parallel / gh_max_on_time / gh_bed_run_max here or per run with
+  # GP_SIM_SUBST (see script/sim). At least 1 bed.
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
   gh_bed_1: !include
     file: packages/greenhouse/bed.yaml
@@ -87,6 +89,8 @@ packages:
   # Simulated sensors (settable numbers; display-free), auto drift, and their on-screen part.
   sim_sensors: !include packages/sim/sensors.yaml
   sim_drift: !include packages/sim/drift.yaml
+  # Fault injection for the watchdog scenario (switch "Sim rogue relay 1"); see the file header.
+  sim_fault: !include packages/sim/fault.yaml
   # Comment out the next two to drop the SIM page and the Home/Greenhouse sensor values.
   sim_sensors_lvgl: !include packages/sim/sensors_lvgl.yaml
   sim_page_board: !include packages/sim/page_board.yaml

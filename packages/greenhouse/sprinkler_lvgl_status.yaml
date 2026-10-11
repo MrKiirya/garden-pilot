@@ -1,4 +1,5 @@
-# Poll gh_sprinkler + run duration numbers for LVGL (sprinkler has no text_sensor; use C++ API).
+# Poll the garden_zones group gh_zones + run duration numbers for LVGL (the group has no text_sensor; use C++ API).
+# Names kept from the stock-sprinkler days (file and package key gh_sprinkler_lvgl); a rename is a follow-up.
 
 interval:
   - interval: 1s
@@ -6,33 +7,27 @@ interval:
       - lvgl.label.update:
           id: gh_greenhouse_irr_main
           text: !lambda |-
-            auto *s = id(gh_sprinkler);
+            auto *g = id(gh_zones);
             char buf[56];
-            if (s->standby()) {
-              snprintf(buf, sizeof(buf), "Irrigation: standby");
+            if (g->watchdog_tripped())
+              return std::string("Watchdog: locked");
+            auto az = g->active_zones();
+            if (!az.empty()) {
+              size_t n = snprintf(buf, sizeof(buf), "Running:");
+              for (size_t zone : az) {
+                if (n < sizeof(buf))
+                  n += snprintf(buf + n, sizeof(buf) - n, " B%u", (unsigned) (zone + 1));
+              }
               return std::string(buf);
             }
-            if (s->paused_valve().has_value()) {
-              unsigned zn = (unsigned) (s->paused_valve().value() + 1);
-              snprintf(buf, sizeof(buf), "Paused · Bed%u", zn);
-              return std::string(buf);
-            }
-            if (s->active_valve().has_value()) {
-              unsigned zn = (unsigned) (s->active_valve().value() + 1);
-              snprintf(buf, sizeof(buf), "Running: Bed%u", zn);
-              return std::string(buf);
-            }
-            snprintf(buf, sizeof(buf), "Irrigation: idle");
-            return std::string(buf);
+            return std::string("Irrigation: idle");
       - lvgl.label.update:
           id: gh_greenhouse_irr_modes
           text: !lambda |-
-            auto *s = id(gh_sprinkler);
+            auto *g = id(gh_zones);
             char buf[48];
-            snprintf(buf, sizeof(buf), "AA:%s  Q:%s  Rev:%s",
-                     s->auto_advance() ? "on" : "off",
-                     s->queue_enabled() ? "on" : "off",
-                     s->reverse() ? "on" : "off");
+            snprintf(buf, sizeof(buf), "AA:%s  Q:%u", g->auto_advance() ? "on" : "off",
+                     (unsigned) g->queued_zones().size());
             return std::string(buf);
       - lvgl.label.update:
           id: gh_greenhouse_run_dur_hint
@@ -50,9 +45,14 @@ interval:
       - lvgl.label.update:
           id: gh_greenhouse_t_left_zone
           text: !lambda |-
-            auto *s = id(gh_sprinkler);
+            auto *g = id(gh_zones);
             char buf[36];
-            auto tr = s->time_remaining_active_valve();
+            optional<uint32_t> tr;
+            for (size_t zone : g->active_zones()) {
+              auto left = g->time_remaining_zone(zone);
+              if (left.has_value() && (!tr.has_value() || left.value() < tr.value()))
+                tr = left;
+            }
             if (!tr.has_value()) {
               snprintf(buf, sizeof(buf), "Zone left: --:--:--");
             } else {
@@ -66,9 +66,9 @@ interval:
       - lvgl.label.update:
           id: gh_greenhouse_t_left_total
           text: !lambda |-
-            auto *s = id(gh_sprinkler);
+            auto *g = id(gh_zones);
             char buf[36];
-            auto tr = s->time_remaining_current_operation();
+            auto tr = g->time_remaining();
             if (!tr.has_value()) {
               snprintf(buf, sizeof(buf), "Total left: --:--:--");
             } else {
@@ -82,19 +82,19 @@ interval:
       - lvgl.label.update:
           id: gh_greenhouse_queue_hint
           text: !lambda |-
-            auto *s = id(gh_sprinkler);
+            auto *g = id(gh_zones);
             char buf[56];
-            uint32_t qt = s->total_queue_time();
-            auto qv = s->queued_valve();
-            if (qt == 0 && !qv.has_value()) {
+            uint32_t qt = g->queue_time();
+            auto queued = g->queued_zones();
+            if (qt == 0 && queued.empty()) {
               snprintf(buf, sizeof(buf), "Queue: (empty)");
             } else {
               unsigned h = (unsigned) (qt / 3600U);
               unsigned m = (unsigned) ((qt % 3600U) / 60U);
               unsigned sec = (unsigned) (qt % 60U);
-              if (qv.has_value()) {
+              if (!queued.empty()) {
                 snprintf(buf, sizeof(buf), "Queue: %02u:%02u:%02u next B%u", h, m, sec,
-                         (unsigned) qv.value() + 1);
+                         (unsigned) queued.front() + 1);
               } else {
                 snprintf(buf, sizeof(buf), "Queue: %02u:%02u:%02u", h, m, sec);
               }
@@ -103,26 +103,19 @@ interval:
       - lvgl.label.update:
           id: gh_home_irr_status
           text: !lambda |-
-            auto *s = id(gh_sprinkler);
-            char buf[24];
-            if (s->standby())
-              return std::string("Standby");
-            if (s->paused_valve().has_value()) {
-              unsigned zn = (unsigned) (s->paused_valve().value() + 1);
-              snprintf(buf, sizeof(buf), "Paused B%u", zn);
-              return std::string(buf);
-            }
-            if (s->active_valve().has_value())
+            auto *g = id(gh_zones);
+            if (g->watchdog_tripped())
+              return std::string("Alarm");
+            if (!g->active_zones().empty())
               return std::string("Watering");
             return std::string("Idle");
       - lvgl.label.update:
           id: gh_home_next_label
           text: !lambda |-
-            auto *s = id(gh_sprinkler);
+            auto *g = id(gh_zones);
             char buf[16];
-            uint32_t qt = s->total_queue_time();
-            auto qv = s->queued_valve();
-            if (qt == 0 && !qv.has_value())
+            uint32_t qt = g->queue_time();
+            if (qt == 0 && g->queued_zones().empty())
               return std::string("--:--");
             unsigned m = (unsigned) ((qt % 3600U) / 60U);
             unsigned sec = (unsigned) (qt % 60U);

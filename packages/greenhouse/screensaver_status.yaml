@@ -1,7 +1,7 @@
 # Greenhouse part of the screensaver (packages/lvgl/screensaver.yaml): status line "24C - soil 58%" and the
 # running-bed indicator ("Bed N" with a green dot, hidden when idle). Read-only: it only reads sensors and
-# gh_sprinkler and updates labels, it never starts or stops anything. ASCII only ("--" while a sensor has no state).
-# Needs gh_sensors_air / gh_sensors_soil (or the emulator's sim_sensors with the same ids) and gh_sprinkler.
+# gh_zones and updates labels, it never starts or stops anything. ASCII only ("--" while a sensor has no state).
+# Needs gh_sensors_air / gh_sensors_soil (or the emulator's sim_sensors with the same ids) and gh_zones.
 
 interval:
   - interval: 2s
@@ -22,13 +22,14 @@ interval:
             return std::string(buf);
       - if:
           condition:
-            lambda: "return id(gh_sprinkler)->active_valve().has_value();"
+            lambda: "return !id(gh_zones)->active_zones().empty();"
           then:
             - lvgl.label.update:
                 id: gp_screensaver_bed_label
                 text: !lambda |-
                   char buf[12];
-                  snprintf(buf, sizeof(buf), "Bed %u", (unsigned) (id(gh_sprinkler)->active_valve().value() + 1));
+                  auto az = id(gh_zones)->active_zones();
+                  snprintf(buf, sizeof(buf), "Bed %u%s", (unsigned) (az.front() + 1), az.size() > 1 ? "+" : "");
                   return std::string(buf);
             - lvgl.widget.show: gp_screensaver_bed_dot
             - lvgl.widget.show: gp_screensaver_bed_label
