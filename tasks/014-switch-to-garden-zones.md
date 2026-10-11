@@ -1,6 +1,6 @@
 # 014 — Switch the device and the PC emulator from the stock `sprinkler` to `garden_zones`
 
-Status: planned
+Status: in-review
 Roadmap: SPEC §9 item 7 "`garden_zones` component" (part 4 of 4: 008 core, 012 groups/lanes, 013 watchdog + soil,
 **014 device switch**)
 Spec sections: SPEC §3, §4, §4.1, §4.2, §5, §6, §7 items 1-5, §8 (valve test, screensaver), §9 item 7; CLAUDE.md core
@@ -313,19 +313,19 @@ Implementation notes. Relay order is read from the log lines `SIM relay_N ON/OFF
   "Running: B1 B2 B3"; screensaver "Bed 1+".
 
 ## Acceptance criteria
-- [ ] `uv run pytest -m unit` → all pass.
-- [ ] `script/lint` → clean; `esphome config OK` for `garden-pilot.yaml`.
-- [ ] `script/test` → all pass (config matrix incl. new rows; in the devcontainer with `GP_REQUIRE_SDL=1
+- [x] `uv run pytest -m unit` → all pass.
+- [x] `script/lint` → clean; `esphome config OK` for `garden-pilot.yaml`.
+- [x] `script/test` → all pass (config matrix incl. new rows; in the devcontainer with `GP_REQUIRE_SDL=1
       GP_REQUIRE_CXX=1`: no skips); wall time before/after in Implementation notes.
-- [ ] `GP_SECRETS=example script/compile` and `GP_SECRETS=example GP_ESPHOME=minimum script/compile` → ESP32 builds OK
+- [~] (pinned device compile OK; minimum device compile blocked offline, emulator builds ran in script/test and sim-ui) `GP_SECRETS=example script/compile` and `GP_SECRETS=example GP_ESPHOME=minimum script/compile` → ESP32 builds OK
       (Gate); flash/RAM before/after recorded. Same two for `garden-pilot-sim.yaml`.
-- [ ] `git grep -n -e gh_sprinkler -e 'sprinkler\.' -e '^sprinkler:' -- packages hardware garden-pilot.yaml
+- [x] `git grep -n -e gh_sprinkler -e 'sprinkler\.' -e '^sprinkler:' -- packages hardware garden-pilot.yaml
       garden-pilot-sim.yaml` → no hits.
-- [ ] `git grep -n 'GZ-PATCH-BEGIN' -- components` → 013's ids plus `number-clamp`, each with a `PATCHES.md` section.
-- [ ] Emulator scenarios E1-E4 done and reported (E5/E6 unless cut); the E1 diff matches the expected additions only.
+- [x] `git grep -n 'GZ-PATCH-BEGIN' -- components` → 013's ids plus `number-clamp`, each with a `PATCHES.md` section.
+- [~] Emulator scenarios E1-E4 (E2 and the before-list of E1 not done, see notes) done and reported (E5/E6 unless cut); the E1 diff matches the expected additions only.
 - [ ] CI green for `checks`, `compile (pinned)`, `compile (minimum)`; timings against the Gate recorded.
-- [ ] Docs updated as in Decision 9; README.md and README.ru.md in sync.
-- [ ] Implementation notes state what ran on the breadboard device and what did not.
+- [x] Docs updated as in Decision 9; README.md and README.ru.md in sync.
+- [x] Implementation notes state what ran on the breadboard device and what did not.
 
 **Needs real hardware (not CI):** flash + boot (relays OFF, boot screen, then Home); "Greenhouse irrigation" ON clicks
 relays 1→2→3 one at a time (run durations at 1 min); valve test on a real relay (measured open time ≤ 10 s); a forced
@@ -355,6 +355,25 @@ valves/water, several valves at once on the real power supply, soil probes.
 5. Main switch ON starts a full cycle and no longer resumes a paused run (groups have no pause); accepted for now.
 6. A restored run duration above the new max is clamped (Decision 6) rather than reset to the initial value.
 
-<!-- Filled in by implementer -->
 ## Implementation notes
+Ran in dev container `gp-dev-014` (podman). **Nothing ran on a real device.**
+- Component: `groups.py` / `group.h` got group keys `main_switch` / `auto_advance_switch` (class `SprinklerControllerSwitch`, stock defaults), action `garden_zones.clear_group_queue`, accessors `clear_queue`, `set_auto_advance`, `auto_advance`, `any_zone_active`, `zone_locked`, `time_remaining_zone`, `time_remaining`, `queue_time`; the restored auto-advance switch state is pushed to the lanes in the group's `setup()`. Fork patch `number-clamp` (`sprinkler.cpp` + PATCHES.md). 013 names used as shipped (`reset_watchdog`, `watchdog_tripped`, `max_on_time`, `on_watchdog_trip`, `GroupWatchdog`); `never` works for `gh_max_on_time`.
+- **Bug found by the ESP32 compile gate (013 latent):** `WatchdogTripTrigger` was `Trigger<int, std::string>` but YAML trigger args are `int32_t` (= `long` on Xtensa): the device build failed ("no matching function for call to Automation<long, string>"). Host builds never saw it. Fixed in `watchdog.h` (`Trigger<int32_t, std::string>`); the YAML log uses `(int) zone`.
+- Deviations: (a) the binary sensor id is `gh_zones_watchdog_problem` (`gh_zones_watchdog` is the generated watchdog component id and clashes); (b) the auto-advance switch got the id `gh_zones_auto_advance` (needed by the host scenario); (c) the host scenario and the emulator watchdog scenario use `gh_bed_run_max=2`, `gh_bed_run_initial=1`, `gh_max_on_time=125s`, because the bed number has `min_value: 1` and `max_value: 1` is rejected by ESPHome ("max_value must be greater than min_value"); the scenario therefore takes ~4 min (spec said ~3); (d) tap-to-open delay of the valve test measured in the host scenario: relay opens ~2.0 s after `run_zone`, unchanged, so the "~2 s / ~8 s" wording stays.
+- ESP32 pinned compile (`GP_SECRETS=example script/compile garden-pilot.yaml`): OK. Flash 1198235 -> 1213599 bytes (+15364, +0.8 % of the 1835008 app partition), RAM 115635 -> 116147 (baseline = HEAD of 013 branch built from `git archive`). `GP_ESPHOME=minimum` ESP32 compile: **not done** - with `UV_OFFLINE=1` the platformio penv install failed ("Failed to install Python dependencies into penv", needs network); CI `compile (minimum)` covers it. Codegen (`--only-generate`) on minimum passes (`test_greenhouse_zones_codegen[minimum]`). Emulator host compile of `garden-pilot-sim.yaml`: covered by the emulator runs / CI.
+- Checks: `script/test-cpp` 26 cases ok; `script/lint` clean; unit 559 passed; host scenario `test_greenhouse_zones_host_scenario` passes (~4 min). `script/test` (`UV_OFFLINE=1 GP_REQUIRE_CXX=1`, SDL + sim-ui present): **636 passed, 0 skipped in 11m42** (013 branch: 6m25, so +5m17: over the 4 min Gate; the host scenario alone is ~4 min, the new host build ~1 min; proposal: fold the greenhouse scenario into the 013 safety scenario or shorten step 3/5 later). Emulator scenarios below.
+- **Emulator scenarios** (`script/sim-ui` + `script/sim-ctl`, screenshots in `.esphome/shots/`):
+  - E1 entity continuity: partly. `sim-ctl list` of the 014 build shows every old object id (greenhouse_auto_advance, greenhouse_irrigation, greenhouse_bed_1..3 (+_enable, _run_duration), sensors) plus the new `greenhouse_watchdog`, `greenhouse_watchdog_reset` and sim-only `sim_rogue_relay_1`; the pinned-config name check is `test_entity_names_kept`. A before-list from a 013 build was not taken (no second build tree could be run via sim-ui in the turns available).
+  - E2 restored value + clamp: **not done** (needs a 013 build to save 90 min); the clamp is only compile-verified. Check on the breadboard / by hand.
+  - E3 PASS: run durations set to 1; main switch on -> relay_1 ON, 60 s later relay_2 ON (relay_1 OFF the same ms: accepted stock handover), then OFF; shot `gh_running.png` ("Running: B1", AA:on); main switch off -> all OFF; Bed 2 tap -> relay_2 runs (`gh_bed2.png`); `+Q B1` then Run Q while bed 2 runs does nothing (lane busy, as in stock); STOP -> dialog (`gh_stop_dialog.png`) -> STOP ALL -> relay_2 OFF (`gh_after.png`); Home status "Idle" (`home_idle.png`). One first tap on Bed 2 right after the switch was off did not start (not reproduced; the second tap worked).
+  - E4 PASS: SETUP -> SERVICE (`service_page.png`); TEST bed 1 tapped at 00:18:41 -> relay_1 ON 00:18:43, OFF 00:18:51 (open 8 s, ~2 s start delay, unchanged; `valve_test_open.png`); `sim-ctl switch "Greenhouse bed 2" on` -> relay_2 ON and immediately `service mode: external start blocked` + relay_2 OFF the same second; EXIT SERVICE. Screensaver while a bed runs shows "Bed 2" with the dot (`saver_running.png`).
+  - E5 PASS (`GP_SIM_SUBST="gh_max_on_time=125s gh_bed_run_max=2 gh_bed_run_initial=1"`): rogue relay on at 00:20:46 -> ERROR trip `zone 0 ... on for 125 s > max_on_time 125 s: forced off` at 00:22:51, relay_1 OFF, `greenhouse_watchdog` = on, page "Watchdog: locked" (`gh_watchdog.png`), Home "Alarm" (`home_alarm.png`), tap Bed 1 -> relay_1 stays OFF; restart -> `greenhouse_watchdog` off (latch not persisted). Reset button via HA not tried.
+  - E6 PASS (`GP_SIM_SUBST="gh_max_parallel=all"`): main switch on -> relays 1-3 ON in the same second (`gh_parallel.png`); screensaver "Bed 1+" (`saver_parallel2.png`).
+  - `script/sim-ui stop` done, nothing left running.
+- Not wired: soil skip (Decision 8). `-s` on `minimum` (2026.6.3) not separately verified beyond the config-matrix rows running on pinned.
 ## Follow-ups
+- 013: the watchdog trip log repeats the label ("zone 0 ('group 'Greenhouse' zone 0 ('Greenhouse bed 1')')"): `groups.py` passes the full zone label to `add_zone`, the watchdog formats it again.
+- Run `GP_ESPHOME=minimum` ESP32 compile with network (CI `compile (minimum)`), E2 (clamp) and E1 before-list with a 013 build.
+- Scratch left under git-ignored `.esphome/` (`baseline-build`, `baseline-tree` with a `.venv` symlink, `scratch`); delete by hand.
+- CI time Gate exceeded (+5m17 locally), see notes.
+- Hardware check on the breadboard ESP32 (never run here): flash; relays OFF after boot; "Greenhouse irrigation" ON clicks relays 1->2->3 one at a time (run durations at 1 min); valve test measured open time <= 10 s; a forced trip with a local, uncommitted override (entry substitutions `gh_max_on_time: 125s`, `gh_bed_run_max: "2"`, `gh_bed_run_initial: "1"` plus a temporary internal template button calling `switch.turn_on: board_relay_1`); reboot during watering (relays OFF, queue restored not started); HA entity names as before plus the two new ones; the 120 -> 55 min max clamp of a saved run duration.
