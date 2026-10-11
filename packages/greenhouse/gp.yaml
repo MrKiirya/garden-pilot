@@ -25,6 +25,10 @@ gp:
               - script.execute:
                   id: gp_gh_zone_done
                   zone: !lambda "return zone;"
+      # A stop_all (STOP button, Home Assistant, valve test) or entering service mode: hook script below; the
+      # schedule package extends it (the stop settles today's slots and clears the queue).
+      on_stop:
+        - script.execute: gp_gh_stopped
 
 # Watchdog state for Home Assistant: on while any bed (or the group) is locked by the watchdog.
 binary_sensor:
@@ -65,6 +69,13 @@ script:
           tag: gp
           format: "zone %d finished (completed=%d)"
           args: ['zone', '(int) completed']
+  # Hook for "the user stopped everything" (stop_all or service mode): extended by packages/greenhouse/schedule.yaml.
+  - id: gp_gh_stopped
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp
+          format: "stopped"
   - id: gp_gh_zone_done
     mode: parallel
     parameters:

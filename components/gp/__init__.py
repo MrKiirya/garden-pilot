@@ -30,6 +30,7 @@ CONF_TEXT = "text"
 CONF_SOURCE = "source"
 CONF_POSITION = "position"
 CONF_ON_ZONE_FINISHED = "on_zone_finished"
+CONF_ON_STOP = "on_stop"
 CONF_MASK = "mask"
 CONF_PCT = "pct"
 
@@ -41,6 +42,7 @@ Severity = gp_ns.enum("Severity", is_class=True)
 Source = gp_ns.enum("Source", is_class=True)
 AlertChangeTrigger = gp_ns.class_("AlertChangeTrigger", automation.Trigger.template())
 ZoneFinishedTrigger = gp_ns.class_("ZoneFinishedTrigger", automation.Trigger.template(cg.uint8, bool))
+StopTrigger = gp_ns.class_("StopTrigger", automation.Trigger.template())
 
 # the engine group type is declared locally: this MIT component does not import the GPL engine's Python code
 _GARDEN_ZONES_GROUP = cg.esphome_ns.namespace("garden_zones").class_("GardenZonesGroup", cg.Component)
@@ -71,6 +73,8 @@ def _group_schema():
         cv.Optional(CONF_ON_ZONE_FINISHED): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(ZoneFinishedTrigger)}
         ),
+        # a stop_all (STOP button, Home Assistant, valve test) or entering service mode
+        cv.Optional(CONF_ON_STOP): automation.validate_automation({cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(StopTrigger)}),
     }
     return cv.All(cv.Schema(schema), _engine_key)
 
@@ -132,6 +136,9 @@ async def to_code(config):
         for conf in group.get(CONF_ON_ZONE_FINISHED, []):
             trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
             await automation.build_automation(trigger, [(cg.uint8, "zone"), (bool, "completed")], conf)
+        for conf in group.get(CONF_ON_STOP, []):
+            trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+            await automation.build_automation(trigger, [], conf)
     for conf in config.get(CONF_ON_ALERT_CHANGE, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], hub)
         await automation.build_automation(trigger, [], conf)
@@ -187,6 +194,7 @@ RunZoneAction = gp_ns.class_("RunZoneAction", automation.Action)
 EnqueueZoneAction = gp_ns.class_("EnqueueZoneAction", automation.Action)
 EnqueueZonesAction = gp_ns.class_("EnqueueZonesAction", automation.Action)
 DequeueZoneAction = gp_ns.class_("DequeueZoneAction", automation.Action)
+ClearQueueAction = gp_ns.class_("ClearQueueAction", automation.Action)
 StartQueueAction = gp_ns.class_("StartQueueAction", automation.Action)
 FullCycleAction = gp_ns.class_("FullCycleAction", automation.Action)
 StopAllAction = gp_ns.class_("StopAllAction", automation.Action)
@@ -260,6 +268,7 @@ async def inhibit_to_code(config, action_id, template_arg, args):
     return var
 
 
+@automation.register_action("gp.clear_queue", ClearQueueAction, _target(), synchronous=True)
 @automation.register_action("gp.start_queue", StartQueueAction, _target(), synchronous=True)
 @automation.register_action("gp.full_cycle", FullCycleAction, _target(), synchronous=True)
 @automation.register_action("gp.reset_watchdog", ResetWatchdogAction, _target(), synchronous=True)

@@ -68,16 +68,19 @@ Every action logs at INFO with tag `gp`. Group actions take `id: <group id>` or 
 |---|---|---|
 | `gp.run_zone` | `zone` (0-based), `duration` (optional; default the zone's), `source` (`manual`, `service`) | manual run; refused + WARN when LOCKED or out of range |
 | `gp.enqueue_zone` | `zone`, `duration` | adds to the queue (never starts) |
-| `gp.enqueue_zones` | `mask` (bit n = zone n, 0-based), `pct` (percent of each zone's run duration; schedules use it) | queues every zone of the mask in zone order for run duration x pct, cut to the zone's maximum (WARN when cut); a zone already queued or running is not queued again (INFO); bits beyond the group are ignored (WARN); refused while inhibited; never starts |
+| `gp.enqueue_zones` | `mask` (bit n = zone n, 0-based), `pct` (percent of each zone's run duration; schedules use it) | queues every zone of the mask in zone order for run duration x pct, cut to the zone's maximum (WARN when cut); a zone already queued or running is not queued again (INFO); bits beyond the group are ignored (WARN); refused while inhibited; never starts. **While a full cycle (or another non-queue run) is running the request is held back in gp** (the engine would pick queued zones in the middle of the cycle) and queued after that run has ended (INFO log) |
 | `gp.dequeue_zone` | `zone` | removes from the queue |
-| `gp.start_queue` / `gp.full_cycle` | - | start the queue / a full cycle; both refused while inhibited. `start_queue` while a full cycle (or another non-queue run) is running logs a WARN: the engine drops the rest of that cycle and runs the queue |
-| `gp.stop_all` | `clear_queue` (default false) | shut the group down |
+| `gp.start_queue` / `gp.full_cycle` | - | start the queue / a full cycle; both refused while inhibited. `start_queue` while a full cycle (or another non-queue run) is running is **deferred**: the cycle runs to its end, then (after 5 s without a running zone) the held-back `enqueue_zones` requests are queued and the queue starts (INFO logs). Never cuts a cycle short |
+| `gp.clear_queue` | - | drops every queued zone and any held-back enqueue / start (a running zone keeps running) |
+| `gp.stop_all` | `clear_queue` (default false) | shut the group down; also drops any held-back enqueue / start and fires the group's `on_stop` |
 | `gp.reset_watchdog` | - | reset the watchdog lock |
 | `gp.alert_raise` / `gp.alert_clear` | `id: <hub>`, `key` (<= 15), `severity`, `text` | alert table only |
 
 Conditions: `gp.zone_running {id, zone}`, `gp.any_running`, `gp.watchdog_tripped`, `gp.alert_active {id: hub, key?}`,
 `gp.inhibited {id}` (true while service mode blocks starts; the schedule's `skip_if` uses it).
-Triggers: `gp: on_alert_change` (logging / HA only); group `on_zone_finished (zone, completed)` fires when a zone's run
+Triggers: `gp: on_alert_change` (logging / HA only); group `on_stop` fires on every `gp.stop_all` and when service mode is
+entered (`gp.inhibit: true`); the greenhouse package hooks the schedule to it (a STOP settles the slots, see
+`components/garden_schedule/README.md`); group `on_zone_finished (zone, completed)` fires when a zone's run
 ends (zone 0-based). `completed` is true only for a run that came from the queue (a queue start, a scheduled run) and was
 not ended by `gp.stop_all` within 3 s before it ended. It is false for manual / service runs and for stopped runs. A run
 ended by Home Assistant turning off the group's main switch has no stop signal and counts as completed (tested). A run
