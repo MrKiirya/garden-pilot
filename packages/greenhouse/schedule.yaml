@@ -75,3 +75,9 @@ script:
       - garden_schedule.zone_done:
           id: gh_schedule
           zone: !lambda "return zone;"
+  # A user STOP (or entering service mode) settles the schedules: today's pending zones of every slot are dropped
+  # ("stopped", nothing resumes after a reboot) and the engine queue is cleared (hook script of gp.yaml).
+  - id: !extend gp_gh_stopped
+    then:
+      - garden_schedule.cancel_pending: gh_schedule
+      - gp.clear_queue: gp_greenhouse

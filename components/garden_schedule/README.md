@@ -44,7 +44,7 @@ zone numbers above the group's zone count are dropped with a warning.
   | How the zone's run ended | Done? |
   |---|---|
   | queue run ended by itself | yes |
-  | `gp.stop_all` (STOP button, also with `clear_queue`) within 3 s before the end | no, the zone stays pending |
+  | `gp.stop_all` (STOP button, also with `clear_queue`) within 3 s before the end | no; the STOP settles the slot instead (below), so the zone is not resumed |
   | manual / service run (`gp.run_zone`) | no (only queue runs count) |
   | Home Assistant turns off the group's main switch | yes (no stop signal) |
   | engine watchdog ends a queue run | yes (no stop signal; not testable: scheduled runs are clamped below the limit) |
@@ -52,11 +52,20 @@ zone numbers above the group's zone count are dropped with a warning.
 - **Pending zones resume only after a restart:** the first valid tick after boot re-fires the pending zones of today's
   slot (inside the window; outside it they are logged as missed). A later clock jump (HA / SNTP resync, a transient
   invalid clock) never re-fires them and never reports a slot that was already fired as missed.
-- **Awaiting the author's decision (today's behaviour):** a user STOP (or entering service mode) does *not* settle the
-  slot. The stopped zone and the zones still queued stay pending and run again if the device restarts inside the
-  catch-up window (the engine queue is kept by a STOP without `clear_queue`). A scheduled start while a manual full
-  cycle is running interrupts the cycle: the current zone finishes, the scheduled zones run and the rest of the cycle is
-  dropped (`gp` logs a WARN).
+- **A user STOP settles the slot** (decision 2026-10-11): a `gp.stop_all` (STOP button, Home Assistant, the zone switch
+  turned off) or entering service mode drops today's pending zones of **every** slot (`garden_schedule.cancel_pending`,
+  wired in `packages/greenhouse/schedule.yaml` to the group's `on_stop`), clears the engine queue (`gp.clear_queue`) and
+  any held-back start, and "last schedule" shows `stopped` (not `missed`). The slot stays marked for the day: no catch-up,
+  nothing runs again after a restart. Only zones cut by a power loss / reboot (no STOP) are re-run inside the window.
+  A stop of Home Assistant's main switch (outside `gp`) is not seen as a STOP (see the table above).
+- **A slot firing during a manual full cycle waits for its end** (decision 2026-10-11): `gp` holds the slot's
+  `gp.enqueue_zones` / `gp.start_queue` back (INFO log) because the engine would pick queued zones in the middle of the
+  cycle. The cycle runs to its end, then (after 5 s without a running zone) the slot's zones run with the slot's
+  multiplier, in zone order; the done marks follow those zones as usual. The same holds for any other non-queue run (a
+  manual zone run). A zone that the cycle itself runs counts as done for the slot when it finishes, but it still runs
+  again after the cycle (the slot's zone list is queued as a whole). If the cycle is stopped, the held-back zones are
+  settled like any STOP (nothing runs). The held-back request lives in RAM: a power loss before it ran leaves the
+  zones pending, so a restart inside the window runs them.
 - **Skip:** `skip_if` is a list of `{condition, reason}`; the first true one turns a due slot into a skip (marked for the
   day). The greenhouse uses `gp.inhibited` (service mode). A rain sensor or a rain-delay entity adds an item.
 - **Multiplier:** slot percent x global percent (`set_global_pct()`, fixed 100 today), clamped to 10-200 %. The `gp`

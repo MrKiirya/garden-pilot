@@ -116,6 +116,19 @@ class GardenSchedule : public Component {
     }
   }
 
+  /// A user STOP or entering service mode (called by `garden_schedule.cancel_pending`): today's pending zones of every
+  /// slot are settled ("stopped"), so nothing resumes after a restart.
+  void cancel_pending() {
+    const std::vector<uint8_t> stopped = this->core_.stop_pending();
+    if (stopped.empty())
+      return;
+    for (uint8_t slot : stopped) {
+      ESP_LOGI(TAG, "slot %u stopped: its remaining zones are cancelled", (unsigned) this->slots_[slot].number);
+      this->publish_result_(slot, "stopped");
+    }
+    this->save_();
+  }
+
   // ---- data for the screens (stage 9) ----
   optional<NextRun> next_run() const {
     auto next = this->core_.next_run(this->cfg_, this->slots_.size());
@@ -324,6 +337,16 @@ template<typename... Ts> class ZoneDoneAction : public Action<Ts...> {
   explicit ZoneDoneAction(GardenSchedule *hub) : hub_(hub) {}
   TEMPLATABLE_VALUE(size_t, zone)
   void play(const Ts &...x) override { this->hub_->zone_done(this->zone_.value(x...)); }
+
+ protected:
+  GardenSchedule *hub_;
+};
+
+/// `garden_schedule.cancel_pending`: a user STOP settles the pending zones of every slot.
+template<typename... Ts> class CancelPendingAction : public Action<Ts...> {
+ public:
+  explicit CancelPendingAction(GardenSchedule *hub) : hub_(hub) {}
+  void play(const Ts &...x) override { this->hub_->cancel_pending(); }
 
  protected:
   GardenSchedule *hub_;

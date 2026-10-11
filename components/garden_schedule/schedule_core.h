@@ -9,7 +9,8 @@
 //  * The first valid tick and every tick after a clock jump are "discontinuous": nothing fires by crossing. Slots of
 //    today whose start has passed are caught up (inside the catch-up window) or recorded as missed.
 //  * The "done" mark is per zone: a fired slot keeps a pending zone mask; a zone leaves it when its watering
-//    completes. After a restart inside the window only the pending zones run again.
+//    completes. After a restart inside the window only the pending zones run again. A user STOP settles the slot
+//    (`stop_pending`): the pending zones are dropped and nothing resumes.
 #pragma once
 
 #include <cstddef>
@@ -158,7 +159,7 @@ struct SlotConfig {
   uint8_t pct{100};
 };
 
-enum class Result : uint8_t { NONE, RAN, CATCH_UP, MISSED, SKIPPED };
+enum class Result : uint8_t { NONE, RAN, CATCH_UP, MISSED, SKIPPED, STOPPED };
 
 struct SlotState {
   int32_t last_fired_day{NEVER};  ///< local day number of the last fire / miss / skip (persisted)
@@ -193,7 +194,7 @@ struct NextRun {
   uint16_t start_minute{0};
 };
 
-enum class DayRunState : uint8_t { PENDING, FIRED, MISSED, SKIPPED };
+enum class DayRunState : uint8_t { PENDING, FIRED, MISSED, SKIPPED, STOPPED };
 
 struct DayRun {
   uint8_t slot{0};
@@ -292,6 +293,22 @@ class Scheduler {
     this->states_[slot].result = Result::SKIPPED;
   }
 
+  /// A user STOP (or entering service mode) settles today's slots: every slot that still has pending zones loses
+  /// them (result "stopped"), so nothing resumes after a restart. The day mark stays, so the slot does not run
+  /// again today. Returns the slot indexes that were settled (empty = nothing to do; persist when not empty).
+  std::vector<uint8_t> stop_pending() {
+    std::vector<uint8_t> stopped;
+    for (size_t i = 0; i < MAX_SLOTS; i++) {
+      SlotState &st = this->states_[i];
+      if (st.pending == 0)
+        continue;
+      st.pending = 0;
+      st.result = Result::STOPPED;
+      stopped.push_back(static_cast<uint8_t>(i));
+    }
+    return stopped;
+  }
+
   /// The earliest run that is still ahead, over the next 8 local days.
   std::optional<NextRun> next_run(const SlotConfig *cfg, size_t n) const {
     if (!this->have_prev_ || !this->master_)
@@ -336,6 +353,7 @@ class Scheduler {
       if (st.last_fired_day == day) {
         run.state = st.result == Result::MISSED ? DayRunState::MISSED
                     : st.result == Result::SKIPPED ? DayRunState::SKIPPED
+                    : st.result == Result::STOPPED ? DayRunState::STOPPED
                                                    : DayRunState::FIRED;
       }
       size_t at = out.size();

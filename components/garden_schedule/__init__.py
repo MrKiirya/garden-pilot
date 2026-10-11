@@ -50,6 +50,7 @@ garden_schedule_ns = cg.esphome_ns.namespace("garden_schedule")
 GardenSchedule = garden_schedule_ns.class_("GardenSchedule", cg.Component)
 RunTrigger = garden_schedule_ns.class_("RunTrigger", automation.Trigger.template(cg.uint32, cg.uint8, cg.uint8))
 ZoneDoneAction = garden_schedule_ns.class_("ZoneDoneAction", automation.Action)
+CancelPendingAction = garden_schedule_ns.class_("CancelPendingAction", automation.Action)
 
 
 def _catch_up_window(value):
@@ -179,3 +180,14 @@ async def zone_done_to_code(config, action_id, template_arg, args):
     var = cg.new_Pvariable(action_id, template_arg, hub)
     cg.add(var.set_zone(await cg.templatable(config[CONF_ZONE], args, cg.size_t)))
     return var
+
+
+@automation.register_action(
+    "garden_schedule.cancel_pending",
+    CancelPendingAction,
+    automation.maybe_simple_id({cv.Required(CONF_ID): cv.use_id(GardenSchedule)}),
+    synchronous=True,
+)
+async def cancel_pending_to_code(config, action_id, template_arg, args):
+    hub = await cg.get_variable(config[CONF_ID])
+    return cg.new_Pvariable(action_id, template_arg, hub)
