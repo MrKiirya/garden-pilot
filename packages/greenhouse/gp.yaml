@@ -11,6 +11,16 @@ gp:
       name: "Greenhouse"
       key: greenhouse
       garden_zones_id: gh_zones
+      # A queue run that ended normally (not stopped) is reported to the hook script below; the schedule package
+      # extends it (a done mark per zone).
+      on_zone_finished:
+        - if:
+            condition:
+              lambda: "return completed;"
+            then:
+              - script.execute:
+                  id: gp_gh_zone_done
+                  zone: !lambda "return zone;"
 
 # Watchdog state for Home Assistant: on while any bed (or the group) is locked by the watchdog.
 binary_sensor:
@@ -36,3 +46,16 @@ text_sensor:
     icon: mdi:water-outline
     update_interval: 1s
     lambda: "return id(gp_greenhouse)->status_text_changed();"
+
+# Hook for "a zone's queue run completed" (0-based zone): extended by packages/greenhouse/schedule.yaml.
+script:
+  - id: gp_gh_zone_done
+    mode: parallel
+    parameters:
+      zone: int
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp
+          format: "zone %d completed (queue run)"
+          args: ['zone + 1']
