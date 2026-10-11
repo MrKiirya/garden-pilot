@@ -67,6 +67,17 @@ greenhouse page, Home, valve test and screensaver stay as 014 left them (no rede
 - `garden_zone` precedent (task 012): `MULTI_CONF` list items from several packages concatenate; dict-form entries merge
   silently — the same rule applies to `gp_zone:` below.
 
+## Human decisions (2026-10-11; override the planner defaults below)
+- **HA actions:** ONE generic set for all groups, e.g. `gp_run_zone` with parameters `group` (e.g. `greenhouse`)
+  and `zone` (1-based, as on screen) — not one set per group.
+- **Zone switches in HA:** hide the engine's zone switches; the `gp_*` layer creates one switch per zone with the
+  SAME names ("Greenhouse bed N"), so HA has no duplicates and does not depend on the engine. (The author has no
+  HA automations yet.)
+- **Last watering and history:** kept in RAM and persisted to flash after each run (ESPHome batches writes; NVS
+  wear-levels — one write per watering is negligible). On-device history: the last **100** entries (time, zone,
+  duration, source) for the history card (D20); the full history stays in HA.
+- **"HA disconnected":** not an alert — a quiet icon in the header. Alerts are watchdog, sensors, clock not set.
+
 ## Decisions (planner; see Open questions)
 
 ### 1. C++ component, not YAML scripts + template entities

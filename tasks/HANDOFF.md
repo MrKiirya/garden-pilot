@@ -38,12 +38,9 @@ PRs can merge (CI for a stacked branch: `gh workflow run ci.yml --ref <branch>`)
 ## Open questions for the author
 
 ### 018 `gp_*` layer (`tasks/018-gp-layer.md`)
-1. HA action names (`gp_greenhouse_*`), the 1-based `zone` parameter, new entity names "Greenhouse status" and
-   "Alert" — renaming later breaks HA automations.
-2. Keep the engine's zone switches in HA, or only `gp_*` actions? (default: keep)
-3. Last watering: persist across reboots (a few flash writes a day) or RAM only? (default: RAM)
-4. Alert texts, severities, thresholds; is "HA disconnected" an alert at all on a device meant to work without HA?
-5. Card state words — for the designer.
+Answered 2026-10-11 (recorded at the top of the spec): one generic HA action set (`group`, 1-based `zone`);
+`gp_*` owns the per-zone switches (engine switches hidden); last watering + 100 history entries in flash;
+"HA disconnected" = quiet header icon. Still open: alert texts/severities/thresholds; card state words (designer).
 
 ### 019 schedules (`tasks/019-schedules.md`)
 1. Slots per group: 2 by default (max 8)? Each slot adds 5 HA entities.
