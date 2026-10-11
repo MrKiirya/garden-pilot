@@ -29,6 +29,9 @@ CONF_SEVERITY = "severity"
 CONF_TEXT = "text"
 CONF_SOURCE = "source"
 CONF_POSITION = "position"
+CONF_ON_ZONE_FINISHED = "on_zone_finished"
+CONF_MASK = "mask"
+CONF_PCT = "pct"
 
 gp_ns = cg.esphome_ns.namespace("gp")
 GpHub = gp_ns.class_("GpHub", cg.Component)
@@ -37,6 +40,7 @@ GpZoneSwitch = gp_ns.class_("GpZoneSwitch", switch.Switch, cg.Component)
 Severity = gp_ns.enum("Severity", is_class=True)
 Source = gp_ns.enum("Source", is_class=True)
 AlertChangeTrigger = gp_ns.class_("AlertChangeTrigger", automation.Trigger.template())
+ZoneFinishedTrigger = gp_ns.class_("ZoneFinishedTrigger", automation.Trigger.template(cg.uint8, bool))
 
 # the engine group type is declared locally: this MIT component does not import the GPL engine's Python code
 _GARDEN_ZONES_GROUP = cg.esphome_ns.namespace("garden_zones").class_("GardenZonesGroup", cg.Component)
@@ -63,6 +67,10 @@ def _group_schema():
         # the key addresses the group in the generic Home Assistant actions (`group: greenhouse`)
         cv.Optional(CONF_KEY): _key,
         cv.Optional(CONF_GARDEN_ZONES_ID): cv.use_id(_GARDEN_ZONES_GROUP),
+        # (zone, completed): a zone's run ended; `completed` = a queue run that was not stopped
+        cv.Optional(CONF_ON_ZONE_FINISHED): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(ZoneFinishedTrigger)}
+        ),
     }
     return cv.All(cv.Schema(schema), _engine_key)
 
@@ -121,6 +129,9 @@ async def to_code(config):
         engine = cg.RawExpression(f"new esphome::garden_zones::GardenZonesEngine({engine_group})")
         var = cg.new_Pvariable(group[CONF_ID], _default_key(group), group[CONF_NAME], engine)
         cg.add(hub.add_group(var))
+        for conf in group.get(CONF_ON_ZONE_FINISHED, []):
+            trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+            await automation.build_automation(trigger, [(cg.uint8, "zone"), (bool, "completed")], conf)
     for conf in config.get(CONF_ON_ALERT_CHANGE, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], hub)
         await automation.build_automation(trigger, [], conf)
@@ -174,6 +185,7 @@ def _register_group_action(name, cls, extra=None):
 
 RunZoneAction = gp_ns.class_("RunZoneAction", automation.Action)
 EnqueueZoneAction = gp_ns.class_("EnqueueZoneAction", automation.Action)
+EnqueueZonesAction = gp_ns.class_("EnqueueZonesAction", automation.Action)
 DequeueZoneAction = gp_ns.class_("DequeueZoneAction", automation.Action)
 StartQueueAction = gp_ns.class_("StartQueueAction", automation.Action)
 FullCycleAction = gp_ns.class_("FullCycleAction", automation.Action)
@@ -184,6 +196,7 @@ AlertRaiseAction = gp_ns.class_("AlertRaiseAction", automation.Action)
 AlertClearAction = gp_ns.class_("AlertClearAction", automation.Action)
 ZoneRunningCondition = gp_ns.class_("ZoneRunningCondition", automation.Condition)
 AnyRunningCondition = gp_ns.class_("AnyRunningCondition", automation.Condition)
+InhibitedCondition = gp_ns.class_("InhibitedCondition", automation.Condition)
 WatchdogTrippedCondition = gp_ns.class_("WatchdogTrippedCondition", automation.Condition)
 AlertActiveCondition = gp_ns.class_("AlertActiveCondition", automation.Condition)
 
@@ -214,6 +227,20 @@ async def enqueue_zone_to_code(config, action_id, template_arg, args):
     cg.add(var.set_zone(await cg.templatable(config[CONF_ZONE], args, cg.size_t)))
     if CONF_DURATION in config:
         cg.add(var.set_duration(await cg.templatable(config[CONF_DURATION], args, cg.uint32)))
+    return var
+
+
+@automation.register_action(
+    "gp.enqueue_zones",
+    EnqueueZonesAction,
+    _target({cv.Required(CONF_MASK): cv.templatable(cv.uint32_t), cv.Optional(CONF_PCT): cv.templatable(cv.int_range(min=1, max=255))}),
+    synchronous=True,
+)
+async def enqueue_zones_to_code(config, action_id, template_arg, args):
+    var = await _new_action(config, action_id, template_arg, args)
+    cg.add(var.set_mask(await cg.templatable(config[CONF_MASK], args, cg.uint32)))
+    if CONF_PCT in config:
+        cg.add(var.set_pct(await cg.templatable(config[CONF_PCT], args, cg.uint8)))
     return var
 
 
@@ -293,6 +320,7 @@ _GROUP_ONLY = automation.maybe_simple_id({cv.Required(CONF_ID): cv.use_id(GpGrou
 
 @automation.register_condition("gp.any_running", AnyRunningCondition, _GROUP_ONLY)
 @automation.register_condition("gp.watchdog_tripped", WatchdogTrippedCondition, _GROUP_ONLY)
+@automation.register_condition("gp.inhibited", InhibitedCondition, _GROUP_ONLY)
 async def group_condition_to_code(config, condition_id, template_arg, args):
     group = await cg.get_variable(config[CONF_ID])
     return cg.new_Pvariable(condition_id, template_arg, group)

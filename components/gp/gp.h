@@ -104,6 +104,35 @@ class GpGroup {
     this->engine_->queue_zone(zone, seconds);
   }
 
+  /// Queues every zone of the bit mask (bit n = zone n, 0-based) in zone order, each for its configured run duration
+  /// times `pct` percent (cut to the zone's maximum). Zones that are already queued or running are not queued again;
+  /// bits beyond the group's zones are ignored. Never starts anything.
+  void enqueue_zones(uint32_t mask, uint8_t pct) {
+    if (this->inhibited_) {
+      ESP_LOGW(TAG, "%s: enqueue_zones refused: service mode is on", this->name_.c_str());
+      return;
+    }
+    this->engine_->read(this->input_);  // fresh state: two calls in one tick must not queue a zone twice
+    for (size_t zone = 0; zone < 32; zone++) {
+      if (!(mask & (1u << zone)))
+        continue;
+      if (zone >= this->zone_count_ || zone >= MAX_ZONES) {
+        ESP_LOGW(TAG, "%s: enqueue_zones: no zone %u, ignored", this->name_.c_str(), (unsigned) (zone + 1));
+        continue;
+      }
+      const ZoneInput &in = this->input_.zones[zone];
+      if (in.running || in.paused || in.queued) {
+        ESP_LOGI(TAG, "%s: zone %u is already %s, not queued again", this->name_.c_str(), (unsigned) (zone + 1),
+                 in.queued ? "queued" : "running");
+        continue;
+      }
+      optional<uint32_t> seconds;
+      if (in.run_duration > 0)
+        seconds = static_cast<uint32_t>((static_cast<uint64_t>(in.run_duration) * pct + 50) / 100);
+      this->enqueue_zone(zone, seconds);
+    }
+  }
+
   void dequeue_zone(size_t zone) {
     if (!this->check_zone_("dequeue_zone", zone))
       return;
@@ -143,6 +172,7 @@ class GpGroup {
   void stop_all(bool clear_queue) {
     ESP_LOGI(TAG, "%s: stop all%s", this->name_.c_str(), clear_queue ? " (queue cleared)" : "");
     this->queue_run_ = false;
+    this->stop_ms_ = millis() == 0 ? 1 : millis();
     this->engine_->shutdown(clear_queue);
   }
 
@@ -190,6 +220,8 @@ class GpGroup {
       ESP_LOGI(TAG, "%s: zone %u finished: %u s (%s)", this->name_.c_str(), (unsigned) (record.zone + 1),
                (unsigned) record.duration, source_word(record.source));
       changed = true;
+      const bool stopped = this->stop_ms_ != 0 && (uint32_t) (now_ms - this->stop_ms_) < STOP_WINDOW_MS;
+      this->finished_cb_.call(record.zone, record.source == Source::QUEUE && !stopped);
     }
     if (changed && !this->pref_.save(&this->blob_))
       ESP_LOGW(TAG, "%s: saving the history failed", this->name_.c_str());
@@ -197,7 +229,14 @@ class GpGroup {
 
   size_t zone_count() const { return this->zone_count_; }
 
+  /// Fires when a zone's run ends: (0-based zone, completed). `completed` = a queue run (not manual / service) that
+  /// ran to its end, not stopped by `stop_all` (schedules use it for their per-zone "done" marks).
+  void add_on_zone_finished_callback(std::function<void(uint8_t, bool)> &&callback) {
+    this->finished_cb_.add(std::move(callback));
+  }
+
  protected:
+  static constexpr uint32_t STOP_WINDOW_MS = 3000;
   static constexpr uint32_t INTENT_MS = 15000;
   static constexpr uint32_t QUEUE_RUN_GRACE_MS = 5000;
 
@@ -239,6 +278,8 @@ class GpGroup {
   uint32_t intent_ms_[MAX_ZONES]{};
   bool queue_run_{false};
   bool inhibited_{false};
+  uint32_t stop_ms_{0};  ///< millis() of the last stop_all (0 = never)
+  CallbackManager<void(uint8_t, bool)> finished_cb_;
   uint32_t queue_idle_ms_{0};
 };
 
@@ -472,6 +513,17 @@ template<typename... Ts> class EnqueueZoneAction final : public GroupAction<Ts..
   }
 };
 
+template<typename... Ts> class EnqueueZonesAction final : public GroupAction<Ts...> {
+ public:
+  TEMPLATABLE_VALUE(uint32_t, mask)
+  TEMPLATABLE_VALUE(uint8_t, pct)
+  void play(const Ts &...x) override {
+    GpGroup *group = this->resolve_(x...);
+    if (group != nullptr)
+      group->enqueue_zones(this->mask_.value(x...), this->pct_.has_value() ? this->pct_.value(x...) : 100);
+  }
+};
+
 template<typename... Ts> class DequeueZoneAction final : public GroupAction<Ts...> {
  public:
   TEMPLATABLE_VALUE(size_t, zone)
@@ -584,6 +636,16 @@ template<typename... Ts> class WatchdogTrippedCondition final : public Condition
   GpGroup *group_;
 };
 
+/// True while service mode (`gp.inhibit`) refuses starts: schedules use it to skip a due slot.
+template<typename... Ts> class InhibitedCondition final : public Condition<Ts...> {
+ public:
+  explicit InhibitedCondition(GpGroup *group) : group_(group) {}
+  bool check(const Ts &...x) override { return this->group_->inhibited(); }
+
+ protected:
+  GpGroup *group_;
+};
+
 template<typename... Ts> class AlertActiveCondition final : public Condition<Ts...> {
  public:
   explicit AlertActiveCondition(GpHub *hub) : hub_(hub) {}
@@ -597,6 +659,14 @@ template<typename... Ts> class AlertActiveCondition final : public Condition<Ts.
   GpHub *hub_;
   std::string key_;
   bool any_{true};
+};
+
+/// `on_zone_finished` of a group: (zone 0-based, completed).
+class ZoneFinishedTrigger : public Trigger<uint8_t, bool> {
+ public:
+  explicit ZoneFinishedTrigger(GpGroup *group) {
+    group->add_on_zone_finished_callback([this](uint8_t zone, bool completed) { this->trigger(zone, completed); });
+  }
 };
 
 class AlertChangeTrigger : public Trigger<> {
