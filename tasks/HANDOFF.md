@@ -60,6 +60,11 @@ The other review items are being fixed (resume pending zones only after boot, "d
 marks keyed by slot number, ...).
 
 ### Other
+- Flaky test (found 2026-10-11, CI of #25): `test_safety_host_scenario` "a locked group refuses run_zone" fails ~1/50.
+  Test artifact, not firmware: `_Timeline.intervals` in `tests/test_garden_zones.py` cuts windows by millisecond and
+  includes the end mark, so a state line logged in the same ms as `s6_c` (step 7 turns valve 4 on) counts as `(X, X)`.
+  Fix: cut windows by log order (index of the mark), same in `tests/test_greenhouse_zones.py` `_Timeline.window`.
+  The author approved the stack as is: do it as a separate small task after the merge; on a failure just re-run CI.
 - Personal config: the public `garden-pilot.yaml` stays on defaults. Proposal: a git-ignored personal entry file
   that includes the shared packages, plus `examples/` (1 bed, 3 beds at once, lawn with pump). Separate task.
 - Screens 009–011 still not checked by the author on the emulator/device.
