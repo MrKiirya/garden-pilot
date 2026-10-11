@@ -506,3 +506,74 @@ TEST_CASE("mark_skipped_clears_pending") {
   CHECK(fx.s.state(0).last_fired_day == MON);
   CHECK(fx.at(MON, 6, 5, 0).fires.empty());
 }
+
+TEST_CASE("clock_jump_while_running_does_not_refire") {
+  // pending zones resume only on the first valid tick after boot, never on a later clock jump
+  Fx fx;
+  fx.cfg[0] = slot(6, 0, 0x7);
+  fx.at(MON, 5, 59, 59);
+  CHECK(fx.at(MON, 6, 0, 0).fires.size() == 1);
+  CHECK(fx.s.state(0).pending == 0x7u);
+  gs::Events a = fx.jump(MON, 6, 20, 0);  // inside the window
+  CHECK(a.fires.empty());
+  CHECK(a.missed.empty());
+  CHECK(fx.s.state(0).pending == 0x7u);
+  gs::Events b = fx.jump(MON, 7, 50, 0);  // past the window: a running slot is not "missed", pending kept
+  CHECK(b.fires.empty());
+  CHECK(b.missed.empty());
+  CHECK(fx.s.state(0).pending == 0x7u);
+  CHECK(fx.s.state(0).result == gs::Result::RAN);
+}
+
+TEST_CASE("transient_invalid_clock_does_not_resume") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0, 0x7);
+  fx.at(MON, 5, 59, 59);
+  CHECK(fx.at(MON, 6, 0, 0).fires.size() == 1);
+  fx.invalid();
+  gs::Events e = fx.at(MON, 6, 10, 0, true);
+  CHECK(e.clock_became_valid);
+  CHECK(e.fires.empty());
+  CHECK(e.missed.empty());
+  CHECK(fx.s.state(0).pending == 0x7u);
+}
+
+TEST_CASE("unfired_slot_is_still_caught_up_after_a_later_jump") {
+  // Decision 3: a slot not yet fired today is caught up / missed on any discontinuity
+  Fx fx;
+  fx.cfg[0] = slot(6, 0);
+  fx.at(MON, 5, 0, 0);
+  gs::Events e = fx.jump(MON, 6, 10, 0);
+  REQUIRE(e.fires.size() == 1);
+  CHECK(e.fires[0].catch_up);
+}
+
+TEST_CASE("resume_only_on_first_valid_tick_even_with_master_off_at_boot") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0, 0x7);
+  fx.s.restore(0, MON, 0x6);
+  fx.s.set_master(false);
+  fx.at(MON, 6, 10, 0);
+  fx.s.set_master(true);
+  gs::Events e = fx.jump(MON, 6, 20, 0);
+  CHECK(e.fires.empty());
+  CHECK(fx.s.state(0).pending == 0x6u);
+}
+
+TEST_CASE("awaiting_decision_stop_keeps_pending_and_a_restart_resumes_it") {
+  // TODAY'S BEHAVIOUR, not a decision: a user STOP ends the zone with completed=false, so no zone_done call reaches
+  // the core and the zone stays pending; a restart inside the window runs it again. If the author decides that a STOP
+  // settles the slot, flip the two expectations below (and add the core call that clears the pending zones).
+  Fx fx;
+  fx.cfg[0] = slot(6, 0, 0x7);
+  fx.at(MON, 5, 59, 59);
+  fx.at(MON, 6, 0, 0);
+  fx.s.zone_done(0);  // zone 1 completed; the user then pressed STOP during zone 2: no zone_done for 2 and 3
+  CHECK(fx.s.state(0).pending == 0x6u);
+  Fx rebooted;
+  rebooted.cfg[0] = slot(6, 0, 0x7);
+  rebooted.s.restore(0, MON, fx.s.state(0).pending);
+  gs::Events e = rebooted.at(MON, 6, 10, 0);
+  REQUIRE(e.fires.size() == 1);
+  CHECK(e.fires[0].zone_mask == 0x6u);
+}

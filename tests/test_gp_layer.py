@@ -381,3 +381,19 @@ def test_gp_layer_host_scenario(gp_program: Path, tmp_path: Path) -> None:
     for needle in ("sw_boot_off=1", "locked_switch=1", "sw_on=1", "sw_off=1", "quick_off=1", "delay_off=1",
                    "inhibit_refused=1", "inhibit_service_ok=1"):
         assert needle in messages, (needle, messages[-25:])
+
+    # 9. when a zone counts as "done" (on_zone_finished `completed`, the schedule's per-zone mark)
+    def fins(a: str, b: str) -> list[str]:
+        ia = next(i for i, m in enumerate(messages) if m.startswith(f"mark={a} "))
+        ib = next(i for i, m in enumerate(messages) if m.startswith(f"mark={b} "))
+        return [m for m in messages[ia:ib] if m.startswith("fin ")]
+
+    # a queue run that ends by itself is done
+    assert fins("s9_a", "s9_b") == ["fin zone=0 completed=1"], fins("s9_a", "s9_b")
+    # stop_all (even with clear_queue) is not done: the zone stays pending for the schedule
+    assert fins("s9_b", "s9_c") == ["fin zone=1 completed=0"], fins("s9_b", "s9_c")
+    # a manual run is never a done mark
+    assert fins("s9_c", "s9_d") == ["fin zone=2 completed=0"], fins("s9_c", "s9_d")
+    # Home Assistant turning off the engine's main switch gives no stop signal: counts as done. This pins today's
+    # behaviour (README of garden_schedule); flip the expected value here if the author decides otherwise.
+    assert fins("s9_d", "s9_e") == ["fin zone=0 completed=1"], fins("s9_d", "s9_e")

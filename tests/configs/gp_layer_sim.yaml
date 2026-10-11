@@ -58,6 +58,11 @@ interval:
             - lambda: 'ESP_LOGI("GZTEST", "t=%u %s", millis(), id(gp_greenhouse)->debug_line().c_str());'
 
 script:
+  # Task 019: logs every on_zone_finished (zone, completed) so the test can pin when a zone counts as "done".
+  - id: !extend gp_gh_zone_finished
+    then:
+      - lambda: 'ESP_LOGI("GZTEST", "fin zone=%u completed=%d", (unsigned) zone, (int) completed);'
+
   - id: gp_mark
     parameters:
       label: string
@@ -241,4 +246,41 @@ script:
       - gp.inhibit: {id: gp_greenhouse, state: false}
       - delay: 2s
       - script.execute: {id: gp_mark, label: s8_b}
+
+      # 9. when a zone counts as "done" (on_zone_finished completed): the schedule's per-zone mark depends on it
+      # (a manual / service start remembers its intent for 15 s: let the one of step 8 expire first)
+      - delay: 16s
+      - script.execute: {id: gp_mark, label: s9_a}
+      # 9a. a queue run that ends by itself: completed=1
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 0, duration: 3s}
+      - gp.start_queue: gp_greenhouse
+      - delay: 8s
+      - script.execute: {id: gp_mark, label: s9_b}
+      # 9b. a queue run ended by stop_all (also with clear_queue): completed=0
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 1, duration: 30s}
+      - gp.start_queue: gp_greenhouse
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 1}
+          timeout: 10s
+      - delay: 1s
+      - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
+      - delay: 4s
+      - script.execute: {id: gp_mark, label: s9_c}
+      # 9c. a manual run that ends by itself: completed=0 (only queue runs count)
+      - gp.run_zone: {id: gp_greenhouse, zone: 2, duration: 2s}
+      - delay: 7s
+      - script.execute: {id: gp_mark, label: s9_d}
+      # 9d. Home Assistant turning off the main "Greenhouse irrigation" switch of a queue run: no stop signal, so the
+      # run counts as completed=1 (documented in components/garden_schedule/README.md; same path as a watchdog end)
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 0, duration: 30s}
+      - gp.start_queue: gp_greenhouse
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 0}
+          timeout: 10s
+      - delay: 1s
+      - switch.turn_off: gh_zones_main_switch
+      - delay: 4s
+      - script.execute: {id: gp_mark, label: s9_e}
       - logger.log: {level: INFO, tag: GZTEST, format: "done"}
