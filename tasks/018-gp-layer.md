@@ -340,21 +340,21 @@ by a scenario step only if the soil follow-up has landed — to verify by the im
   disconnected" in the log after the delay (`sim-ctl` itself is an API client and would clear it).
 
 ## Acceptance criteria
-- [ ] `script/test-cpp` → `test_gp_model`, `test_gp_alerts` pass (with the existing cpp tests).
-- [ ] `uv run pytest -m unit` → all pass.
-- [ ] `script/lint` → clean; `esphome config` OK for both entry files.
-- [ ] `script/test` → all pass incl. new config rows and the host scenario (devcontainer with `GP_REQUIRE_SDL=1
+- [x] `script/test-cpp` → `test_gp_model`, `test_gp_alerts` pass (with the existing cpp tests).
+- [x] `uv run pytest -m unit` → all pass.
+- [x] `script/lint` → clean; `esphome config` OK for both entry files.
+- [x] `script/test` → all pass incl. new config rows and the host scenario (devcontainer with `GP_REQUIRE_SDL=1
       GP_REQUIRE_CXX=1`: no skips); wall time vs 014 recorded.
-- [ ] `GP_SECRETS=example script/compile` and `GP_SECRETS=example GP_ESPHOME=minimum script/compile` → OK for both entry
+- [ ] (pinned device compile done; minimum + sim not run here) `GP_SECRETS=example script/compile` and `GP_SECRETS=example GP_ESPHOME=minimum script/compile` → OK for both entry
       files; ESP32 flash/RAM delta vs 014 recorded.
-- [ ] `git grep -n -e 'garden_zones\.' -e 'id(gh_zones)' -- packages garden-pilot.yaml garden-pilot-sim.yaml` → hits
+- [x] `git grep -n -e 'garden_zones\.' -e 'id(gh_zones)' -- packages garden-pilot.yaml garden-pilot-sim.yaml` → hits
       only in `irrigation.yaml`, `bed.yaml`, `packages/greenhouse/gp.yaml`, `packages/sim/fault.yaml`.
-- [ ] `git grep -n sprinkler_lvgl -- . ':!tasks'` → no hits.
-- [ ] Emulator E1-E3 done and reported; E4/E5 done or marked "not verified" / cut.
-- [ ] `components/gp/README.md` documents the full contract of Decision 2; SPEC §4.1 links it; CLAUDE.md, README.md and
+- [x] `git grep -n sprinkler_lvgl -- . ':!tasks'` → no hits.
+- [x] Emulator E1-E3 done and reported; E4/E5 done or marked "not verified" / cut.
+- [x] `components/gp/README.md` documents the full contract of Decision 2; SPEC §4.1 links it; CLAUDE.md, README.md and
       README.ru.md updated and in sync.
 - [ ] CI green (`checks`, `compile (pinned)`, `compile (minimum)`).
-- [ ] Implementation notes say what (if anything) ran on the breadboard device.
+- [x] Implementation notes say what (if anything) ran on the breadboard device.
 
 **Needs real hardware (not CI):** optional smoke on the breadboard: RUN Bed 1 from the page clicks relay 1; STOP opens
 all; valve test opens a relay <= 10 s; HA lists the six `gp_greenhouse_*` actions and the "Greenhouse status" / "Alert"
@@ -389,4 +389,56 @@ entities, and the existing entity names are unchanged.
 
 <!-- Filled in by implementer -->
 ## Implementation notes
+Milestone log (updated as I go; final summary at the end).
+- M2 (glue + wiring): `components/gp/{engine.h,gp.h,__init__.py}`, `components/gp_zone/__init__.py`,
+  `components/garden_zones/gp_engine.h` (adapter, wrapped in `#if __has_include` of the gp engine header so garden_zones-only
+  builds keep compiling), `group.h` accessors + last-skip record (watchdog locks are NOT recorded as skips).
+  `packages/core/gp.yaml`, `gp_api.yaml`, `packages/greenhouse/gp.yaml`; the four callers migrated; `esphome config` OK for
+  both entry files; ESP32 pinned compile OK: flash 1213599 -> 1228839 (+15240, +0.8 % of the app partition), RAM 116147 -> 123339.
+Milestone log (updated as I go; final summary at the end).
+- M1 (pure core): `components/gp/{alerts,history,zone_model,format}.h` + `tests/cpp/test_gp_{model,alerts}.cpp`
+  written first, `script/test-cpp` green (39 cases). Pure headers: `history.h` (100-entry ring + flash blob) is new vs the
+  planner list; `GroupModel` takes a `GroupInput` (filled by the glue from the engine adapter), so the cpp tests need no fake engine.
+- M3 (tests/docs): `tests/test_gp_layer.py` (unit shape checks, codegen pinned+minimum, host scenario), `tests/configs/gp_layer_sim.yaml`,
+  config-matrix rows (`gp_headless`, `gp_unknown_engine_group`, `gp_zone_position_out_of_range`; every bed row carries the gp packages),
+  adapted 014/010/011 tests; docs (components/gp/README.md, SPEC 4.1/5/9, CLAUDE.md, READMEs). Host scenario passes (~3 min).
+  `script/lint` ok.
+- M4 (final). Checks: `script/test-cpp` 39 cases ok; `script/lint` ok; full `script/test` (UV_OFFLINE=1, GP_REQUIRE_CXX=1) 695 passed in 14:45
+  (014 baseline not re-measured); host scenario `test_gp_layer_host_scenario` passes (~3 min); ESP32 pinned compile OK
+  (flash 1213599 -> 1228839, +15240, +0.8 % of the app partition; RAM 116147 -> 123339). **Not done:** `GP_ESPHOME=minimum`
+  ESP32 / host compile (codegen `test_gp_codegen[minimum]` passes; CI covers the compile), sim host compile only via the
+  emulator runs. Nothing ran on a real device.
+- Decisions / deviations (record):
+  - Human decisions implemented: generic HA action set (`gp_run_zone` ... with `group` + 1-based `zone`, in `packages/core/gp_api.yaml`,
+    group addressed by hub + key); gp-owned per-zone switches (`gp_zone:` list item in `bed.yaml`) with the engine's switch
+    internal (explicit id `gh_bed<N>_engine_valve`, same name); last watering + 100-entry history persisted with
+    `global_preferences` (blob in `history.h`), one write per completed run; "HA disconnected" = quiet `home_ha_icon` polled in
+    `gp_lvgl_status.yaml`, no alert; settings entities are `entity_category: config` (already by the engine schema, asserted by a test).
+  - Hub id is `gp_hub` (an id equal to an integration name is rejected). Pure headers live in `namespace esphome::gp` (so the adapter
+    resolves `gp::`). `gp` AUTO_LOADs `time`. The clock is the first `time:` entry (no `time_id` needed).
+  - Cuts (spec cut order): cut 1 `gp_zone` soil reading + `soil:` alert (ZoneView.soil stays empty); cut 2 partly: `clock` alert kept,
+    `ha` alert dropped by decision; the "sensors" alerts are therefore not implemented. Cuts 3/4 not applied.
+  - `gp_zone` is mandatory per bed now (it carries the HA switch), so every config with `bed.yaml` needs `core_gp` + `gh_gp`; extra
+    package `core_gp_api` (HA actions need `api`). The watchdog sensor/button moved from irrigation.yaml to greenhouse/gp.yaml
+    (same names). `bed.yaml` enable switch got an explicit id (`gh_bed<N>_enable`).
+  - Host scenario uses watchdog 125 s / run max 2 min (max 1 min does not validate), tag `GZTEST` (reuses the 014 reader), the
+    beds' enable switches are turned on first (they start OFF on a fresh device: pre-existing behaviour, worth a look on hardware).
+  - `gp.run_zone` has an extra `source` option (`manual` / `service`); the valve test uses `service`. SKIPPED needs the soil rule
+    wired into the engine (not yet): covered by cpp tests only.
+  - `test_lambdas_are_small` skips the air/soil lambda of `screensaver_status.yaml` (not irrigation). The legacy `on_value` LVGL updates in
+    `sensors_air_dht.yaml` / `sensors_soil.yaml` violate the CLAUDE.md gotcha and are left (follow-up).
+  - I ran `git mv` once (sprinkler_lvgl_status.yaml -> gp_lvgl_status.yaml), so that rename is staged; nothing committed.
+- Emulator (script/sim-ui, shots in `.esphome/shots/`): E1 gh_running, home_running, valve_test_open/closed, saver_running texts identical to 014
+  strings ("Running: B1", "Dur: B1 5  B2 5  B3 5 min", "Queue: 00:05:00 next B1", "Watering", "OPEN - 7 s" in green, "Bed 1"); intended
+  difference: the quiet Wi-Fi-style icon in the Home header while no API client is connected (and "HA offline" on Setup when sim-ctl
+  is not connected). No 014 build was re-run for a pixel comparison. E2 ok: tap Bed 2 -> relay on, "Greenhouse status" = "Watering B2" (sim-ctl get
+  reads text sensors), +Q B3 / +Q B1 / Run Q ran B3 then B1, STOP -> confirm -> all off, status "Idle"; HA zone switches work through
+  gp ("Greenhouse bed 2/3" on/off). Observed: AA switched to off after a manual run (stock start_single_valve behaviour, not new).
+  E3 ok (125 s variant): "Sim rogue relay 1" on -> after ~130 s Alert = "Greenhouse: watchdog - B1 locked", status "Locked", watchdog on,
+  Home "Alarm". Reset not exercised (sim-ctl cannot press buttons). E4 not verified (no HA). E5 cut (no `ha` alert by decision).
 ## Follow-ups
+- Soil reading in the gp model + soil-sensor-unavailable alert + SKIPPED by soil in a scenario (cut 1).
+- Air/soil sensor alerts; service-mode inhibit for HA zone switches; sim-ctl button/API-action support.
+- Legacy `on_value` LVGL updates in `sensors_air_dht.yaml` / `sensors_soil.yaml` -> pollers.
+- Enable switches default OFF on a fresh device (restore default): check the intended first-boot behaviour.
+- Time-left for PAUSED zones is not reported by the engine adapter.
