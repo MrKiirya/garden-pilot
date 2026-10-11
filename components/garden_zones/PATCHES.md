@@ -94,3 +94,10 @@ against the `sprinkler` sources of the installed ESPHome package and fails on an
   `Valve N skipped: <reason>`). Manual runs and pending requests never reach those branches. The check is not used
   for cycle repeats (`repeat_count_`); lanes have no repeat entity. Without a check behaviour is unchanged.
 - Re-port notes: re-add `skip_cycle_valves_(first_valve)` at the top of the `auto_advance() && multiplier()` branch.
+
+## number-clamp
+- Purpose: a restored run duration above the number's `max_value` must not run longer than the watchdog allows (task 014).
+- Files: `sprinkler.cpp` (`SprinklerControllerNumber::setup()`).
+- Behaviour change: a value restored from flash that is outside `min_value..max_value` is clamped to the nearest bound,
+  saved again and logged at WARN. Stock publishes a restored value unclamped. Initial values are not touched.
+- Re-port notes: keep the block after the `pref_.load()` branch, before `publish_state(value)`.

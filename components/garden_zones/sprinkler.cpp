@@ -30,6 +30,17 @@ void SprinklerControllerNumber::setup() {
         value = this->traits.get_min_value();
       }
     }
+    // GZ-PATCH-BEGIN(number-clamp)
+    // A restored value outside min..max (saved under an older, larger max) is clamped; it would otherwise run longer
+    // than the watchdog's max_on_time allows.
+    if (!std::isnan(value) && (value > this->traits.get_max_value() || value < this->traits.get_min_value())) {
+      const float clamped = value > this->traits.get_max_value() ? this->traits.get_max_value() : this->traits.get_min_value();
+      ESP_LOGW(TAG, "Restored value %.1f of '%s' is outside %.1f..%.1f, clamped to %.1f", value,
+               this->get_name().c_str(), this->traits.get_min_value(), this->traits.get_max_value(), clamped);
+      value = clamped;
+      this->pref_.save(&value);
+    }
+    // GZ-PATCH-END(number-clamp)
   }
   this->publish_state(value);
 }

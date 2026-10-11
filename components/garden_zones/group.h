@@ -9,6 +9,8 @@
 #pragma once
 
 #include <cstdio>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -46,10 +48,42 @@ class GardenZonesGroup : public Component {
     this->map_ = lanes::LaneMap(this->table_);
   }
 
+  /// Group entities (optional). The main switch starts a full cycle of the group / shuts it down; its state is "any zone
+  /// of the group is active". The auto-advance switch sets the stored auto-advance of every lane; its state is "any
+  /// lane has auto-advance". Both are polled by their state lambda, so they follow changes made elsewhere.
+  void set_main_switch(SprinklerControllerSwitch *main_switch) {
+    this->main_sw_ = main_switch;
+    main_switch->set_state_lambda([this]() -> optional<bool> { return this->any_zone_active(); });
+    this->main_on_ = make_unique<Automation<>>(main_switch->get_turn_on_trigger());
+    this->main_on_action_ = make_unique<CallAction>([this]() { this->start_cycle(); });
+    this->main_on_->add_actions({this->main_on_action_.get()});
+    this->main_off_ = make_unique<Automation<>>(main_switch->get_turn_off_trigger());
+    this->main_off_action_ = make_unique<CallAction>([this]() { this->shutdown(); });
+    this->main_off_->add_actions({this->main_off_action_.get()});
+  }
+
+  void set_auto_advance_switch(SprinklerControllerSwitch *aa_switch) {
+    this->aa_sw_ = aa_switch;
+    aa_switch->set_state_lambda([this]() -> optional<bool> { return this->auto_advance(); });
+    this->aa_on_ = make_unique<Automation<>>(aa_switch->get_turn_on_trigger());
+    this->aa_on_action_ = make_unique<CallAction>([this]() { this->set_auto_advance(true); });
+    this->aa_on_->add_actions({this->aa_on_action_.get()});
+    this->aa_off_ = make_unique<Automation<>>(aa_switch->get_turn_off_trigger());
+    this->aa_off_action_ = make_unique<CallAction>([this]() { this->set_auto_advance(false); });
+    this->aa_off_->add_actions({this->aa_off_action_.get()});
+  }
+
+  /// The restored auto-advance switch state is pushed to the lanes (the switch sets up before the group).
+  void setup() override {
+    if (this->aa_sw_ != nullptr)
+      this->set_auto_advance(this->aa_sw_->state);
+  }
+
   size_t zone_count() const { return this->map_.zone_count(); }
   size_t lane_count() const { return this->lanes_.size(); }
 
   void set_watchdog(GroupWatchdog *watchdog) { this->watchdog_ = watchdog; }
+  bool zone_locked(size_t zone) const { return this->watchdog_ != nullptr && this->watchdog_->zone_locked(zone); }
   bool watchdog_tripped() const { return this->watchdog_ != nullptr && this->watchdog_->tripped(); }
   void reset_watchdog() {
     if (this->watchdog_ != nullptr)
@@ -179,6 +213,70 @@ class GardenZonesGroup : public Component {
       lane->shutdown();
   }
 
+  /// Drops every queued zone of the group (a running zone keeps running).
+  void clear_queue() {
+    for (Sprinkler *lane : this->lanes_)
+      lane->clear_queued_valves();
+  }
+
+  /// Sets the stored auto-advance of every lane (on: a lane goes on to its next zone, off: it stops after the current).
+  void set_auto_advance(bool auto_advance) {
+    for (Sprinkler *lane : this->lanes_)
+      lane->set_auto_advance(auto_advance);
+  }
+
+  bool auto_advance() const {
+    for (Sprinkler *lane : this->lanes_) {
+      if (lane->auto_advance())
+        return true;
+    }
+    return false;
+  }
+
+  bool any_zone_active() const {
+    for (Sprinkler *lane : this->lanes_) {
+      if (lane->active_valve().has_value())
+        return true;
+    }
+    return false;
+  }
+
+  /// Seconds left of the zone when it is the active zone of its lane.
+  optional<uint32_t> time_remaining_zone(optional<size_t> zone) const {
+    if (!zone.has_value())
+      return nullopt;
+    auto ref = this->map_.route(zone.value());
+    if (!ref.has_value() || ref->lane >= this->lanes_.size())
+      return nullopt;
+    Sprinkler *lane = this->lanes_[ref->lane];
+    auto active = lane->active_valve();
+    if (!active.has_value() || active.value() != ref->valve)
+      return nullopt;
+    return lane->time_remaining_active_valve();
+  }
+
+  /// Seconds left of the current operation: the largest over the lanes (they run in parallel).
+  optional<uint32_t> time_remaining() const {
+    optional<uint32_t> result;
+    for (Sprinkler *lane : this->lanes_) {
+      auto left = lane->time_remaining_current_operation();
+      if (left.has_value() && (!result.has_value() || left.value() > result.value()))
+        result = left;
+    }
+    return result;
+  }
+
+  /// Seconds of queued work: the largest over the lanes (they run in parallel).
+  uint32_t queue_time() const {
+    uint32_t result = 0;
+    for (Sprinkler *lane : this->lanes_) {
+      const uint32_t left = lane->total_queue_time();
+      if (left > result)
+        result = left;
+    }
+    return result;
+  }
+
   std::vector<size_t> active_zones() const {
     std::vector<std::optional<size_t>> active;
     for (Sprinkler *lane : this->lanes_) {
@@ -203,6 +301,16 @@ class GardenZonesGroup : public Component {
     return ref;
   }
 
+  /// An action that calls a function (used for the group entities' switch triggers).
+  class CallAction final : public Action<> {
+   public:
+    explicit CallAction(std::function<void()> call) : call_(std::move(call)) {}
+    void play() override { this->call_(); }
+
+   protected:
+    std::function<void()> call_;
+  };
+
   struct ZoneSoil {
     sensor::Sensor *sensor{nullptr};
     float skip_above{0};
@@ -218,6 +326,10 @@ class GardenZonesGroup : public Component {
 
   std::string name_;
   GroupWatchdog *watchdog_{nullptr};
+  SprinklerControllerSwitch *main_sw_{nullptr};
+  SprinklerControllerSwitch *aa_sw_{nullptr};
+  std::unique_ptr<Automation<>> main_on_, main_off_, aa_on_, aa_off_;
+  std::unique_ptr<CallAction> main_on_action_, main_off_action_, aa_on_action_, aa_off_action_;
   std::vector<ZoneSoil> soil_;
   std::string reason_;
   std::vector<Sprinkler *> lanes_;
@@ -283,6 +395,15 @@ template<typename... Ts> class ShutdownGroupAction final : public Action<Ts...> 
  public:
   explicit ShutdownGroupAction(GardenZonesGroup *group) : group_(group) {}
   void play(const Ts &...x) override { this->group_->shutdown(); }
+
+ protected:
+  GardenZonesGroup *group_;
+};
+
+template<typename... Ts> class ClearGroupQueueAction final : public Action<Ts...> {
+ public:
+  explicit ClearGroupQueueAction(GardenZonesGroup *group) : group_(group) {}
+  void play(const Ts &...x) override { this->group_->clear_queue(); }
 
  protected:
   GardenZonesGroup *group_;
