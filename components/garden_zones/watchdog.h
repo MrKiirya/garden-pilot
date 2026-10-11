@@ -231,10 +231,12 @@ class GroupWatchdog : public Component {
   bool pump_logged_{false};
 };
 
-class WatchdogTripTrigger : public Trigger<int, std::string> {
+// int32_t, not int: the YAML trigger arguments (`zone` as a Python int) are int32_t, which is `long` on ESP32 (Xtensa).
+class WatchdogTripTrigger : public Trigger<int32_t, std::string> {
  public:
   explicit WatchdogTripTrigger(GroupWatchdog *watchdog) {
-    watchdog->add_on_trip_callback([this](int zone, const std::string &reason) { this->trigger(zone, reason); });
+    watchdog->add_on_trip_callback(
+        [this](int zone, const std::string &reason) { this->trigger(static_cast<int32_t>(zone), reason); });
   }
 };
 
