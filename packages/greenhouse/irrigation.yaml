@@ -1,5 +1,8 @@
 # Greenhouse irrigation: one `garden_zones` group, gh_zones ("Greenhouse"). The beds come from
 # packages/greenhouse/bed.yaml (one include per bed, each adds a `garden_zone:` list item; include this file first).
+# This is the ENGINE side. Screens, schedules and Home Assistant talk to it only through the gp_* layer
+# (packages/core/gp.yaml + packages/greenhouse/gp.yaml: group gp_greenhouse, watchdog sensor and reset button, zone
+# switches, Home Assistant actions); do not call garden_zones.* from anywhere else.
 # Gravity-fed bed zones from a shared barrel, no pump (self-drain barrel line). The raw relay drivers (board_relay_N)
 # live in the board profile under hardware/.
 # Do not call lvgl.* from run_duration_number on_value — restore/HA can fire outside LVGL-safe context and crash.
@@ -54,20 +57,3 @@ garden_zones:
             tag: gh_zones
             format: "Watchdog tripped: zone %d, reason %s"
             args: ['(int) zone', 'reason.c_str()']
-
-# Watchdog state for Home Assistant: on while any bed (or the group) is locked by the watchdog.
-binary_sensor:
-  - platform: template
-    id: gh_zones_watchdog_problem
-    name: "Greenhouse watchdog"
-    device_class: problem
-    condition:
-      garden_zones.watchdog_tripped: gh_zones
-
-button:
-  - platform: template
-    id: gh_zones_watchdog_reset
-    name: "Greenhouse watchdog reset"
-    entity_category: config
-    on_press:
-      - garden_zones.reset_watchdog: gh_zones
