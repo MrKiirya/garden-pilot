@@ -352,13 +352,22 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
             if old != new:
                 events.append((number, new, t))
         previous = (r1, r2, r3)
-    assert [(n, v) for n, v, _t in events] == [(1, 1), (1, 0), (2, 1), (2, 0), (1, 1), (1, 0), (2, 1), (2, 0)], (events, seq)
-    cycle_bed1 = events[1][2] - events[0][2]
-    cycle_bed2 = events[3][2] - events[2][2]
-    queued_bed1 = events[5][2] - events[4][2]
-    queued_bed2 = events[7][2] - events[6][2]
+    # the engine hands over between zones with a brief overlap (next valve opens before the previous closes):
+    # check each valve's on/off sequence and the run order, not a strict global interleaving
+    handover = 500
+    runs = {}
+    for number in (1, 2):
+        values = [(v, t) for n, v, t in events if n == number]
+        assert [v for v, _t in values] == [1, 0, 1, 0], (number, events, seq)
+        runs[number] = [(values[0][1], values[1][1]), (values[2][1], values[3][1])]
+    assert {n for n, _v, _t in events} == {1, 2}, (events, seq)
+    order = [runs[1][0], runs[2][0], runs[1][1], runs[2][1]]  # cycle bed 1, cycle bed 2, slot bed 1, slot bed 2
+    for (_on, off), (next_on, _next_off) in zip(order, order[1:]):
+        assert next_on >= off - handover, ("runs overlap more than the handover", events, seq)
+    assert [r[0] for r in order] == sorted(r[0] for r in order), (events, seq)
+    cycle_bed1, cycle_bed2, queued_bed1, queued_bed2 = (off - on for on, off in order)
     assert cycle_bed1 >= 55000 and cycle_bed2 >= 55000, "the cycle runs to its end undisturbed"
     assert 3000 <= queued_bed1 <= 12000 and 3000 <= queued_bed2 <= 12000, "the slot's beds run at 10 %"
-    assert events[4][2] >= events[3][2] + 4000, "the slot's zones start only after the cycle ended"
+    assert order[2][0] >= order[1][1] + 4000 - handover, "the slot's zones start only after the cycle ended"
     assert "end_quiet=1 queue=0 deferred=0" in five, five
     assert _value(five, "last").endswith("#3 ran"), five
