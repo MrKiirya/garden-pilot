@@ -9,10 +9,11 @@ everything below is resolved.
 |---|---|---|
 | 012 groups and lanes | `task/012-groups-and-lanes` | draft PR #20, CI green, review APPROVE — **merge first** |
 | 013 watchdog + soil skip | `task/013-watchdog-and-soil-skip` (on 012) | draft PR #22 (base: 012 branch), review round 3 APPROVE, CI started via workflow_dispatch |
-| 014 device + emulator → `garden_zones` | `task/014-switch-to-garden-zones` (on 013) | implemented and committed (2026-10-11 ~03:40): ESP32 pinned compile OK (+0.8 % flash), script/test 636 passed, emulator scenarios E3–E6 pass (screenshots in `.esphome/shots/` locally); review round 1 running; no PR yet. Found and fixed a 013 bug the host builds missed (watchdog trigger `int32_t`, fix committed on the 013 branch) |
+| 014 device + emulator → `garden_zones` | `task/014-switch-to-garden-zones` (on 013) | draft PR #23, review APPROVE; implemented and committed (2026-10-11 ~03:40): ESP32 pinned compile OK (+0.8 % flash), script/test 636 passed, emulator scenarios E3–E6 pass (screenshots in `.esphome/shots/` locally); review round 1 running; no PR yet. Found and fixed a 013 bug the host builds missed (watchdog trigger `int32_t`, fix committed on the 013 branch) |
 | 016 SNTP time fallback | `task/016-time-fallback` | draft PR #19, CI green, review APPROVE |
 | 017 screen decisions (docs) | `task/017-screens-decision` | draft PR #21 |
-| 018 `gp_*` layer, 019 schedules | this branch `handoff/2026-10-10` | **specs only, need the author's approval** |
+| 018 `gp_*` layer | `task/018-gp-layer` (on 014) | draft PR #25, review round 2 APPROVE, ESP32 pinned compile OK, CI started |
+| 019 schedules | `task/019-schedules` (on 018) | implementation running (2026-10-11 morning), not pushed yet |
 
 Stacked branches: after #20 is squash-merged, 013 and 014 need to be brought up to date with `master` before their
 PRs can merge (CI for a stacked branch: `gh workflow run ci.yml --ref <branch>`).
