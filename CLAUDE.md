@@ -11,7 +11,7 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
    API, OTA). **C++ only for stateful irrigation logic** (future `components/garden_zones/`), never large
    logic in lambdas.
 2. **One abstraction layer, `gp_*`.** Screens, schedules and Home Assistant talk to irrigation only through
-   `gp_*` scripts and entities, never to `sprinkler:` / `garden_zones` directly, so the engine can be swapped.
+   `gp.*` actions and `gp_*` entities (`components/gp/README.md`), never to `sprinkler:` / `garden_zones` directly, so the engine can be swapped.
 3. **Modules are packages.** A feature (bed, lawn, heating, …) is a package that can be enabled by uncommenting
    one line in the entry file; hardware pins live in `hardware/<board>.yaml` substitutions, not in feature files.
 4. **Safety first for actuators.** Raw GPIO switches are `internal: true`; valves and heaters default OFF on boot
@@ -46,6 +46,9 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/lvgl/fonts/` | Vendored TTF (Montserrat Bold) + `OFL.txt` for the glyph-limited custom font. |
 | `packages/lvgl/dialog_confirm.yaml` | Confirm dialog on the LVGL top layer + `gp_confirm` script (pattern in its header). |
 | `packages/core/diagnostics.yaml` | Internal version / uptime / restart button for the Network page (no new HA entities). |
+| `components/gp/` | The `gp_*` layer (MIT): pure model/alerts/history/format headers + ESPHome glue, `Engine` adapter interface; contract in its README. |
+| `components/gp_zone/` | One `gp_zone:` list item per bed: the HA zone switch (MIT). The `garden_zones` adapter is `components/garden_zones/gp_engine.h`. |
+| `packages/core/gp.yaml`, `gp_api.yaml`, `packages/greenhouse/gp.yaml` | gp hub + alert sensor; generic HA actions; greenhouse group, status/watchdog entities. `packages/greenhouse/gp_lvgl_status.yaml` = pollers for the greenhouse/Home labels. |
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`irrigation.yaml`: the `garden_zones` group `gh_zones`, its entities, watchdog sensor and reset button), LVGL page. |
 | `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), watchdog fault injection "Sim rogue relay 1" (`fault.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
@@ -72,7 +75,7 @@ introduced by roadmap tasks, not ad hoc.
    `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`, `lvgl_boot_wifi`.
 5. `gh_irrigation` (before the greenhouse page: its buttons call the group `gh_zones`) → `gh_bed_N` (+ optional
    `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `gh_lvgl_page` → `gh_sensors_air` →
-   `gh_sensors_soil` → `gh_sprinkler_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test).
+   `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 `garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `core_diagnostics`, `display_sdl` and
@@ -110,13 +113,14 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - Actions extended into a `script` run outside the `on_touch` trigger: don't use the trigger-only `touch`
   variable there; use `id(touch)->get_touch()`.
 - Don't call `lvgl.*` from a `number`'s `on_value` that can fire on restore/HA before LVGL is ready; poll from
-  an `interval` instead (see `packages/greenhouse/sprinkler_lvgl_status.yaml`, name kept from the stock-sprinkler days).
+  an `interval` instead (see `packages/greenhouse/gp_lvgl_status.yaml`).
 - Package merge: substitutions in the entry file win; dicts merge by key; component lists merge by `id`.
   Prefer small includes over deep `!extend` / `!remove` chains.
 - The sim entry file needs `sdl2-config` (SDL2 dev files) even for `esphome config`; `web_server` is not available on
   the `host` platform, and `on_time_sync` does not fire on `host` (poll the clock from an `interval`).
 - `xdotool click` is too short for LVGL to register a touch: use press, move, release with pauses (`script/sim-ui tap`). SDL `headless: true` disables the SDL touchscreen, so screenshots are X-level grabs under Xvfb instead.
 - A template entity must not reuse the generated id `<group>_watchdog` (the group's watchdog component) or `<group>_lane_<n>`.
+- LVGL reads `gp` only from `interval:` pollers (guard with `changed_since`), never from a gp trigger, `on_value` or API action; label texts come from `gp::fmt::*` so lambdas stay one line. The hub id is `gp_hub` (an id may not equal an integration name).
 - Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
   (`tests/test_service.py`); it is enforced by `run_duration` and by the separate `gp_valve_test_guard` script. Service

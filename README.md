@@ -136,12 +136,13 @@ Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/comp
 ## Repository
 - `garden-pilot.yaml` — device entry file: a list of packages. `garden-pilot-sim.yaml` — the same packages for the PC emulator.
 - `hardware/` — board profile (pins, relay drivers) and `sim.yaml` (PC emulator and config checks without a board); `packages/` — core (API, OTA, network, time), display and touch (device or SDL window), LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; one bed is enough (the greenhouse page still shows beds 1-3).
+- Irrigation is reached only through the `gp_*` layer (`components/gp/README.md`): the greenhouse page, valve test and Home Assistant use the same actions; Home Assistant gets one generic action set (`gp_run_zone`, `gp_enqueue_zone`, `gp_start_queue`, `gp_full_cycle`, `gp_stop_all`, `gp_reset_watchdog`, with `group` and a 1-based `zone`).
 - `design/` — design system: rules, colour/type tokens, icons.
 - `docs/SPEC.md` — specification, architecture, roadmap.
 - `CLAUDE.md`, `.claude/`, `tasks/` — how the project is developed with Claude Code agents.
 
 ## License
 [MIT](LICENSE), except `components/garden_zones/`: a modified copy of ESPHome code under GPLv3 (see its
-`LICENSE` and `README.md`). That component is in development and not used by the device yet.
+`LICENSE` and `README.md`). `components/gp/` and `components/gp_zone/` are MIT.
 
 The Montserrat Bold font in `packages/lvgl/fonts/` is third-party, under the SIL Open Font License 1.1 (see `packages/lvgl/fonts/OFL.txt`).

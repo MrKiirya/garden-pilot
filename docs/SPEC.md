@@ -120,22 +120,21 @@ documented as recommendations, the builder decides; the author's own build is do
 trigger them).
 
 ### 4.1 The `gp_*` layer
-Screens, schedules and automations never call `sprinkler` / `garden_zones` directly, only `gp_*` scripts and
-entities:
+Screens, schedules, the valve test and Home Assistant never call `garden_zones` directly, only the `gp` contract
+(task 018): a per-zone read model addressed by zone index, a group summary (running, queue, now/next, revision), an
+alert table and a fixed set of `gp.*` actions, implemented by the C++ component `components/gp/` (MIT) over an engine
+adapter (`components/garden_zones/gp_engine.h`, GPLv3). Full contract, names and the polling rule:
+[components/gp/README.md](../components/gp/README.md).
 
-```yaml
-script:
-  - id: gp_run_bed      # param: bed
-  - id: gp_queue_bed    # param: bed
-  - id: gp_stop_all
-  # ...
-# entities: gp_bed1_state, gp_queue_text, ...
-```
-
-So screens and HA do not depend on the engine. The current greenhouse page, the Home status, the valve test and the
-screensaver status still call `garden_zones.*` on the group `gh_zones` directly (task 014, a mechanical rename of the
-old `sprinkler.*` calls); they move to `gp_*` when the layer is introduced (stage 8).
-The full list of `gp_*` actions and entities is a roadmap task.
+- Home Assistant gets ONE generic action set for all groups (`gp_run_zone` etc. with `group` and a 1-based `zone`), one
+  switch per zone from the gp layer ("Greenhouse bed N"; the engine's zone switches are internal), a "Greenhouse status"
+  and an "Alert" text sensor; settings entities have `entity_category: config`.
+- The last watering of each zone and the last 100 runs are persisted to flash after each run; the full history stays
+  in Home Assistant.
+- "Home Assistant disconnected" is a quiet header icon, not an alert.
+- LVGL reads `gp` only from pollers.
+- Not done yet (follow-ups): soil reading in the model and the soil-sensor alert, service-mode inhibit for HA zone
+  switches, air-sensor alerts.
 
 ### 4.2 Loading our own component
 ```yaml
@@ -170,6 +169,7 @@ external_components:
     The group has the substitutions `gh_max_parallel` (default `"1"`: one valve at a time; `"all"` = every bed at once),
     `gh_max_on_time` (watchdog, default `60min`, `never` disables it), `gh_bed_run_max` (run-duration number max, minutes,
     default `55`) and `gh_bed_run_initial` (default `5`); `gh_bed_run_max * 60 s + 2 s <= gh_max_on_time` is enforced.
+  - since task 018 each bed also adds a `gp_zone:` list item (the Home Assistant switch of the gp layer); `packages/core/gp.yaml`, `gp_api.yaml` and `packages/greenhouse/gp.yaml` come after the last bed.
   - optional `packages/greenhouse/bed_soil.yaml` per bed (reporting soil moisture sensor; vars `bed`, `bed_name`,
     `adc_pin`, `cal_dry_v`, `cal_wet_v`); one ADC pin serves one probe.
   - the board profile holds the raw relay drivers as internal switches `board_relay_N` (the same ids in every
@@ -303,7 +303,7 @@ tests/
    group actions (in a host test build only); task 013: watchdog for valves and the pump and the per-zone soil-moisture
    skip (host test build only); task 014: the device and the emulator run the greenhouse on `garden_zones` (group `gh_zones`,
    group entities with the old names plus "Greenhouse watchdog" and its reset button, watchdog 60 min by default).
-8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
+8. **`gp_*` layer** on top of `garden_zones`, screens switched to it (task 018: read model, alerts, actions, HA surface, persisted last watering and history; soil reading follows).
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.
 10. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.

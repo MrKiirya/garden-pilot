@@ -136,12 +136,13 @@ devcontainer. CI проверяет только Docker Engine на Linux в н�
 ## Репозиторий
 - `garden-pilot.yaml` — входной файл устройства: список пакетов. `garden-pilot-sim.yaml` — те же пакеты для эмулятора на ПК.
 - `hardware/` — профиль платы (пины, драйверы реле) и `sim.yaml` (эмулятор на ПК и проверка конфига без платы); `packages/` — ядро (API, OTA, сеть, время), экран и тач (устройство или окно SDL), страницы LVGL, теплица (полив, грядки, необязательный датчик влажности грядки, датчики). Одна грядка — один блок `!include` в основном файле; достаточно одной грядки (страница теплицы пока показывает грядки 1-3).
+- Полив доступен только через слой `gp_*` (`components/gp/README.md`): страница теплицы, проверка клапанов и Home Assistant используют одни и те же действия; для Home Assistant один общий набор (`gp_run_zone`, `gp_enqueue_zone`, `gp_start_queue`, `gp_full_cycle`, `gp_stop_all`, `gp_reset_watchdog`, параметры `group` и `zone` с 1).
 - `design/` — дизайн-система: правила, токены цветов и шрифтов, иконки.
 - `docs/SPEC.md` — спецификация, архитектура, roadmap.
 - `CLAUDE.md`, `.claude/`, `tasks/` — как проект разрабатывается с агентами Claude Code.
 
 ## Лицензия
 [MIT](LICENSE), кроме `components/garden_zones/`: изменённая копия кода ESPHome под GPLv3 (см. его `LICENSE` и
-`README.md`). Компонент в разработке и пока не используется устройством.
+`README.md`). `components/gp/` и `components/gp_zone/` — MIT.
 
 Шрифт Montserrat Bold в `packages/lvgl/fonts/` сторонний, под лицензией SIL Open Font License 1.1 (см. `packages/lvgl/fonts/OFL.txt`).
