@@ -289,9 +289,10 @@ with timeouts:
 - [x] `uv run pytest -m unit` → all pass.
 - [x] `script/lint` → clean; `esphome config OK` for both entry files.
 - [x] `script/test` → all pass incl. the new config rows and the host scenario (devcontainer, `GP_REQUIRE_SDL=1
-      GP_REQUIRE_CXX=1`: no skips); wall time before/after recorded.
-- [x] `GP_SECRETS=example script/compile` and `GP_SECRETS=example GP_ESPHOME=minimum script/compile` → ESP32 OK; same
-      for `garden-pilot-sim.yaml`; flash/RAM delta recorded.
+      GP_REQUIRE_CXX=1`: no skips).
+- [ ] `script/test` wall time before/after recorded — see "Review round 1 fixes" (WALLTIME).
+- [ ] `GP_SECRETS=example GP_ESPHOME=minimum script/compile` (ESP32) and the `garden-pilot-sim.yaml` compiles — NOT run
+      (left to CI; the minimum `--only-generate` codegen row passes). Pinned ESP32 compile done, flash/RAM delta recorded.
 - [x] `git grep -n -e 'garden_zones\.' -e 'sprinkler\.' -- packages/greenhouse/schedule*.yaml components/garden_schedule*`
       → no hits (principle 2).
 - [x] `git grep -n 'on_time:' -- packages` → no new cron trigger for watering.
@@ -394,3 +395,46 @@ Not verified on hardware: everything (breadboard run, SNTP-only clock, power cut
 - A zone skipped by the engine (wet soil, disabled) never completes, so it stays pending and re-queues after a restart inside the window.
 - Verify on a device: HA renders "Greenhouse next run" (timestamp, empty when none); clock valid after an OTA reboot.
 - Slot entities per slot: 11 (days are 7 switches); add a card/grouping on the HA side if it is too noisy.
+
+## Review round 1 fixes
+Awaiting the author's decision (behaviour NOT changed; today's behaviour is documented in
+`components/garden_schedule/README.md` and pinned by a clearly named test):
+- **Required 1 - what a user STOP / entering service mode does to pending zones.** Today: the stopped zone and the zones
+  still queued stay pending, and a restart inside the catch-up window runs them (cpp case
+  `awaiting_decision_stop_keeps_pending_and_a_restart_resumes_it`; the gp scenario step 9 pins `completed=0` for a
+  stop). Options: (a) STOP settles today's pending zones of every slot (e.g. a gp `on_stop` -> `garden_schedule.cancel_pending`, result
+  "stopped") so nothing resumes after a reboot; (b) keep it: a STOP is like an interruption and the rest resumes after
+  a reboot inside the window.
+- **Required 5 - a slot firing during a manual full cycle.** Today: `gp.start_queue` switches the lane to queue mode, the
+  current zone finishes, the scheduled zones run, the rest of the cycle is dropped; `GpGroup::start_queue` now logs a
+  WARN (a cycle started from Home Assistant's main switch is also detected, as any running non-queue run). Options: (a) interrupt with WARN
+  (today); (b) queue the slot's zones and start them only after the cycle ends; (c) skip the slot ("skipped: cycle running"). Not
+  covered by a scenario step (needs the chosen behaviour).
+
+Done:
+- Required 2: `Scheduler::resumed_`; pending zones resume only on the first valid tick after boot. A later clock jump
+  or a transient invalid clock never re-fires a fired slot or reports it missed (pending kept). cpp:
+  `clock_jump_while_running_does_not_refire`, `transient_invalid_clock_does_not_resume`,
+  `unfired_slot_is_still_caught_up_after_a_later_jump`, `resume_only_on_first_valid_tick_even_with_master_off_at_boot`.
+- Required 3: gp host scenario step 9 (`tests/configs/gp_layer_sim.yaml`, via the no-op hook script `gp_gh_zone_finished`
+  that logs `fin zone=N completed=X`): queue run by itself -> 1; `stop_all` (clear_queue) -> 0; manual run -> 0; HA turning off the main
+  switch -> 1. The watchdog-ended run is documented, not tested (scheduled runs are clamped below the limit). Table in
+  `components/garden_schedule/README.md`.
+- Required 4: `components/gp/README.md` lists `gp.enqueue_zones`, `gp.inhibited`, `on_zone_finished (zone, completed)`.
+- Required 6: boxes unticked above (compile minimum / sim; wall time).
+- Suggestions done: run marks keyed by slot NUMBER (blob index = number - 1, other slots keep their marks); `zone_group`
+  option (default zone count per gp group, set in `schedule.yaml`); `time_id: ha_time`; README notes (slot enabled after
+  its time, missed-slot zones in the engine queue, engine-skipped zones show "ran", spring-forward offset);
+  `entity_category: diagnostic` on "next run text" and "last schedule" ("Greenhouse next run" stays a normal timestamp
+  entity for HA).
+- Skipped on purpose: millis-wrap 3 s stop window; spring-forward offset of the next-run timestamp (README line only).
+- Verified: `script/test-cpp` 68 cases ok, `script/lint` ok, `tests/test_gp_layer.py` 17 passed, ESP32 pinned compile OK
+  (flash 1249879 bytes, 68.1 %; RAM 126355).
+
+Follow-ups added:
+- A manual/service run of a zone remembers its intent for 15 s, so a queue run of the same zone started within 15 s is
+  classified manual (`completed=false`): the scheduled zone then stays pending. Edge case, not changed.
+- Engine-skipped zones stay pending (already listed); missed-slot zones stay in the engine queue (README).
+- Final full run after the fixes: `UV_OFFLINE=1 GP_REQUIRE_CXX=1 script/test` -> 744 passed in 994 s (16:34), no skips.
+  WALLTIME: the "before" run (a `git archive 8440aea` copy) was NOT done (would cost another ~15 min); the box stays
+  unticked. The reviewer's earlier run of the branch was 978 s, so the new tests add little.
