@@ -43,14 +43,10 @@ Answered 2026-10-11 (recorded at the top of the spec): one generic HA action set
 "HA disconnected" = quiet header icon. Still open: alert texts/severities/thresholds; card state words (designer).
 
 ### 019 schedules (`tasks/019-schedules.md`)
-1. Slots per group: 2 by default (max 8)? Each slot adds 5 HA entities.
-2. Missed runs: catch-up window 60 min, never water late, or always once late the same day?
-3. A slot that fired < 60 s before a power cut may run again — accept, or force a flash save after each run?
-4. A slot runs a zone list + one multiplier, or per-zone minutes (many more entities)?
-5. Days in HA: one text (`daily` / `mon wed fri`), seven switches, or presets?
-6. "Greenhouse schedules" master switch default on (slots default off) or off?
-Known weak spots in the 019 spec to fix before implementation: host-scenario step 3, emulator check E3 wording,
-the `parse_days` test row.
+Answered 2026-10-11 (top of the spec): 2 slots (max 8); zone list + multiplier; 7 day switches; catch-up 60 min;
+per-zone "done" mark at completion, written to flash at once, catch-up re-runs only unfinished zones; master switch
+on, slots off. Spec weak spots still to fix before implementation: host-scenario step 3, E3 wording, `parse_days`
+row (days are switches now, so that row changes anyway).
 
 ### Other
 - Personal config: the public `garden-pilot.yaml` stays on defaults. Proposal: a git-ignored personal entry file
