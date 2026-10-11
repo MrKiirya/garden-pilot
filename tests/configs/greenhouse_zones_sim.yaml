@@ -30,6 +30,9 @@ packages:
   gh_bed_3: !include
     file: packages/greenhouse/bed.yaml
     vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+  # bed.yaml adds gp_zone switches: the gp layer (hub + greenhouse group, no API actions here) must be present
+  core_gp: !include packages/core/gp.yaml
+  gh_gp: !include packages/greenhouse/gp.yaml
 
 logger:
   level: INFO

@@ -318,13 +318,17 @@ def test_bed_soil_shape() -> None:
 def test_bed_shape() -> None:
     data = load_esphome_yaml(BED)
     assert isinstance(data, dict)
-    assert set(data) == {"garden_zone"}
+    assert set(data) == {"garden_zone", "gp_zone"}
+    gp_zones = data["gp_zone"]
+    assert isinstance(gp_zones, list) and len(gp_zones) == 1, "gp_zone: must be a list of one item"
+    assert gp_zones[0] == {"group": "gp_greenhouse", "position": "${bed}", "name": "${bed_name}"}
     zones = data["garden_zone"]
     assert isinstance(zones, list) and len(zones) == 1, "garden_zone: must be a list of one item"
     zone = zones[0]
     assert zone["group"] == "gh_zones"
-    assert zone["valve_switch"] == "${bed_name}"
-    assert zone["enable_switch"] == "${bed_name} enable"
+    # the engine's own zone switch is internal; Home Assistant sees the gp_zone switch with the same name
+    assert zone["valve_switch"] == {"id": "gh_bed${bed}_engine_valve", "name": "${bed_name}", "internal": True}
+    assert zone["enable_switch"] == {"id": "gh_bed${bed}_enable", "name": "${bed_name} enable"}
     assert zone["valve_switch_id"] == "board_relay_${relay}"
     number = zone["run_duration_number"]
     assert number["id"] == "gh_bed${bed}_run_duration"
@@ -499,7 +503,7 @@ def test_sim_entry_file() -> None:
     assert files["hardware"] == "hardware/sim.yaml"
     keys = list(files)
     required = ["core_api", "core_time_host", "display_sdl", "lvgl_base", "lvgl_page_boot", "lvgl_page_home", "gh_irrigation",
-                "gh_bed_1", "gh_bed_2", "gh_bed_3", "gh_lvgl_page", "gh_sprinkler_lvgl",
+                "gh_bed_1", "gh_bed_2", "gh_bed_3", "core_gp", "core_gp_api", "gh_gp", "gh_lvgl_page", "gh_gp_lvgl",
                 "core_diagnostics", "lvgl_dialog_confirm", "lvgl_page_setup", "lvgl_page_network", "gh_valve_test"]
     assert set(required) <= set(keys), sorted(set(required) - set(keys))
     first_page = [k for k in keys if k.startswith("lvgl_page_")][0]

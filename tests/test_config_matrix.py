@@ -16,14 +16,17 @@ from conftest import REPO_ROOT, require_sdl_or_skip
 pytestmark = pytest.mark.config
 
 CORE = ["hardware", "core_api", "core_ota", "core_network", "core_time"]
-BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"]
-SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3"]
-SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2"]
+# the gp_* layer: bed.yaml adds gp_zone switches, so every row with beds carries the gp packages (HA actions need core_api)
+GP = ["core_gp", "gh_gp"]
+GP_API = ["core_gp", "core_gp_api", "gh_gp"]
+BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API]
+SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP]
+SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP]
 SIM = "hardware/sim.yaml"
 SIM_ENTRY = "garden-pilot-sim.yaml"
 SIM_API_ONLY = [
     "hardware", "core_api", "core_time_host", "gh_irrigation", "gh_bed_1", "sim_bed_1_soil", "gh_bed_2",
-    "sim_bed_2_soil", "gh_bed_3", "sim_bed_3_soil", "sim_sensors", "sim_drift",
+    "sim_bed_2_soil", "gh_bed_3", "sim_bed_3_soil", *GP_API, "sim_sensors", "sim_drift",
 ]
 
 
@@ -35,6 +38,7 @@ class Variant:
     enable: tuple[str, ...] = ()  # commented-out example blocks to uncomment first
     source: str = "garden-pilot.yaml"  # entry file the variant is built from
     subst: tuple[str, ...] = ()  # `-s KEY VALUE` command-line substitutions (flat: key, value, key, value, ...)
+    edits: tuple[tuple[str, str], ...] = ()  # (old, new) text replacements in the built entry file
     fails_with: tuple[str, ...] = ()  # expected failure: `esphome config` must fail and print all of these
 
 
@@ -49,25 +53,35 @@ VARIANTS: dict[str, Variant] = {
     "beds_2_headless": Variant("keep", BEDS_2),
     "bed_soil_headless": Variant(
         "keep",
-        [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_1_soil", "gh_bed_2", "gh_bed_3"],
+        [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_1_soil", "gh_bed_2", "gh_bed_3", *GP_API],
         enable=("gh_bed_1_soil",),
     ),
-    "beds_1_headless": Variant("keep", [*CORE, "gh_irrigation", "gh_bed_1"]),
+    "beds_1_headless": Variant("keep", [*CORE, "gh_irrigation", "gh_bed_1", *GP_API]),
+    # the gp layer without the Home Assistant actions (no API needed) and the gp error cases
+    "gp_headless": Variant("keep", [*CORE, "gh_irrigation", "gh_bed_1", *GP]),
+    "gp_unknown_engine_group": Variant("keep", [*CORE, *GP_API], fails_with=("gh_zones",)),
+    # bed 4 as the third bed: position 4 does not fit a 3-zone group
+    "gp_zone_position_out_of_range": Variant(
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP_API],
+        edits=(('vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}',
+                'vars: {bed: "4", bed_name: "Greenhouse bed 3", relay: "3"}'),),
+        fails_with=("gp_zone positions", "1..3"),
+    ),
     # parallel greenhouse: every bed on its own lane (-s overrides the package default substitution)
     "beds_3_parallel_headless": Variant(
-        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3"], subst=("gh_max_parallel", "all")
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP_API], subst=("gh_max_parallel", "all")
     ),
     # a watchdog limit below the bed run-duration max (55 min) must be rejected at config time
     "max_on_time_too_short": Variant(
-        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"], subst=("gh_max_on_time", "30min"),
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API], subst=("gh_max_on_time", "30min"),
         fails_with=("max_value", "max_on_time"),
     ),
     # `never` disables the watchdog limit on purpose (human decision): it must stay valid
     "max_on_time_never": Variant(
-        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"], subst=("gh_max_on_time", "never"),
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API], subst=("gh_max_on_time", "never"),
     ),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
-    "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1"], hardware=SIM),
+    "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1", *GP], hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),
     # PC emulator entry file (host + SDL); the first two need SDL2 dev files, sim_api_only does not.
     "sim_full": Variant("keep", source=SIM_ENTRY),
@@ -189,6 +203,9 @@ def test_variant_validates(name: str, tmp_path: Path) -> None:
     v = VARIANTS[name]
     source = (REPO_ROOT / v.source).read_text(encoding="utf-8")
     variant = build_variant(source, v.mode, v.keys, v.hardware, v.enable)
+    for old, new in v.edits:
+        assert old in variant, f"variant {name}: {old!r} not found"
+        variant = variant.replace(old, new)
     all_keys = package_keys(uncomment_examples(source, v.enable))
     if v.keys is not None:
         assert set(v.keys) <= set(all_keys), f"unknown package keys in variant {name}: {set(v.keys) - set(all_keys)}"

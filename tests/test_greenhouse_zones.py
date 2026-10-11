@@ -62,14 +62,8 @@ def test_irrigation_shape() -> None:
     assert group["auto_advance_switch"]["name"] == "Greenhouse auto advance"
     assert group["on_watchdog_trip"], "a trip must be logged"
     assert "pump_switch_id" not in group, "gravity-fed greenhouse: no pump"
-    sensor = config["binary_sensor"][0]
-    assert sensor["name"] == "Greenhouse watchdog" and sensor["device_class"] == "problem"
-    assert sensor["condition"] == {"garden_zones.watchdog_tripped": "gh_zones"}
-    button = config["button"][0]
-    assert button["name"] == "Greenhouse watchdog reset" and button["entity_category"] == "config"
-    assert button["on_press"] == [{"garden_zones.reset_watchdog": "gh_zones"}]
-    # the generated watchdog component is gh_zones_watchdog: the template sensor needs another id
-    assert sensor["id"] != "gh_zones_watchdog"
+    # the watchdog sensor and reset button moved to the gp layer (packages/greenhouse/gp.yaml, task 018)
+    assert "binary_sensor" not in config and "button" not in config
 
 
 @pytest.mark.unit
@@ -246,6 +240,8 @@ def scenario_program() -> Path:
         shutil.copytree(REPO_ROOT / folder, dest / folder, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
     (dest / "packages").mkdir(exist_ok=True)
     shutil.copytree(REPO_ROOT / "packages" / "greenhouse", dest / "packages" / "greenhouse", dirs_exist_ok=True)
+    (dest / "packages" / "core").mkdir(exist_ok=True)
+    shutil.copy(REPO_ROOT / "packages" / "core" / "gp.yaml", dest / "packages" / "core" / "gp.yaml")
     config = dest / f"{SCENARIO_NAME}.yaml"
     shutil.copy(SCENARIO, config)
     result = _esphome("pinned", "compile", str(config), timeout=1800)
