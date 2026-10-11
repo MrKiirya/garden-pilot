@@ -62,6 +62,10 @@ VARIANTS: dict[str, Variant] = {
         "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"], subst=("gh_max_on_time", "30min"),
         fails_with=("max_value", "max_on_time"),
     ),
+    # `never` disables the watchdog limit on purpose (human decision): it must stay valid
+    "max_on_time_never": Variant(
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"], subst=("gh_max_on_time", "never"),
+    ),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
     "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1"], hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),

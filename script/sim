@@ -9,7 +9,7 @@
 #
 # GP_SIM_SUBST="key=value key=value" overrides substitutions of the emulator build (`esphome -s key value`), e.g. a short
 # watchdog for the fault-injection scenario:
-#   GP_SIM_SUBST="gh_max_on_time=90s gh_bed_run_max=1 gh_bed_run_initial=1" script/sim
+#   GP_SIM_SUBST="gh_max_on_time=125s gh_bed_run_max=2 gh_bed_run_initial=1" script/sim
 # Values must not contain spaces. Emulator only; never used for a device build.
 set -eu
 cd "$(dirname "$0")/.."

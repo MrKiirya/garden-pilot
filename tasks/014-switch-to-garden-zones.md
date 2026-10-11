@@ -371,7 +371,15 @@ Ran in dev container `gp-dev-014` (podman). **Nothing ran on a real device.**
   - E6 PASS (`GP_SIM_SUBST="gh_max_parallel=all"`): main switch on -> relays 1-3 ON in the same second (`gh_parallel.png`); screensaver "Bed 1+" (`saver_parallel2.png`).
   - `script/sim-ui stop` done, nothing left running.
 - Not wired: soil skip (Decision 8). `-s` on `minimum` (2026.6.3) not separately verified beyond the config-matrix rows running on pinned.
+### Review suggestions (round 1)
+- 1: `script/sim` header example now uses `gh_max_on_time=125s gh_bed_run_max=2 gh_bed_run_initial=1`.
+- 2: host scenario step 3 also asserts relays 2 and 3 are never on between `s3_a` and `s3_c`.
+- 4: new config-matrix row `max_on_time_never` (`gh_max_on_time never`, beds 1-2) must pass.
+- 6: `"number-clamp"` indentation fixed in `tests/test_garden_zones.py`.
+- 3 / 5: automated number-clamp check (and restored auto-advance push to lanes) not done: needs a second host boot with shared prefs; listed as a follow-up.
+
 ## Follow-ups
+- Automated number-clamp check (second host run with the same prefs dir and a lower `gh_bed_run_max`, or a C++ harness case); same second boot could cover the restored auto-advance switch push (`group.h`).
 - 013: the watchdog trip log repeats the label ("zone 0 ('group 'Greenhouse' zone 0 ('Greenhouse bed 1')')"): `groups.py` passes the full zone label to `add_zone`, the watchdog formats it again.
 - Run `GP_ESPHOME=minimum` ESP32 compile with network (CI `compile (minimum)`), E2 (clamp) and E1 before-list with a 013 build.
 - Scratch left under git-ignored `.esphome/` (`baseline-build`, `baseline-tree` with a `.venv` symlink, `scratch`); delete by hand.

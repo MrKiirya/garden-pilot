@@ -176,7 +176,7 @@ def test_patch_ids_documented() -> None:
     assert ids_in_code == documented
     assert ids_in_code == {
         "includes", "queue-api", "queue-persist", "queue-skip-disabled", "manual-run", "groups", "lanes", "zone-skip",
-            "number-clamp",
+        "number-clamp",
     }
     assert BASE_TAG in patches
     assert re.search(r"\b[0-9a-f]{40}\b", patches), "PATCHES.md must name the upstream commit SHA"

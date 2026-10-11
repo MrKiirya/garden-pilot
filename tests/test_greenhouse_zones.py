@@ -339,6 +339,7 @@ def test_greenhouse_zones_host_scenario(scenario_program: Path, tmp_path: Path) 
     assert line.rising("s3_a", "s3_b")[:1] == [_R1]
     after = line.window("s3_b", "s3_c")
     assert all(state[:3] == "000" for _, state in after[1:]), after
+    assert not line.ever(_R2, "s3_a", "s3_c") and not line.ever(_R3, "s3_a", "s3_c")
     assert line.window("s3_b", "s3_c")[-1][1][_AA] == "0"
 
     # 4. queue + manual run
