@@ -13,8 +13,8 @@ everything below is resolved.
 | 016 SNTP time fallback | `task/016-time-fallback` | draft PR #19, CI green, review APPROVE |
 | 017 screen decisions (docs) | `task/017-screens-decision` | draft PR #21 |
 | 018 `gp_*` layer | `task/018-gp-layer` (on 014) | draft PR #25, review round 2 APPROVE, ESP32 pinned compile OK, CI started |
-| 019 schedules | `task/019-schedules` (on 018) | draft PR #26, review round 2 APPROVE, 749 tests, ESP32 pinned OK |
-| 020 timeline flake (test only) | `task/020-timeline-flake` (on 019) | in progress 2026-10-11 night; PR with base `task/019-schedules` |
+| 019 schedules | `task/019-schedules` (on 018) | PR #26 ready, review round 2 APPROVE, CI green (checks timeout raised to 40 min) |
+| 020 timeline flake (test only) | `task/020-timeline-flake` (on 019) | PR #27 ready (base 019), CI green; also carries the schedule-scenario handover fix |
 
 Stacked branches: after #20 is squash-merged, 013 and 014 need to be brought up to date with `master` before their
 PRs can merge (CI for a stacked branch: `gh workflow run ci.yml --ref <branch>`).
