@@ -49,6 +49,16 @@ per-zone "done" mark at completion, written to flash at once, catch-up re-runs o
 on, slots off. Spec weak spots still to fix before implementation: host-scenario step 3, E3 wording, `parse_days`
 row (days are switches now, so that row changes anyway).
 
+### 019 review round 1 — two decisions for the author (asked 2026-10-11 ~20:10, denied by night mode)
+1. **STOP during a scheduled run.** Today the unfinished zones stay "pending" and a reboot within 60 min
+   resumes watering. Recommended: STOP settles the slot (history "stopped", queue cleared); only zones cut by a
+   power loss are re-run. Alternative: keep today's behaviour, document and test it.
+2. **A slot fires while a manual full cycle runs.** Today the slot silently ends the rest of the cycle (now with a
+   WARN). Recommended: queue the slot's zones after the cycle. Alternatives: skip the slot ("skipped: watering"),
+   or interrupt with a WARN (today).
+The other review items are being fixed (resume pending zones only after boot, "done" semantics tests, gp README,
+marks keyed by slot number, ...).
+
 ### Other
 - Personal config: the public `garden-pilot.yaml` stays on defaults. Proposal: a git-ignored personal entry file
   that includes the shared packages, plus `examples/` (1 bed, 3 beds at once, lawn with pump). Separate task.
