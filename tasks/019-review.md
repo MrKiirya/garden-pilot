@@ -1,6 +1,6 @@
-# 019 — Review (round 1)
+# 019 — Review (rounds 1 and 2)
 
-Verdict: CHANGES_REQUESTED
+Verdict (round 2): APPROVE — round 1 verdict was CHANGES_REQUESTED; see "Round 2" at the end.
 
 Range reviewed: `git diff 8440aea 15ca53e` (7 commits on `task/019-schedules`, stacked on 018). The partial draft of an
 earlier attempt was re-verified point by point; this file replaces it.
@@ -149,3 +149,117 @@ earlier attempt was re-verified point by point; this file replaces it.
    follow-up; after required 2 they only matter on a restart.
 
 Not blocking (legacy / out of scope): none.
+
+## Round 2
+
+Verdict: **APPROVE**
+
+Range reviewed: `git diff 155e6ec HEAD` (commits `edaca80..d4c7c6d`). I also checked the whole range `8440aea..HEAD` against the
+two human decisions of 2026-10-11 (task file, "Human decisions" items 6 and 7).
+
+### Checks run
+(in the `gp-dev-014` devcontainer, repo at `/workspaces/garden-pilot`)
+- `script/lint` → `esphome config OK: garden-pilot.yaml` (yamllint clean)
+- `script/test-cpp` → `74 test cases, 0 failed checks` (incl. the new `test_gp_deferred_start` and 4 new `test_schedule` cases)
+- `UV_OFFLINE=1 GP_REQUIRE_CXX=1 script/test` → `749 passed in 1327.28s (0:22:07)`, exit 0, no skips.
+  `test_garden_zones.py::test_safety_host_scenario` passed here; I didn't see the 018 CI flake.
+- ESP32 compile was not re-run by the reviewer (the implementer reports the pinned compile OK). `test_schedule_codegen`
+  runs for the pinned and minimum versions and asserts `CancelPendingAction`, `StopTrigger`, `ClearQueueAction`, so the new
+  schema is accepted by both.
+- Hygiene grep over the round 2 diff (IPs, local paths, SSIDs, passwords) → no hits.
+
+### Round 1 required items
+1. STOP / service mode settles the slot — **resolved** (human decision 6). `GpGroup::stop_all` and `set_inhibit(true)`
+   fire the new `on_stop`. `packages/greenhouse/gp.yaml` → hook script `gp_gh_stopped`, extended in `schedule.yaml` with
+   `garden_schedule.cancel_pending` + `gp.clear_queue`. `Scheduler::stop_pending()` keeps the day mark, so there is no
+   catch-up and no second run today. It saves at once.
+   - Tests: cpp `stop_settles_the_slot_and_nothing_resumes_after_a_restart`, `stop_settles_every_slot_with_pending_zones`,
+     `a_power_cut_without_a_stop_still_resumes_the_pending_zones`, `a_stopped_slot_does_not_fire_again_today_but_fires_tomorrow`.
+   - Host scenario: phase 4 (STOP mid-slot → idle, queue 0, `#2 stopped`) and phase 5 (restart inside the window → nothing
+     runs).
+   - Boot safety: I checked that no `gp.stop_all` / `gp.inhibit` can fire at boot. `gp_service_mode` is a non-restored
+     global, and the valve-test scripts only run from the page's `on_load` / `on_unload`. The gp_zone switch stops only
+     when it is on. So the power-cut resume path is intact (scenario phase 2 still passes).
+2. Resume only after boot — resolved in round 1 fixes, unchanged here.
+3. `on_zone_finished` semantics tested — resolved in round 1 fixes (gp scenario step 9), comment updated.
+4. gp contract README — **resolved**. The README now covers `gp.enqueue_zones`, `gp.inhibited`, `on_zone_finished` with
+   the exact `completed` table, plus the new `gp.clear_queue`, `on_stop` and the deferred start.
+5. Slot during a manual cycle — **resolved** (human decision 7). `gp` holds back `enqueue_zones` and `start_queue` while a
+   non-queue run is active (`start_must_wait`, pure `components/gp/deferred_start.h`). It applies them 5 s after the last
+   zone stopped.
+   - I checked the cycle gap in the engine: `Sprinkler::fsm_transition_from_valve_run_()` moves `active_req_` to the next
+     valve in the same step, so `active_zones()` is never empty between two cycle zones. The pre-check can't slip through
+     a gap.
+   - Host scenario 5(b): the cycle beds run >= 55 s each undisturbed, then the slot's beds run at 10 %, starting >= 4 s
+     after the cycle.
+   - Scenario 5(a): a STOP cancels a held-back start and enqueue.
+6. Acceptance boxes — **resolved**: the wall-time and minimum-compile boxes are now unticked, with the reason in the notes.
+
+### Implementer's round 2 deviations (assessment)
+- **Holding back `enqueue_zones` as well as `start_queue`:** needed, and a good catch. In groups mode the engine picks
+  queued zones at the next zone change even mid-cycle, so deferring only the start would still cut the cycle. Accepted.
+- **Generalised to every `gp.start_queue` and to any non-queue run, not only schedules and full cycles:** this goes
+  beyond the literal decision. It now also covers a manual single-zone run, a cycle started from the engine main switch,
+  and a user pressing start-queue during a manual cycle. It is consistent and documented in the gp README ("Never cuts a
+  cycle short"), and safer than the old behaviour. Accepted. Listed below for the human to confirm.
+- **A cycle zone finishing after the slot fired counts as done, and the zone runs again after the cycle:** the zone was
+  watered, so the done mark is truthful. The extra run is the slot's own run at its percentage, documented in the
+  component README. Accepted.
+- **Held-back request in RAM only:** the pending mask is persisted, so a power loss before the deferred run resumes those
+  zones inside the window. Matches decision 1 ("only power-loss-cut zones re-run"). Accepted.
+- **HA turning off the engine's main switch is not a STOP:** documented (component README rule and table, gp README).
+  - Effect: the remaining scheduled zones stay pending and stay **queued** (`group.h` `shutdown()` keeps the queue). A
+    restart inside the window resumes them.
+  - Also, the next `gp.start_queue` (for example the next slot) runs those leftover zones too.
+  - The decision says "a user STOP (`gp.stop_all` from any caller)"; this entity is outside gp, so it is a gap, not a
+    violation. Human decision listed below. Not blocking.
+- **`gp.enqueue_zone` (single) not held back:** this is a pre-018 / 018 behaviour of a manual action, not a schedule path.
+  Accepted as a follow-up (suggestion 2).
+
+### Findings
+#### Required
+None.
+
+#### Suggestions
+1. `packages/greenhouse/schedule.yaml:78-83` (`!extend gp_gh_stopped`) — with schedules on, every STOP clears the **whole** engine queue. That
+   includes zones the user queued by hand, and the gp_zone switch's `stop_all(false)` and the HA `gp_stop_all`. So
+   `gp.stop_all`'s `clear_queue: false` has no effect on the greenhouse. The task notes this ("a config without schedules
+   keeps the old STOP behaviour"), but the gp README's `gp.stop_all` row doesn't. Add one sentence there, or dequeue only
+   the zones in the settled pending masks (that needs the hub to return them). See human decision B.
+2. `components/gp/gp.h:96` (`enqueue_zone`) — a single `gp.enqueue_zone` / HA `gp_enqueue_zone` during a manual cycle is
+   still picked by the engine mid-cycle. Follow-up: route it through the same hold-back, or document it in the gp README
+   row.
+3. `components/gp/gp.h:194-201` (`set_inhibit`) — no scenario step covers "entering service mode settles the slot" on its
+   own. The valve-test entry calls `stop_all` first, so it is covered in practice. A one-line host step
+   (`gp.inhibit: true` mid-slot → `last` ends with `stopped`) would pin the `set_inhibit` path in case the valve test
+   changes.
+4. `components/gp/gp.h:312-318` (`run_blocks_queue_`) — `start_must_wait` uses `busy`, so a cycle that the user **pauses** through an engine
+   entity (`running` false while paused) would let the deferred start fire after 5 s and cut the paused cycle. gp has no
+   pause action today, so this is theoretical. If a pause entity is ever exposed, treat `paused` as busy.
+5. Carried over from round 1, still open and non-blocking: suggestions 1-3 and 5-9 (round 1 suggestion 4 is fixed). Note
+   for suggestion 5: a STOP now clears the queue, so only the power-cut-outside-the-window and HA-main-switch paths still
+   leave stale queued zones.
+
+### For the human (decisions to confirm, not blocking)
+- **A.** The hold-back applies to **every** `gp.start_queue` / `gp.enqueue_zones` while any non-queue run is active
+  (manual zone run, a cycle from HA's main switch, a start-queue press during a manual cycle). It is not limited to
+  schedules firing during a full cycle. OK?
+- **B.** With schedules on, any STOP (Home STOP button, HA `gp_stop_all`, turning off a zone switch, valve test) also
+  clears the manually queued zones, not only the schedule's. OK, or should only the schedule's zones be dequeued?
+- **C.** Turning off the engine main switch "Greenhouse irrigation" in HA is **not** treated as a STOP: today's remaining
+  scheduled zones stay queued and pending. They run after a restart inside the catch-up window, or with the next queue
+  start. Accept as documented, or follow up (for example hide the main switch from HA, or have gp detect an external
+  shutdown)?
+
+### Acceptance criteria (re-checked)
+- [x] `script/test-cpp` — 74/74 here.
+- [x] `pytest -m unit` — part of the full run.
+- [x] `script/lint` — clean here.
+- [x] `script/test` — 749 passed here.
+- [ ] wall time before/after — honestly unticked (22:07 here vs 16:18 in round 1; the longer host scenario explains it).
+- [ ] minimum ESP32 / sim compile — unticked, left to CI (minimum codegen row green here).
+- [x] no `garden_zones.` / `sprinkler.` in schedule files; no `on_time:` cron — unchanged, the tests enforce it.
+- [ ] CI green — not visible to the reviewer.
+- [x] Docs — SPEC §4, CLAUDE.md gotcha, component README and gp README updated. The top-level READMEs don't describe STOP
+      or cycle behaviour, so no sync was needed.
+- [x] Hardware statement — "Not verified on hardware: nothing of round 2".
