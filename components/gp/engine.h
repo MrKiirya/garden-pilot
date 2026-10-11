@@ -27,6 +27,9 @@ class Engine {
   /// True when the zone is locked by the watchdog (a run would be refused).
   virtual bool zone_locked(size_t zone) const = 0;
 
+  /// Longest run the zone accepts (its run-duration maximum), 0 = unknown.
+  virtual uint32_t max_run_seconds(size_t zone) const { return 0; }
+
   virtual void run_zone(size_t zone, std::optional<uint32_t> seconds) = 0;
   virtual void queue_zone(size_t zone, std::optional<uint32_t> seconds) = 0;
   virtual void remove_queued_zone(size_t zone) = 0;

@@ -144,10 +144,13 @@ class ZoneTracker {
       this->seg_open_ = false;
       this->run_epoch_ = now_epoch;
       this->run_source_ = start_source;
-      this->last_start_uptime_ = now_ms / 1000U;
-      this->has_last_uptime_ = true;
-      this->last_epoch_ = now_epoch;
-      this->has_last_epoch_ = now_epoch != 0;
+      // a service run (valve test) is in the history but is not the "last watering" of the zone
+      if (start_source != Source::SERVICE) {
+        this->last_start_uptime_ = now_ms / 1000U;
+        this->has_last_uptime_ = true;
+        this->last_epoch_ = now_epoch;
+        this->has_last_epoch_ = now_epoch != 0;
+      }
     }
     if (this->run_open_) {
       if (in.running && !this->seg_open_) {
@@ -160,8 +163,10 @@ class ZoneTracker {
       if (!in_run) {
         this->run_open_ = false;
         const uint32_t seconds = (this->open_ms_ + 500U) / 1000U;
-        this->last_duration_ = seconds;
-        this->has_last_duration_ = true;
+        if (this->run_source_ != Source::SERVICE) {
+          this->last_duration_ = seconds;
+          this->has_last_duration_ = true;
+        }
         this->done_ = true;
         this->record_.epoch = this->run_epoch_;
         this->record_.duration = seconds;

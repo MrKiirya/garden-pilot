@@ -13,13 +13,6 @@ from esphome.components import time as time_
 from esphome.const import CONF_ID, CONF_NAME, CONF_TIME_ID, CONF_TRIGGER_ID
 from esphome.core import CORE
 
-try:  # the only engine today; a second engine adds a second key here
-    from esphome.components.garden_zones import groups as _gz_groups
-
-    _GARDEN_ZONES_GROUP = _gz_groups.GardenZonesGroup
-except ImportError:  # garden_zones is not part of the build
-    _GARDEN_ZONES_GROUP = None
-
 AUTO_LOAD = ["switch", "time"]
 CODEOWNERS = []
 
@@ -45,6 +38,8 @@ Severity = gp_ns.enum("Severity", is_class=True)
 Source = gp_ns.enum("Source", is_class=True)
 AlertChangeTrigger = gp_ns.class_("AlertChangeTrigger", automation.Trigger.template())
 
+# the engine group type is declared locally: this MIT component does not import the GPL engine's Python code
+_GARDEN_ZONES_GROUP = cg.esphome_ns.namespace("garden_zones").class_("GardenZonesGroup", cg.Component)
 ENGINE_KEYS = (CONF_GARDEN_ZONES_ID,)
 
 
@@ -67,15 +62,8 @@ def _group_schema():
         cv.Required(CONF_NAME): cv.string,
         # the key addresses the group in the generic Home Assistant actions (`group: greenhouse`)
         cv.Optional(CONF_KEY): _key,
+        cv.Optional(CONF_GARDEN_ZONES_ID): cv.use_id(_GARDEN_ZONES_GROUP),
     }
-    if _GARDEN_ZONES_GROUP is not None:
-        schema[cv.Optional(CONF_GARDEN_ZONES_ID)] = cv.use_id(_GARDEN_ZONES_GROUP)
-    else:
-
-        def _missing(value):
-            raise cv.Invalid(f"garden_zones_id '{value}': the garden_zones component is not part of the build")
-
-        schema[cv.Optional(CONF_GARDEN_ZONES_ID)] = _missing
     return cv.All(cv.Schema(schema), _engine_key)
 
 
@@ -190,6 +178,7 @@ DequeueZoneAction = gp_ns.class_("DequeueZoneAction", automation.Action)
 StartQueueAction = gp_ns.class_("StartQueueAction", automation.Action)
 FullCycleAction = gp_ns.class_("FullCycleAction", automation.Action)
 StopAllAction = gp_ns.class_("StopAllAction", automation.Action)
+InhibitAction = gp_ns.class_("InhibitAction", automation.Action)
 ResetWatchdogAction = gp_ns.class_("ResetWatchdogAction", automation.Action)
 AlertRaiseAction = gp_ns.class_("AlertRaiseAction", automation.Action)
 AlertClearAction = gp_ns.class_("AlertClearAction", automation.Action)
@@ -232,6 +221,15 @@ async def enqueue_zone_to_code(config, action_id, template_arg, args):
 async def dequeue_zone_to_code(config, action_id, template_arg, args):
     var = await _new_action(config, action_id, template_arg, args)
     cg.add(var.set_zone(await cg.templatable(config[CONF_ZONE], args, cg.size_t)))
+    return var
+
+
+@automation.register_action(
+    "gp.inhibit", InhibitAction, _target({cv.Required("state"): cv.templatable(cv.boolean)}), synchronous=True
+)
+async def inhibit_to_code(config, action_id, template_arg, args):
+    var = await _new_action(config, action_id, template_arg, args)
+    cg.add(var.set_state(await cg.templatable(config["state"], args, bool)))
     return var
 
 

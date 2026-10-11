@@ -161,6 +161,14 @@ class GardenZonesGroup : public Component {
     return this->lanes_[ref->lane]->valve_run_duration(ref->valve);
   }
 
+  /// Longest configured run of the zone in seconds (the run-duration number max / the fixed duration), 0 = unknown.
+  void set_zone_max_run(size_t zone, uint32_t seconds) {
+    if (this->max_run_.size() <= zone)
+      this->max_run_.resize(zone + 1, 0);
+    this->max_run_[zone] = seconds;
+  }
+  uint32_t zone_max_run(size_t zone) const { return zone < this->max_run_.size() ? this->max_run_[zone] : 0; }
+
   bool zone_paused(size_t zone) const {
     auto ref = this->map_.route(zone);
     if (!ref.has_value() || ref->lane >= this->lanes_.size())
@@ -399,6 +407,7 @@ class GardenZonesGroup : public Component {
   std::unique_ptr<CallAction> main_on_action_, main_off_action_, aa_on_action_, aa_off_action_;
   std::vector<ZoneSoil> soil_;
   std::vector<SkipRecord> skips_;
+  std::vector<uint32_t> max_run_;
   std::string reason_;
   std::vector<Sprinkler *> lanes_;
   std::vector<lanes::ZoneRef> table_;

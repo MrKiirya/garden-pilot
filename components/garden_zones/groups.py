@@ -653,6 +653,14 @@ async def to_code_groups(config):
             lane_index, valve_index = zone_table[zone_number]
             cg.add(group_var.add_zone(lane_index, valve_index))
             zone = zones[zone_number]
+            if CONF_RUN_DURATION in zone:
+                longest_ms = _ms(zone[CONF_RUN_DURATION])
+            else:
+                number_conf = zone[gz.CONF_RUN_DURATION_NUMBER]
+                longest_ms = rules.longest_run_ms(
+                    None, number_conf[CONF_MAX_VALUE], number_conf.get(CONF_UNIT_OF_MEASUREMENT, "s")
+                )
+            cg.add(group_var.set_zone_max_run(zone_number, int(longest_ms // 1000)))
             raw = await cg.get_variable(zone[gz.CONF_VALVE_SWITCH_ID])
             cg.add(
                 watchdog.add_zone(

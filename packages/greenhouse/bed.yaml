@@ -48,4 +48,5 @@ garden_zone:
 gp_zone:
   - group: gp_greenhouse
     position: ${bed}
+    id: gh_bed${bed}_switch
     name: "${bed_name}"

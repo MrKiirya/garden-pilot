@@ -67,6 +67,8 @@ class GardenZonesEngine final : public gp::Engine {
     in.total_left = total.value_or(0);
   }
 
+  uint32_t max_run_seconds(size_t zone) const override { return this->group_->zone_max_run(zone); }
+
   void run_zone(size_t zone, std::optional<uint32_t> seconds) override { this->group_->run_zone(zone, seconds); }
   void queue_zone(size_t zone, std::optional<uint32_t> seconds) override { this->group_->queue_zone(zone, seconds); }
   void remove_queued_zone(size_t zone) override { this->group_->remove_queued_zone(zone); }

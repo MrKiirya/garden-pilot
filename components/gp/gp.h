@@ -75,11 +75,16 @@ class GpGroup {
   bool run_zone(size_t zone, optional<uint32_t> seconds, Source source = Source::MANUAL) {
     if (!this->check_zone_("run_zone", zone))
       return false;
+    if (this->inhibited_ && source != Source::SERVICE) {
+      ESP_LOGW(TAG, "%s: run_zone refused: service mode is on", this->name_.c_str());
+      return false;
+    }
     if (this->engine_->zone_locked(zone)) {
       ESP_LOGW(TAG, "%s: run_zone refused: zone %u is locked by the watchdog (reset it first)", this->name_.c_str(),
                (unsigned) (zone + 1));
       return false;
     }
+    seconds = this->clamp_(zone, seconds);
     ESP_LOGI(TAG, "%s: run zone %u%s", this->name_.c_str(), (unsigned) (zone + 1), seconds.has_value() ? " (timed)" : "");
     this->intent_[zone] = source;
     this->intent_ms_[zone] = millis();
@@ -90,6 +95,11 @@ class GpGroup {
   void enqueue_zone(size_t zone, optional<uint32_t> seconds) {
     if (!this->check_zone_("enqueue_zone", zone))
       return;
+    if (this->inhibited_) {
+      ESP_LOGW(TAG, "%s: enqueue_zone refused: service mode is on", this->name_.c_str());
+      return;
+    }
+    seconds = this->clamp_(zone, seconds);
     ESP_LOGI(TAG, "%s: enqueue zone %u", this->name_.c_str(), (unsigned) (zone + 1));
     this->engine_->queue_zone(zone, seconds);
   }
@@ -102,6 +112,10 @@ class GpGroup {
   }
 
   void start_queue() {
+    if (this->inhibited_) {
+      ESP_LOGW(TAG, "%s: start_queue refused: service mode is on", this->name_.c_str());
+      return;
+    }
     ESP_LOGI(TAG, "%s: start queue", this->name_.c_str());
     this->queue_run_ = true;
     this->queue_idle_ms_ = millis();
@@ -109,11 +123,22 @@ class GpGroup {
   }
 
   void full_cycle() {
+    if (this->inhibited_) {
+      ESP_LOGW(TAG, "%s: full_cycle refused: service mode is on", this->name_.c_str());
+      return;
+    }
     ESP_LOGI(TAG, "%s: full cycle", this->name_.c_str());
     this->queue_run_ = true;
     this->queue_idle_ms_ = millis();
     this->engine_->start_cycle();
   }
+
+  /// Service mode: while set, only SERVICE runs (the valve test) are accepted; stops are always allowed.
+  void set_inhibit(bool inhibit) {
+    this->inhibited_ = inhibit;
+    ESP_LOGI(TAG, "%s: starts %s", this->name_.c_str(), inhibit ? "inhibited (service mode)" : "allowed");
+  }
+  bool inhibited() const { return this->inhibited_; }
 
   void stop_all(bool clear_queue) {
     ESP_LOGI(TAG, "%s: stop all%s", this->name_.c_str(), clear_queue ? " (queue cleared)" : "");
@@ -158,7 +183,7 @@ class GpGroup {
     while (this->model_.take_completed(record)) {
       HistoryEntry entry{record.epoch, record.duration, record.zone, static_cast<uint8_t>(record.source), 0};
       this->blob_.history.push(entry);
-      if (record.zone < MAX_ZONES) {
+      if (record.zone < MAX_ZONES && record.source != Source::SERVICE) {
         this->blob_.last[record.zone].epoch = record.epoch;
         this->blob_.last[record.zone].duration = record.duration;
       }
@@ -184,6 +209,17 @@ class GpGroup {
     return false;
   }
 
+  /// A requested run longer than the zone's maximum (run-duration number max) is cut to it.
+  optional<uint32_t> clamp_(size_t zone, optional<uint32_t> seconds) const {
+    const uint32_t max = this->engine_->max_run_seconds(zone);
+    if (seconds.has_value() && max > 0 && *seconds > max) {
+      ESP_LOGW(TAG, "%s: zone %u: %u s cut to the maximum %u s", this->name_.c_str(), (unsigned) (zone + 1),
+               (unsigned) *seconds, (unsigned) max);
+      return max;
+    }
+    return seconds;
+  }
+
   Source source_for_(size_t zone, uint32_t now_ms) const {
     if (this->intent_[zone] != Source::UNKNOWN && (uint32_t) (now_ms - this->intent_ms_[zone]) < INTENT_MS)
       return this->intent_[zone];
@@ -202,6 +238,7 @@ class GpGroup {
   Source intent_[MAX_ZONES]{};
   uint32_t intent_ms_[MAX_ZONES]{};
   bool queue_run_{false};
+  bool inhibited_{false};
   uint32_t queue_idle_ms_{0};
 };
 
@@ -473,6 +510,16 @@ template<typename... Ts> class StopAllAction final : public GroupAction<Ts...> {
   }
 };
 
+template<typename... Ts> class InhibitAction final : public GroupAction<Ts...> {
+ public:
+  TEMPLATABLE_VALUE(bool, state)
+  void play(const Ts &...x) override {
+    GpGroup *group = this->resolve_(x...);
+    if (group != nullptr)
+      group->set_inhibit(this->state_.value(x...));
+  }
+};
+
 template<typename... Ts> class ResetWatchdogAction final : public GroupAction<Ts...> {
  public:
   void play(const Ts &...x) override {
@@ -592,7 +639,9 @@ class GpZoneSwitch : public switch_::Switch, public Component {
       this->command_ms_ = millis();
       this->publish_state(this->group_->run_zone(this->zone_, {}));
     } else {
-      if (this->group_->zone(this->zone_).state == ZoneState::RUNNING ||
+      // always stop when the switch is on or the zone runs: an OFF right after ON (before the model shows RUNNING, or
+      // during the engine's switching delay) must not let the valve open anyway
+      if (this->state || this->group_->zone(this->zone_).state == ZoneState::RUNNING ||
           this->group_->zone(this->zone_).state == ZoneState::PAUSED)
         this->group_->stop_all(false);
       this->command_ms_ = 0;
