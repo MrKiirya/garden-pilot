@@ -13,7 +13,8 @@ everything below is resolved.
 | 016 SNTP time fallback | `task/016-time-fallback` | draft PR #19, CI green, review APPROVE |
 | 017 screen decisions (docs) | `task/017-screens-decision` | draft PR #21 |
 | 018 `gp_*` layer | `task/018-gp-layer` (on 014) | draft PR #25, review round 2 APPROVE, ESP32 pinned compile OK, CI started |
-| 019 schedules | `task/019-schedules` (on 018) | implemented (742 tests, ESP32 pinned OK), pushed 2026-10-11 10:30; review round 1 was still running — `tasks/019-review.md` is a DRAFT snapshot; no PR yet |
+| 019 schedules | `task/019-schedules` (on 018) | draft PR #26, review round 2 APPROVE, 749 tests, ESP32 pinned OK |
+| 020 timeline flake (test only) | `task/020-timeline-flake` (on 019) | in progress 2026-10-11 night; PR with base `task/019-schedules` |
 
 Stacked branches: after #20 is squash-merged, 013 and 014 need to be brought up to date with `master` before their
 PRs can merge (CI for a stacked branch: `gh workflow run ci.yml --ref <branch>`).
@@ -49,7 +50,14 @@ per-zone "done" mark at completion, written to flash at once, catch-up re-runs o
 on, slots off. Spec weak spots still to fix before implementation: host-scenario step 3, E3 wording, `parse_days`
 row (days are switches now, so that row changes anyway).
 
-### 019 review round 1 — two decisions for the author (asked 2026-10-11 ~20:10, denied by night mode)
+### 019 review round 2 — three non-blocking questions (asked 2026-10-11 ~23:55, denied by night mode)
+- A. The hold-back (queue start waits until a manual run ends, +5 s) applies to every queue start during any
+  non-queue run, not only to schedules during a cycle. Recommended: keep.
+- B. With schedules on, every STOP clears the whole engine queue, including zones queued by hand. Recommended: keep.
+- C. Turning off "Greenhouse irrigation" in HA is not a STOP (slot zones stay queued). Recommended: follow-up —
+  route the main switch through gp (already a review follow-up).
+
+### 019 review round 1 — two decisions (answered 2026-10-11: STOP settles the slot; slot after the cycle)
 1. **STOP during a scheduled run.** Today the unfinished zones stay "pending" and a reboot within 60 min
    resumes watering. Recommended: STOP settles the slot (history "stopped", queue cleared); only zones cut by a
    power loss are re-run. Alternative: keep today's behaviour, document and test it.
