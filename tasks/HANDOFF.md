@@ -13,7 +13,7 @@ everything below is resolved.
 | 016 SNTP time fallback | `task/016-time-fallback` | draft PR #19, CI green, review APPROVE |
 | 017 screen decisions (docs) | `task/017-screens-decision` | draft PR #21 |
 | 018 `gp_*` layer | `task/018-gp-layer` (on 014) | draft PR #25, review round 2 APPROVE, ESP32 pinned compile OK, CI started |
-| 019 schedules | `task/019-schedules` (on 018) | implementation running (2026-10-11 morning), not pushed yet |
+| 019 schedules | `task/019-schedules` (on 018) | implemented (742 tests, ESP32 pinned OK), pushed 2026-10-11 10:30; review round 1 was still running — `tasks/019-review.md` is a DRAFT snapshot; no PR yet |
 
 Stacked branches: after #20 is squash-merged, 013 and 014 need to be brought up to date with `master` before their
 PRs can merge (CI for a stacked branch: `gh workflow run ci.yml --ref <branch>`).
@@ -55,6 +55,14 @@ row (days are switches now, so that row changes anyway).
 - Screens 009–011 still not checked by the author on the emulator/device.
 - 014 for the author's own setup: greenhouse runs ~3 h → set `max_on_time` above the longest run (or `never`) and
   the bed run max accordingly in the personal config.
+
+## Next steps for whoever continues (another agent or machine)
+1. 019: re-run the review (reviewer agent, `tasks/019-review.md` draft is a starting point; range
+   `git diff 8440aea HEAD` on `task/019-schedules`), fix findings (max 2 rounds), push, open a draft PR with base
+   `task/018-gp-layer`, run CI with `gh workflow run ci.yml --ref task/019-schedules`.
+2. The author reviews and squash-merges the stack in order #20 → #22 → #23 → #25 → 019 (plus #19, #21 any time).
+3. Then: personal config + `examples/`, shorten the host scenarios (CI time), roadmap stage 9 screens with the
+   designer. Follow-ups of each task are at the end of its task file.
 
 ## Continue on another machine
 
