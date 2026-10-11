@@ -330,6 +330,19 @@ _LINE = re.compile(r"^t=(\d+) (.*)$")
 _MARK = re.compile(r"^mark=(\w+) t=(\d+)$")
 
 
+def _lines_between(messages: list[str], a: str, b: str) -> list[str]:
+    """Texts of the `t=` lines logged between two marks; cut by log order, since lines share a millisecond."""
+    pos = {m.group(1): i for i, m in enumerate(map(_MARK.match, messages)) if m}
+    found = (_LINE.match(m) for m in messages[pos[a] + 1 : pos[b]])
+    return [m.group(2) for m in found if m]
+
+
+@pytest.mark.unit
+def test_gp_layer_between_cuts_by_log_order() -> None:
+    messages = ["t=5 early", "mark=a t=5", "t=5 in", "mark=b t=9", "t=9 late"]
+    assert _lines_between(messages, "a", "b") == ["in"]
+
+
 @pytest.mark.host
 def test_gp_layer_host_scenario(gp_program: Path, tmp_path: Path) -> None:
     messages = _run_program(gp_program, tmp_path, timeout=420)
@@ -338,7 +351,7 @@ def test_gp_layer_host_scenario(gp_program: Path, tmp_path: Path) -> None:
     marks = {m.group(1): int(m.group(2)) for m in map(_MARK.match, messages) if m}
 
     def between(a: str, b: str) -> list[str]:
-        return [text for t, text in lines if marks[a] <= t <= marks[b]]
+        return _lines_between(messages, a, b)
 
     def first_with(a: str, b: str, needle: str) -> bool:
         return any(needle in text for text in between(a, b))
