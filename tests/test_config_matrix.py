@@ -34,6 +34,8 @@ class Variant:
     hardware: str | None = None  # replacement path of the `hardware` include
     enable: tuple[str, ...] = ()  # commented-out example blocks to uncomment first
     source: str = "garden-pilot.yaml"  # entry file the variant is built from
+    subst: tuple[str, ...] = ()  # `-s KEY VALUE` command-line substitutions (flat: key, value, key, value, ...)
+    fails_with: tuple[str, ...] = ()  # expected failure: `esphome config` must fail and print all of these
 
 
 VARIANTS: dict[str, Variant] = {
@@ -50,7 +52,18 @@ VARIANTS: dict[str, Variant] = {
         [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_1_soil", "gh_bed_2", "gh_bed_3"],
         enable=("gh_bed_1_soil",),
     ),
+    "beds_1_headless": Variant("keep", [*CORE, "gh_irrigation", "gh_bed_1"]),
+    # parallel greenhouse: every bed on its own lane (-s overrides the package default substitution)
+    "beds_3_parallel_headless": Variant(
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3"], subst=("gh_max_parallel", "all")
+    ),
+    # a watchdog limit below the bed run-duration max (55 min) must be rejected at config time
+    "max_on_time_too_short": Variant(
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"], subst=("gh_max_on_time", "30min"),
+        fails_with=("max_value", "max_on_time"),
+    ),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
+    "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1"], hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),
     # PC emulator entry file (host + SDL); the first two need SDL2 dev files, sim_api_only does not.
     "sim_full": Variant("keep", source=SIM_ENTRY),
@@ -190,11 +203,18 @@ def test_variant_validates(name: str, tmp_path: Path) -> None:
         if (REPO_ROOT / folder).exists():
             shutil.copytree(REPO_ROOT / folder, tmp_path / folder)
     shutil.copy(REPO_ROOT / "secrets.example.yaml", tmp_path / "secrets.yaml")
+    args = [a for i in range(0, len(v.subst), 2) for a in ("-s", v.subst[i], v.subst[i + 1])]
     result = subprocess.run(
-        ["sh", str(REPO_ROOT / "script" / "_esphome"), "config", str(tmp_path / v.source)],
+        ["sh", str(REPO_ROOT / "script" / "_esphome"), *args, "config", str(tmp_path / v.source)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         timeout=600,
     )
-    assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+    output = result.stdout + result.stderr
+    if v.fails_with:
+        assert result.returncode != 0, f"variant {name} must fail validation"
+        for text in v.fails_with:
+            assert text in output, f"variant {name}: {text!r} not in the error output:\n{output[-3000:]}"
+        return
+    assert result.returncode == 0, output[-4000:]

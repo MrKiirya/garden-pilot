@@ -1,0 +1,165 @@
+# Test harness over the REAL greenhouse packages (irrigation.yaml + 3x bed.yaml on hardware/sim.yaml) — NOT a device
+# configuration and never flashed. Host (Linux) build with simulated relays; a scripted scenario logs machine-readable
+# `GZTEST` lines that tests/test_greenhouse_zones.py asserts. Paths are repo-root relative: the file is only used staged
+# at the repo root (pytest copies it together with hardware/, packages/greenhouse/ and components/).
+# Short limits by substitution: watchdog 125 s, bed run duration number max 2 min / initial 1 min
+# (the 013 rule: 120 s + 2 s <= 125 s; max 1 min would not validate: the numbers' min_value is 1).
+# No LVGL, no API. Everything is logged at INFO because the test runs on the host only.
+
+substitutions:
+  gh_max_on_time: 125s
+  gh_bed_run_max: "2"
+  gh_bed_run_initial: "1"
+
+esphome:
+  name: greenhouse-zones
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: gz_scenario
+
+packages:
+  hardware: !include hardware/sim.yaml
+  gh_irrigation: !include packages/greenhouse/irrigation.yaml
+  gh_bed_1: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+  gh_bed_2: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "2", bed_name: "Greenhouse bed 2", relay: "2"}
+  gh_bed_3: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+
+logger:
+  level: INFO
+
+# Logs "t=<millis> state=<r1 r2 r3 main auto-advance watchdog as 0/1>" whenever one of them changes.
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          static std::string last;
+          std::string now;
+          now += id(board_relay_1).state ? '1' : '0';
+          now += id(board_relay_2).state ? '1' : '0';
+          now += id(board_relay_3).state ? '1' : '0';
+          now += id(gh_zones_main_switch).state ? '1' : '0';
+          now += id(gh_zones_auto_advance).state ? '1' : '0';
+          now += id(gh_zones_watchdog_problem).state ? '1' : '0';
+          if (now != last) {
+            last = now;
+            ESP_LOGI("GZTEST", "t=%u state=%s", millis(), now.c_str());
+          }
+
+script:
+  - id: gz_mark
+    parameters:
+      label: string
+    then:
+      - lambda: 'ESP_LOGI("GZTEST", "mark=%s t=%u", label.c_str(), millis());'
+
+  - id: gz_log_queue
+    parameters:
+      label: string
+    then:
+      - lambda: |-
+          std::string out;
+          for (size_t zone : id(gh_zones).queued_zones()) {
+            if (!out.empty()) out += ",";
+            out += std::to_string(zone);
+          }
+          ESP_LOGI("GZTEST", "queue %s=%s", label.c_str(), out.c_str());
+
+  - id: gz_scenario
+    then:
+      - delay: 1s
+      # 1. everything off, nothing tripped, the numbers read 1
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=1"}
+      - lambda: |-
+          ESP_LOGI("GZTEST", "numbers %.0f %.0f %.0f", id(gh_bed1_run_duration).state, id(gh_bed2_run_duration).state,
+                   id(gh_bed3_run_duration).state);
+          ESP_LOGI("GZTEST", "tripped=%d", id(gh_zones).watchdog_tripped());
+
+      # 2. main switch: a cycle in bed order, one valve at a time; off closes everything
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=2"}
+      - script.execute: {id: gz_mark, label: s2_a}
+      - switch.turn_on: gh_zones_main_switch
+      - wait_until:
+          condition:
+            lambda: 'return id(board_relay_1).state;'
+          timeout: 10s
+      - delay: 2s
+      - script.execute: {id: gz_mark, label: s2_b}
+      - switch.turn_off: gh_zones_main_switch
+      - delay: 1500ms
+      - script.execute: {id: gz_mark, label: s2_c}
+
+      # 3. auto advance off: the cycle stops after the current zone (bed 1 runs its 1 min)
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=3"}
+      - script.execute: {id: gz_mark, label: s3_a}
+      - switch.turn_on: gh_zones_auto_advance
+      - switch.turn_on: gh_zones_main_switch
+      - wait_until:
+          condition:
+            lambda: 'return id(board_relay_1).state;'
+          timeout: 10s
+      - delay: 3s
+      - switch.turn_off: gh_zones_auto_advance
+      - wait_until:
+          condition:
+            lambda: 'return !id(board_relay_1).state;'
+          timeout: 70s
+      - script.execute: {id: gz_mark, label: s3_b}
+      - delay: 6s
+      - script.execute: {id: gz_mark, label: s3_c}
+      - garden_zones.shutdown_group: gh_zones
+      - delay: 1s
+
+      # 4. queue + manual run
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=4"}
+      - script.execute: {id: gz_mark, label: s4_a}
+      - garden_zones.queue_zone: {id: gh_zones, zone_number: 0, run_duration: 3s}
+      - garden_zones.queue_zone: {id: gh_zones, zone_number: 2, run_duration: 3s}
+      - garden_zones.start_group_queue: gh_zones
+      - delay: 12s
+      - script.execute: {id: gz_mark, label: s4_b}
+      - garden_zones.queue_zone: {id: gh_zones, zone_number: 0, run_duration: 6s}
+      - garden_zones.start_group_queue: gh_zones
+      - delay: 1s
+      - garden_zones.run_zone: {id: gh_zones, zone_number: 1, run_duration: 2s}
+      - delay: 12s
+      - script.execute: {id: gz_mark, label: s4_c}
+      - garden_zones.queue_zone: {id: gh_zones, zone_number: 1}
+      - script.execute: {id: gz_log_queue, label: queued}
+      - garden_zones.clear_group_queue: gh_zones
+      - script.execute: {id: gz_log_queue, label: cleared}
+
+      # 5. watchdog on the real bed package: a raw relay turn-on is cut at 125 s
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=5"}
+      - script.execute: {id: gz_mark, label: s5_a}
+      - switch.turn_on: board_relay_2
+      - wait_until:
+          condition:
+            lambda: 'return id(gh_zones_watchdog_problem).state;'
+          timeout: 160s
+      - delay: 500ms
+      - script.execute: {id: gz_mark, label: s5_b}
+      - garden_zones.run_zone: {id: gh_zones, zone_number: 1, run_duration: 2s}
+      - delay: 4s
+      - script.execute: {id: gz_mark, label: s5_c}
+      - button.press: gh_zones_watchdog_reset
+      - delay: 500ms
+      - script.execute: {id: gz_mark, label: s5_d}
+      - garden_zones.run_zone: {id: gh_zones, zone_number: 1, run_duration: 2s}
+      - delay: 5s
+      - script.execute: {id: gz_mark, label: s5_e}
+
+      # 6. valve-test-like sequence: shutdown, then a manual run with a 10 s limit
+      - logger.log: {level: INFO, tag: GZTEST, format: "step=6"}
+      - garden_zones.shutdown_group: gh_zones
+      - script.execute: {id: gz_mark, label: s6_a}
+      - garden_zones.run_zone: {id: gh_zones, zone_number: 2, run_duration: 10s}
+      - delay: 13s
+      - script.execute: {id: gz_mark, label: s6_b}
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}

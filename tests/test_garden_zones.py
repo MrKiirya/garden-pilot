@@ -176,6 +176,7 @@ def test_patch_ids_documented() -> None:
     assert ids_in_code == documented
     assert ids_in_code == {
         "includes", "queue-api", "queue-persist", "queue-skip-disabled", "manual-run", "groups", "lanes", "zone-skip",
+            "number-clamp",
     }
     assert BASE_TAG in patches
     assert re.search(r"\b[0-9a-f]{40}\b", patches), "PATCHES.md must name the upstream commit SHA"
@@ -387,6 +388,7 @@ def test_safety_test_config_shape() -> None:
 def test_garden_zone_entries_are_lists() -> None:
     paths = [*CONFIGS.rglob("*.yaml"), *(REPO_ROOT / "packages").rglob("*.yaml")]
     assert ZONE_ENTRY in paths
+    assert REPO_ROOT / "packages" / "greenhouse" / "bed.yaml" in paths
     for path in paths:
         config = load_esphome_yaml(path)
         if isinstance(config, dict) and "garden_zone" in config:
@@ -422,14 +424,28 @@ def test_groups_test_config_shape() -> None:
 
 
 @pytest.mark.unit
-def test_device_unchanged() -> None:
-    paths = [REPO_ROOT / "garden-pilot.yaml"]
+def test_device_uses_groups_form() -> None:
+    for entry in ("garden-pilot.yaml", "garden-pilot-sim.yaml"):
+        assert "gh_irrigation: !include packages/greenhouse/irrigation.yaml" in (REPO_ROOT / entry).read_text(encoding="utf-8")
+    paths = [REPO_ROOT / "garden-pilot.yaml", REPO_ROOT / "garden-pilot-sim.yaml"]
     for folder in ("packages", "hardware"):
         paths += [p for p in (REPO_ROOT / folder).rglob("*.yaml") if p.is_file()]
+    irrigation = REPO_ROOT / "packages" / "greenhouse" / "irrigation.yaml"
+    bed = REPO_ROOT / "packages" / "greenhouse" / "bed.yaml"
     for path in paths:
         text = path.read_text(encoding="utf-8")
-        assert "garden_zones" not in text, f"{path.relative_to(REPO_ROOT)} must not use garden_zones yet"
-        assert "external_components" not in text, f"{path.relative_to(REPO_ROOT)} must not use external_components"
+        code = "\n".join(re.sub(r"(^|\s)#.*$", "", line) for line in text.splitlines())
+        if path == irrigation:
+            config = load_esphome_yaml(path)
+            assert isinstance(config, dict) and isinstance(config["garden_zones"], dict), "groups form (a dict)"
+            assert "groups" in config["garden_zones"]
+            assert "external_components" in config
+        elif path != bed:
+            assert not re.search(r"^garden_zones:|^garden_zone:|^external_components:", code, re.MULTILINE), (
+                f"{path.relative_to(REPO_ROOT)}: garden_zones belongs to packages/greenhouse/irrigation.yaml"
+            )
+    bed_config = load_esphome_yaml(bed)
+    assert isinstance(bed_config, dict) and isinstance(bed_config["garden_zone"], list)
 
 
 @pytest.mark.unit
