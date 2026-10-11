@@ -116,8 +116,15 @@ does not freeze; a greenhouse air sensor can be an extra input. Firmware guards:
 temperature (principle 4). Electrical safety (RCD, contactor vs. relay, hardware over-temperature cut-off) is
 documented as recommendations, the builder decides; the author's own build is documented as an example.
 
-**Schedules** live on the device and run without Home Assistant or Wi-Fi; HA is optional (it can edit and
-trigger them).
+**Schedules** live on the device and run without Home Assistant or Wi-Fi once the clock was set (HA time or SNTP);
+HA is optional (it can edit and trigger them). Task 019 (`components/garden_schedule/`, MIT, engine-agnostic): each
+group has 2 slots by default (max 8). A slot = start time, 7 day switches, a zone list ("all" or bed numbers) and one
+run-time multiplier (10-200 % of each zone's own run duration). A due slot queues its zones through `gp.enqueue_zones`
+and `gp.start_queue`, so the watchdog lockout, disabled zones and service mode apply unchanged. Rules: one run per slot
+per local day (DST safe); a slot missed by a power cut or a late clock still runs when the device is back within the
+catch-up window (60 min by default, 0 = never), later it is logged as missed; the "done" mark is per zone, written to
+flash when the zone's queue run completes, and a restart inside the window runs only the zones that did not complete;
+master switch "Greenhouse schedules" (default ON), every slot defaults OFF. Entities: [component README](../components/garden_schedule/README.md).
 
 ### 4.1 The `gp_*` layer
 Screens, schedules, the valve test and Home Assistant never call `garden_zones` directly, only the `gp` contract
@@ -268,7 +275,8 @@ tests/
   through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
   only, so UI texts are ASCII (`-`, `...`). Version, uptime, Wi-Fi and the restart button are `internal: true`.
 - Known UI defects: the Home "NEXT" label shows the remaining queue time (hours dropped), not the next scheduled
-  run — there are no schedules yet.
+  run. Task 019 provides the data ("Greenhouse next run" / "next run text" and `next_run()` / `day_runs()` on the
+  schedule hub); the label and the now/next + timeline widget are stage 9 screen tasks.
 - The Home clock updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
   ready (same pattern as the `number.on_value` gotcha in `CLAUDE.md`). Since task 004 this code lives in
   `packages/lvgl/page_home.yaml` (`!extend ha_time`), so `packages/core/` no longer depends on the Home page.
@@ -307,7 +315,8 @@ tests/
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.
 10. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
-11. **Schedules** (WATER tab), **bed heating** (thermostats + heating screens), alerts.
+11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the WATER tab editor
+    and the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens), alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
     scenarios against the host build. Screenshots and taps under Xvfb exist (task 015, `script/sim-ui`, CI job
     `sim-ui`); remaining: reference-image comparison and `aioesphomeapi` scenarios.
@@ -345,6 +354,8 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 ## 11. Sources
 - ESPHome `esphome/components/sprinkler/` (`dev`, 2026-10-01) and its commit history.
 - https://esphome.io/components/sprinkler/
+- https://esphome.io/components/time/#on-time-trigger (cron triggers are compile-time only, so slots use a C++ scheduler)
+- https://esphome.io/components/datetime/ and https://esphome.io/components/text/template/ (the slot entities)
 - https://esphome.io/components/external_components/
 - https://esphome.io/components/host/
 - https://esphome.io/components/display/sdl/
