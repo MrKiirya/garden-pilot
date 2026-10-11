@@ -145,6 +145,15 @@ class GpGroup {
       ESP_LOGW(TAG, "%s: start_queue refused: service mode is on", this->name_.c_str());
       return;
     }
+    this->engine_->read(this->input_);
+    bool busy = false;
+    for (size_t i = 0; i < this->input_.zone_count && i < MAX_ZONES; i++)
+      busy = busy || this->input_.zones[i].running;
+    if (busy && (this->cycle_run_ || !this->queue_run_))
+      ESP_LOGW(TAG, "%s: start_queue interrupts a run that is not a queue run (a full cycle?): the rest of that cycle is "
+                    "dropped, the queued zones run instead",
+               this->name_.c_str());
+    this->cycle_run_ = false;
     ESP_LOGI(TAG, "%s: start queue", this->name_.c_str());
     this->queue_run_ = true;
     this->queue_idle_ms_ = millis();
@@ -157,6 +166,7 @@ class GpGroup {
       return;
     }
     ESP_LOGI(TAG, "%s: full cycle", this->name_.c_str());
+    this->cycle_run_ = true;
     this->queue_run_ = true;
     this->queue_idle_ms_ = millis();
     this->engine_->start_cycle();
@@ -172,6 +182,7 @@ class GpGroup {
   void stop_all(bool clear_queue) {
     ESP_LOGI(TAG, "%s: stop all%s", this->name_.c_str(), clear_queue ? " (queue cleared)" : "");
     this->queue_run_ = false;
+    this->cycle_run_ = false;
     this->stop_ms_ = millis() == 0 ? 1 : millis();
     this->engine_->shutdown(clear_queue);
   }
@@ -207,7 +218,7 @@ class GpGroup {
     if (s.running || s.queue_length > 0)
       this->queue_idle_ms_ = now_ms;
     else if (this->queue_run_ && (uint32_t) (now_ms - this->queue_idle_ms_) > QUEUE_RUN_GRACE_MS)
-      this->queue_run_ = false;
+      this->queue_run_ = this->cycle_run_ = false;
     RunRecord record;
     bool changed = false;
     while (this->model_.take_completed(record)) {
@@ -277,6 +288,7 @@ class GpGroup {
   Source intent_[MAX_ZONES]{};
   uint32_t intent_ms_[MAX_ZONES]{};
   bool queue_run_{false};
+  bool cycle_run_{false};  ///< the current run was started by full_cycle (start_queue would drop its rest)
   bool inhibited_{false};
   uint32_t stop_ms_{0};  ///< millis() of the last stop_all (0 = never)
   CallbackManager<void(uint8_t, bool)> finished_cb_;

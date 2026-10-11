@@ -25,6 +25,8 @@ external_components:
 
 garden_schedule:
   - id: gh_schedule
+    time_id: ha_time
+    zone_group: gp_greenhouse
     catch_up_window: ${gh_schedule_catch_up_window}
     master_switch_id: gh_schedules_on
     next_run_id: gh_next_run
@@ -58,10 +60,12 @@ text_sensor:
   - platform: template
     id: gh_next_run_text
     name: "Greenhouse next run text"
+    entity_category: diagnostic
     icon: mdi:calendar-arrow-right
   - platform: template
     id: gh_last_schedule
     name: "Greenhouse last schedule"
+    entity_category: diagnostic
     icon: mdi:calendar-check
 
 # A zone's completed queue run is a done mark for the schedule (hook script of packages/greenhouse/gp.yaml).

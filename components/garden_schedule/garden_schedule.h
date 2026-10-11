@@ -45,8 +45,8 @@ struct SlotEntities {
 /// Persisted marks: the local day of each slot's last run and the zones of that run still to do.
 struct PersistBlob {
   uint8_t version{1};
-  int32_t last_fired_day[MAX_SLOTS];
-  uint32_t pending[MAX_SLOTS];
+  int32_t last_fired_day[MAX_SLOTS]{NEVER, NEVER, NEVER, NEVER, NEVER, NEVER, NEVER, NEVER};
+  uint32_t pending[MAX_SLOTS]{};
 };
 
 class GardenSchedule : public Component {
@@ -83,8 +83,13 @@ class GardenSchedule : public Component {
     this->pref_ = global_preferences->make_preference<PersistBlob>(fnv1_hash("garden_schedule:" + this->key_));
     PersistBlob blob;
     if (this->pref_.load(&blob) && blob.version == 1) {
-      for (size_t i = 0; i < this->slots_.size() && i < MAX_SLOTS; i++)
-        this->core_.restore(i, blob.last_fired_day[i], blob.pending[i]);
+      this->blob_ = blob;
+      // marks are keyed by the slot NUMBER (1..8), so reordering or removing an include never moves them
+      for (size_t i = 0; i < this->slots_.size() && i < MAX_SLOTS; i++) {
+        const size_t k = this->slots_[i].number - 1u;
+        if (k < MAX_SLOTS)
+          this->core_.restore(i, blob.last_fired_day[k], blob.pending[k]);
+      }
       ESP_LOGI(TAG, "restored the run marks of %u slot(s)", (unsigned) this->slots_.size());
     }
   }
@@ -241,10 +246,13 @@ class GardenSchedule : public Component {
   }
 
   void save_() {
-    PersistBlob blob;
-    for (size_t i = 0; i < MAX_SLOTS; i++) {
-      blob.last_fired_day[i] = this->core_.state(i).last_fired_day;
-      blob.pending[i] = this->core_.state(i).pending;
+    PersistBlob &blob = this->blob_;
+    for (size_t i = 0; i < this->slots_.size() && i < MAX_SLOTS; i++) {
+      const size_t k = this->slots_[i].number - 1u;
+      if (k >= MAX_SLOTS)
+        continue;
+      blob.last_fired_day[k] = this->core_.state(i).last_fired_day;
+      blob.pending[k] = this->core_.state(i).pending;
     }
     if (!this->pref_.save(&blob))
       ESP_LOGW(TAG, "saving the run marks failed");
@@ -289,6 +297,7 @@ class GardenSchedule : public Component {
   std::vector<SlotEntities> slots_;
   std::vector<Skip> skips_;
   Scheduler core_;
+  PersistBlob blob_;  ///< last stored marks by slot number - 1 (slots not configured now keep their old marks)
   SlotConfig cfg_[MAX_SLOTS];
   bool warned_zones_[MAX_SLOTS]{};
   bool warned_invalid_[MAX_SLOTS]{};

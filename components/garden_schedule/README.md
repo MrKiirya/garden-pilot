@@ -38,11 +38,39 @@ zone numbers above the group's zone count are dropped with a warning.
   it was stopped), and the marks are written to flash immediately. After a power cut inside the window only the
   zones still in the list run again (an interrupted zone runs its full duration again). The list of a past day is
   dropped.
+  When a zone counts as done (`on_zone_finished completed`; pinned by the gp host scenario
+  `tests/test_gp_layer.py`, step 9):
+
+  | How the zone's run ended | Done? |
+  |---|---|
+  | queue run ended by itself | yes |
+  | `gp.stop_all` (STOP button, also with `clear_queue`) within 3 s before the end | no, the zone stays pending |
+  | manual / service run (`gp.run_zone`) | no (only queue runs count) |
+  | Home Assistant turns off the group's main switch | yes (no stop signal) |
+  | engine watchdog ends a queue run | yes (no stop signal; not testable: scheduled runs are clamped below the limit) |
+  | zone skipped by the engine (disabled, locked, wet soil) | it never runs, so it stays pending ("last schedule" still says `ran`) |
+- **Pending zones resume only after a restart:** the first valid tick after boot re-fires the pending zones of today's
+  slot (inside the window; outside it they are logged as missed). A later clock jump (HA / SNTP resync, a transient
+  invalid clock) never re-fires them and never reports a slot that was already fired as missed.
+- **Awaiting the author's decision (today's behaviour):** a user STOP (or entering service mode) does *not* settle the
+  slot. The stopped zone and the zones still queued stay pending and run again if the device restarts inside the
+  catch-up window (the engine queue is kept by a STOP without `clear_queue`). A scheduled start while a manual full
+  cycle is running interrupts the cycle: the current zone finishes, the scheduled zones run and the rest of the cycle is
+  dropped (`gp` logs a WARN).
 - **Skip:** `skip_if` is a list of `{condition, reason}`; the first true one turns a due slot into a skip (marked for the
   day). The greenhouse uses `gp.inhibited` (service mode). A rain sensor or a rain-delay entity adds an item.
 - **Multiplier:** slot percent x global percent (`set_global_pct()`, fixed 100 today), clamped to 10-200 %. The `gp`
   layer cuts every run to the zone's run-duration maximum, so a multiplier can never exceed the watchdog limit.
-- A zone that is already queued or running is not queued again.
+- A zone that is already queued or running is not queued again. Zones the engine skips stay in its queue.
+- The run marks are stored by slot NUMBER (1..8), so commenting out or reordering a slot include does not move them.
+- A slot that is enabled, or moved to an earlier start, after its time passed today does not run while the device is up;
+  a reboot inside the catch-up window runs it.
+- A slot that is missed after a power cut outside the window is not run, but the engine queue (persisted by the
+  engine) may still hold its unfinished zones: the next `gp.start_queue` (any `on_run`, or a manual start) runs them
+  with the old durations. Clear the queue (`gp.stop_all` with `clear_queue`) if that is not wanted. The same applies
+  to zones queued by hand and not started.
+- The next-run timestamp of a start time inside a spring-forward gap (for example 02:30 on the change day) gets an
+  offset for a local time that does not exist; the slot itself runs at 03:00. Cosmetic.
 
 ## Data for screens (C++ accessors on the hub)
 `next_run()` -> `{slot index, local day, start minute}` over the next 8 days; `day_runs(offset)` -> that day's runs
@@ -50,7 +78,7 @@ sorted by start with `PENDING / FIRED / MISSED / SKIPPED`; `next_run_text()`. Du
 computed here (they need the engine's per-zone durations).
 
 ## Hub options
-`id`, `time_id` (default: first `time:`), `catch_up_window`, `zone_count` (default: number of `gp_zone` entries, else
+`id`, `time_id` (default: first `time:`), `catch_up_window`, `zone_group` (gp group id: the default zone count counts only its `gp_zone` entries), `zone_count` (default: that count, else
 16), `master_switch_id`, `next_run_id`, `next_run_text_id`, `last_result_id`, `skip_if`, `on_run`. Action:
 `garden_schedule.zone_done: {id, zone}` (0-based zone).
 

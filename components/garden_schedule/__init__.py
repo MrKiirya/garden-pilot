@@ -24,6 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 CONF_CATCH_UP_WINDOW = "catch_up_window"
 CONF_ZONE_COUNT = "zone_count"
+CONF_ZONE_GROUP = "zone_group"
 CONF_MASTER_SWITCH_ID = "master_switch_id"
 CONF_NEXT_RUN_ID = "next_run_id"
 CONF_NEXT_RUN_TEXT_ID = "next_run_text_id"
@@ -65,6 +66,8 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_CATCH_UP_WINDOW, default="60min"): _catch_up_window,
         # number of zones the zone lists may name; default: the number of gp_zone entries (else 16)
         cv.Optional(CONF_ZONE_COUNT): cv.int_range(min=1, max=32),
+        # id of the gp group whose zones the lists name: the default zone count counts only its gp_zone entries
+        cv.Optional(CONF_ZONE_GROUP): cv.string_strict,
         cv.Optional(CONF_MASTER_SWITCH_ID): cv.use_id(switch.Switch),
         cv.Optional(CONF_NEXT_RUN_ID): cv.use_id(text_sensor.TextSensor),
         cv.Optional(CONF_NEXT_RUN_TEXT_ID): cv.use_id(text_sensor.TextSensor),
@@ -122,7 +125,11 @@ async def to_code(config):
     cg.add(hub.set_catch_up_window(int(config[CONF_CATCH_UP_WINDOW].total_minutes)))
     zone_count = config.get(CONF_ZONE_COUNT)
     if zone_count is None:
-        zone_count = len(CORE.config.get("gp_zone") or []) or 16
+        zones = CORE.config.get("gp_zone") or []
+        group = config.get(CONF_ZONE_GROUP)
+        if group is not None:
+            zones = [z for z in zones if str(z.get("group")) == group]
+        zone_count = len(zones) or 16
     cg.add(hub.set_zone_count(min(int(zone_count), 32)))
     if CONF_MASTER_SWITCH_ID in config:
         cg.add(hub.set_master_switch(await cg.get_variable(config[CONF_MASTER_SWITCH_ID])))

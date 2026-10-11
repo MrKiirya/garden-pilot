@@ -14,6 +14,10 @@ gp:
       # A queue run that ended normally (not stopped) is reported to the hook script below; the schedule package
       # extends it (a done mark per zone).
       on_zone_finished:
+        - script.execute:
+            id: gp_gh_zone_finished
+            zone: !lambda "return zone;"
+            completed: !lambda "return completed;"
         - if:
             condition:
               lambda: "return completed;"
@@ -49,6 +53,18 @@ text_sensor:
 
 # Hook for "a zone's queue run completed" (0-based zone): extended by packages/greenhouse/schedule.yaml.
 script:
+  # Every ended zone run (zone 0-based, completed = a queue run that was not stopped): a hook for tests / packages.
+  - id: gp_gh_zone_finished
+    mode: parallel
+    parameters:
+      zone: int
+      completed: bool
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp
+          format: "zone %d finished (completed=%d)"
+          args: ['zone', '(int) completed']
   - id: gp_gh_zone_done
     mode: parallel
     parameters:

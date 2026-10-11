@@ -262,12 +262,14 @@ class Scheduler {
       }
     }
 
+    const bool resume = !this->resumed_;
     if (this->master_) {
       if (continuous)
         this->crossing_(t, cfg, n, out);
       else
-        this->catch_up_(t, cfg, n, out);
+        this->catch_up_(t, cfg, n, resume, out);
     }
+    this->resumed_ = true;
     this->prev_ = t;
     this->have_prev_ = true;
   }
@@ -375,7 +377,7 @@ class Scheduler {
     }
   }
 
-  void catch_up_(const Tick &t, const SlotConfig *cfg, size_t n, Events &out) {
+  void catch_up_(const Tick &t, const SlotConfig *cfg, size_t n, bool resume, Events &out) {
     const int32_t today = t.local.day;
     const int64_t now_s = t.local.minute * 60 + t.local.second;
     for (size_t i = 0; i < n; i++) {
@@ -388,7 +390,9 @@ class Scheduler {
       const int64_t late = now_s - start_s;
       const uint32_t late_min = static_cast<uint32_t>(late / 60);
       if (st.last_fired_day == today) {
-        if (st.pending == 0)
+        // Pending zones resume only on the first valid tick after boot; a later clock jump never re-fires or
+        // "misses" a slot that was already handled (it may still be running).
+        if (!resume || st.pending == 0)
           continue;
         if (late <= this->catch_up_s_) {
           st.result = Result::CATCH_UP;
@@ -416,6 +420,7 @@ class Scheduler {
   SlotState states_[MAX_SLOTS];
   Tick prev_;
   bool have_prev_{false};
+  bool resumed_{false};  ///< the first valid tick after boot has been seen (pending zones resume only then)
   bool master_{true};
   int64_t catch_up_s_{3600};
   uint8_t global_pct_{100};
