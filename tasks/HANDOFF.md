@@ -9,7 +9,7 @@ everything below is resolved.
 |---|---|---|
 | 012 groups and lanes | `task/012-groups-and-lanes` | draft PR #20, CI green, review APPROVE — **merge first** |
 | 013 watchdog + soil skip | `task/013-watchdog-and-soil-skip` (on 012) | draft PR #22 (base: 012 branch), review round 3 APPROVE, CI started via workflow_dispatch |
-| 014 device + emulator → `garden_zones` | `task/014-switch-to-garden-zones` (on 013) | implementation running (2026-10-11 night); emulator checks in a fresh dev container `gp-dev-014` (image with Xvfb) |
+| 014 device + emulator → `garden_zones` | `task/014-switch-to-garden-zones` (on 013) | implemented and committed (2026-10-11 ~03:40): ESP32 pinned compile OK (+0.8 % flash), script/test 636 passed, emulator scenarios E3–E6 pass (screenshots in `.esphome/shots/` locally); review round 1 running; no PR yet. Found and fixed a 013 bug the host builds missed (watchdog trigger `int32_t`, fix committed on the 013 branch) |
 | 016 SNTP time fallback | `task/016-time-fallback` | draft PR #19, CI green, review APPROVE |
 | 017 screen decisions (docs) | `task/017-screens-decision` | draft PR #21 |
 | 018 `gp_*` layer, 019 schedules | this branch `handoff/2026-10-10` | **specs only, need the author's approval** |
@@ -28,6 +28,12 @@ PRs can merge (CI for a stacked branch: `gh workflow run ci.yml --ref <branch>`)
   "Greenhouse watchdog reset" names OK; bed run max 55 min by default.
 - Screens: bed card slots + Home widgets, YAML decides which widgets exist, SETUP chooses order; first widgets:
   zones + alerts, weather (HA), now/next + timeline, heating.
+
+## Night results worth a look
+- 014 deviations: watchdog sensor id `gh_zones_watchdog_problem`; scenario run times shortened (`gh_bed_run_max=2`).
+- 014 not done: ESP32 compile on minimum ESPHome (needs network, CI covers it), clamp check E2, E1 before-list.
+- CI time: local `script/test` grew 6m25 → 11m42 because of the new host scenario (~4 min) — decide whether to
+  shorten it or move it out of `checks`.
 
 ## Open questions for the author
 
