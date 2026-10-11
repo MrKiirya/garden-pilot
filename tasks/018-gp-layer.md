@@ -1,6 +1,6 @@
 # 018 — The `gp_*` layer: one read model and action set for screens, widgets and Home Assistant
 
-Status: planned
+Status: in-review
 Roadmap: SPEC §9 item 8 "`gp_*` layer on top of `garden_zones`, screens switched to it"
 Spec sections: SPEC §4, §4.1, §8 (valve test, screensaver, "Screens: slots and widgets"), §9 items 8-9, §10.2
 (from branch `task/017-screens-decision`); CLAUDE.md core principles 1, 2, 4, 5, 7 and the LVGL gotchas
@@ -436,6 +436,30 @@ Milestone log (updated as I go; final summary at the end).
   gp ("Greenhouse bed 2/3" on/off). Observed: AA switched to off after a manual run (stock start_single_valve behaviour, not new).
   E3 ok (125 s variant): "Sim rogue relay 1" on -> after ~130 s Alert = "Greenhouse: watchdog - B1 locked", status "Locked", watchdog on,
   Home "Alarm". Reset not exercised (sim-ctl cannot press buttons). E4 not verified (no HA). E5 cut (no `ha` alert by decision).
+### Review round 1 fixes
+- Required 1: `bed.yaml` gives the gp_zone switch the id `gh_bed<N>_switch`; the gp host scenario now checks: all switches OFF after boot
+  (`sw_boot_off`), ON while the watchdog is tripped is refused and falls back to OFF with the relay off (`locked_switch`), ON runs the
+  zone and the switch follows (`sw_on`), OFF stops within 1 s (`sw_off`), OFF right after ON and OFF during the switching delay never open the
+  valve (`quick_off`, `delay_off`), and with service-mode inhibit the switch is refused while a `source: service` run is accepted
+  (`inhibit_refused`, `inhibit_service_ok`).
+- Required 2: CLAUDE.md package order, layout row for greenhouse/*.yaml and the valve-test wording updated.
+- Required 3: the 014 scenario ran 5/5 green on a `git archive 6a514f2` build (step 4 always [0, 2]), so the flake was not reproduced
+  on the base. Likely a race in the scenario: step 4 starts a queue 1 s after `shutdown_group` while the lane may still be in its valve
+  switching delay (it failed once in a loaded full run). Made robust: the step now waits until all relays are off plus 3 s before step 4, and the
+  assertion prints the step 3-4 timeline and the last messages on failure. Re-runs after the fix: 014 scenario 5/5 green on the current tree
+  (step 4 always [0, 2]), base `6a514f2` 5/5 green. The gp scenario failed 2 of 5 runs once (step 5: the watchdog never tripped because a late
+  lane shutdown from step 4 switched the raw relay 2 off again); fixed the same way (wait until all relays are off + 5 s) and then 5/5 green.
+  Full `script/test` afterwards: 697 passed in 14:47; `script/lint` ok; `script/test-cpp` ok.
+- S1 service-mode inhibit: `GpGroup::set_inhibit` + action `gp.inhibit {id, state}`; while on, run_zone (except `source: service`), enqueue,
+  start_queue and full_cycle are refused with WARN; stops always allowed. The valve test sets it on enter and clears it on exit/leave.
+- S3: switch OFF stops when the switch is on or the zone runs (no longer depends on the 250 ms model).
+- S4: `minutes` is cut to the zone's maximum (run-duration number max / fixed duration, passed to the group by `groups.py` as
+  `set_zone_max_run`, exposed through `Engine::max_run_seconds`) with a WARN; `gp_api.yaml` also caps at 24 h (no int overflow).
+- S5: service runs are in the history but no longer overwrite the zone's last watering (RAM tracker and persisted blob); cpp test extended.
+- S9: the watchdog sensor id check re-added. S10: Status in-review. S2: `components/gp/__init__.py` no longer imports the GPL Python
+  (the engine group type is declared locally).
+- Not done (follow-ups): S6 colours of `valve_test_color` in C++; S7 HA icon glyph (a designer call) and moving its poller to a core package; S8
+  history-reload test (run the host program twice on one preferences file).
 ## Follow-ups
 - Soil reading in the gp model + soil-sensor-unavailable alert + SKIPPED by soil in a scenario (cut 1).
 - Air/soil sensor alerts; service-mode inhibit for HA zone switches; sim-ctl button/API-action support.
