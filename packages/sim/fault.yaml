@@ -1,0 +1,22 @@
+# PC emulator only (garden-pilot-sim.yaml); never include from the device entry file.
+# FAULT INJECTION for testing the garden_zones watchdog.
+# "Sim rogue relay 1": a switch that turns board_relay_1 on directly, outside the irrigation engine (simulates a bug
+# or a welded contact). Its state follows the relay, so it reads on while the relay is on and goes off again when the
+# watchdog forces the relay off. Turning it off does nothing (the watchdog or the engine switches the relay off).
+# The watchdog never trips in normal use (the configuration keeps every run under max_on_time), so a trip needs a fault
+# and a short limit, e.g.
+#   GP_SIM_SUBST="gh_max_on_time=125s gh_bed_run_max=2 gh_bed_run_initial=1" script/sim
+#   script/sim-ctl switch "Sim rogue relay 1" on     # relay_1 is cut after ~125 s, "Greenhouse watchdog" turns on
+
+switch:
+  - platform: template
+    id: sim_rogue_relay_1
+    name: "Sim rogue relay 1"
+    restore_mode: ALWAYS_OFF
+    lambda: 'return id(board_relay_1).state;'
+    turn_on_action:
+      - switch.turn_on: board_relay_1
+    turn_off_action:
+      - logger.log:
+          format: "Sim rogue relay 1: off is ignored (the engine or the watchdog closes the relay)"
+          level: INFO
