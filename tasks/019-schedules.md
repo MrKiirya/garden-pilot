@@ -29,6 +29,18 @@ tab (stage 9) and uses the same entities. The schedule publishes a **next run** 
 C++ accessors for the now/next widget and the day timeline. Behaviour on an invalid clock, clock jumps (SNTP sync after
 boot), DST changes and missed runs after a power cut is defined and covered by C++ unit tests with a fake clock.
 
+## Human decisions (2026-10-11; override anything below that conflicts)
+- **Slots:** 2 per group by default, max 8 (substitution).
+- **Slot content:** a zone list + one per-slot multiplier (10-200 % of each zone's own run duration). Per-zone
+  minutes per slot may come later as an option; not in this task.
+- **Days in HA:** 7 switches per slot (Mon..Sun), not a text field.
+- **Missed runs:** catch-up window 60 min (substitution); later than that → logged as missed (history).
+- **Interrupted runs (power cut mid-slot):** the "done" mark is per ZONE, set when that zone's watering COMPLETES
+  and written to flash immediately (not the batched 60 s write). Within the catch-up window only the zones that did
+  not complete are run again (an interrupted zone runs its full duration again); completed zones are not repeated.
+  This replaces the "at most one run per slot per day, mark at start" rule where they conflict.
+- **"Greenhouse schedules" master switch:** default ON; every slot defaults OFF.
+
 ## Context
 
 ### What exists / is assumed (read the files as merged; do not re-plan)
