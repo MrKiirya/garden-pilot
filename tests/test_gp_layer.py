@@ -135,6 +135,8 @@ def test_gp_yaml_shape() -> None:
     assert button["on_press"] == [{"gp.reset_watchdog": "gp_greenhouse"}]
     status = config["text_sensor"][0]
     assert status["id"] == "gp_greenhouse_status" and status["name"] == "Greenhouse status"
+    # the group's generated watchdog component is gh_zones_watchdog: the template sensor needs another id
+    assert config["binary_sensor"][0]["id"] != "gh_zones_watchdog"
     assert not re.search(r"!secret|GPIO\d+", (REPO_ROOT / GH_GP).read_text(encoding="utf-8"))
 
     core = _load(CORE_GP)
@@ -370,3 +372,9 @@ def test_gp_layer_host_scenario(gp_program: Path, tmp_path: Path) -> None:
     # 7. stop_all with clear_queue during a run: idle within 1.5 s, queue empty
     assert "stop_idle=1 stop_queue=0" in messages
     assert "history_ok=1" in messages
+
+    # HA zone switch (gp_zone): boot state, ON follows the model, OFF stops, refused when locked or inhibited,
+    # an immediate / delayed OFF never lets the valve open
+    for needle in ("sw_boot_off=1", "locked_switch=1", "sw_on=1", "sw_off=1", "quick_off=1", "delay_off=1",
+                   "inhibit_refused=1", "inhibit_service_ok=1"):
+        assert needle in messages, (needle, messages[-25:])

@@ -16,7 +16,7 @@ FILE = "packages/greenhouse/lvgl_valve_test.yaml"
 PAGE = "valve_test_page"
 MAX_SECONDS = 10
 SESSION_MAX_SECONDS = 600
-ALLOWED_ACTIONS = {"gp.run_zone", "gp.stop_all"}
+ALLOWED_ACTIONS = {"gp.run_zone", "gp.stop_all", "gp.inhibit"}
 GROUP = "gp_greenhouse"
 
 
@@ -91,11 +91,13 @@ def test_service_mode_lifecycle() -> None:
     assert {"gp.stop_all": {"id": GROUP, "clear_queue": True}} in enter
     assert any(d.get("globals.set", {}).get("id") == "gp_service_mode"
                and str(d["globals.set"]["value"]).lower() == "true" for d in enter)
+    assert {"gp.inhibit": {"id": GROUP, "state": True}} in enter
     assert {"script.execute": "gp_service_session"} in enter
     leave = scripts["gp_service_exit"]["then"]
     assert {"gp.stop_all": GROUP} in leave
     assert {"script.stop": "gp_valve_test_guard"} in leave
     assert {"script.stop": "gp_service_session"} in leave
+    assert {"gp.inhibit": {"id": GROUP, "state": False}} in leave, "leaving service mode lifts the inhibit"
     assert any(d.get("globals.set", {}).get("id") == "gp_service_mode"
                and str(d["globals.set"]["value"]).lower() == "false" for d in leave)
     assert {"lvgl.page.show": "setup_page"} in leave
@@ -137,6 +139,7 @@ def test_leaving_the_page_ends_service_mode() -> None:
     assert {"script.stop": "gp_service_session"} in leave
     assert any(d.get("globals.set", {}).get("id") == "gp_service_mode"
                and str(d["globals.set"]["value"]).lower() == "false" for d in leave)
+    assert {"gp.inhibit": {"id": GROUP, "state": False}} in leave
     assert not any("lvgl.page.show" in d for d in leave), "leaving must not navigate (the user already did)"
 
 

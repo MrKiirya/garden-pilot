@@ -339,7 +339,7 @@ def test_greenhouse_zones_host_scenario(scenario_program: Path, tmp_path: Path) 
     assert line.window("s3_b", "s3_c")[-1][1][_AA] == "0"
 
     # 4. queue + manual run
-    assert line.rising("s4_a", "s4_b") == [_R1, _R3], line.rising("s4_a", "s4_b")
+    assert line.rising("s4_a", "s4_b") == [_R1, _R3], (line.rising("s4_a", "s4_b"), line.window("s3_c", "s4_b"), messages[-40:])
     assert not line.ever(_R2, "s4_a", "s4_b")
     assert line.rising("s4_b", "s4_c") == [_R1, _R2, _R1], line.rising("s4_b", "s4_c")
     assert "queue queued=1" in messages and "queue cleared=" in messages

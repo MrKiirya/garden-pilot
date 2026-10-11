@@ -117,7 +117,12 @@ script:
       - delay: 6s
       - script.execute: {id: gz_mark, label: s3_c}
       - garden_zones.shutdown_group: gh_zones
-      - delay: 1s
+      # let the lane finish its shutdown (valve switching delay) before the next step starts something
+      - wait_until:
+          condition:
+            lambda: 'return !id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state;'
+          timeout: 10s
+      - delay: 3s
 
       # 4. queue + manual run
       - logger.log: {level: INFO, tag: GZTEST, format: "step=4"}

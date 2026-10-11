@@ -321,7 +321,7 @@ def test_bed_shape() -> None:
     assert set(data) == {"garden_zone", "gp_zone"}
     gp_zones = data["gp_zone"]
     assert isinstance(gp_zones, list) and len(gp_zones) == 1, "gp_zone: must be a list of one item"
-    assert gp_zones[0] == {"group": "gp_greenhouse", "position": "${bed}", "name": "${bed_name}"}
+    assert gp_zones[0] == {"group": "gp_greenhouse", "position": "${bed}", "id": "gh_bed${bed}_switch", "name": "${bed_name}"}
     zones = data["garden_zone"]
     assert isinstance(zones, list) and len(zones) == 1, "garden_zone: must be a list of one item"
     zone = zones[0]

@@ -67,6 +67,10 @@ script:
   - id: gp_scenario
     then:
       - delay: 3s
+      # all zone switches report OFF after boot (nothing opens at boot)
+      - lambda: |-
+          ESP_LOGI("GZTEST", "sw_boot_off=%d",
+                   (int) (!id(gh_bed1_switch).state && !id(gh_bed2_switch).state && !id(gh_bed3_switch).state));
       # the enable switches start off on a fresh device: enable the beds (a disabled bed is skipped by the queue)
       - switch.turn_on: gh_bed1_enable
       - switch.turn_on: gh_bed2_enable
@@ -125,7 +129,13 @@ script:
       - gp.dequeue_zone: {id: gp_greenhouse, zone: 1}
       - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
       - switch.turn_on: gh_bed2_enable
-      - delay: 1s
+      # the lane must be completely shut down (valve switching delay) before step 5 turns a raw relay on: a late
+      # shutdown would switch that relay off again and the watchdog would never see it
+      - wait_until:
+          condition:
+            lambda: 'return !id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state;'
+          timeout: 10s
+      - delay: 5s
       - script.execute: {id: gp_mark, label: s4_c}
 
       # 5. watchdog: a raw relay turn-on (fault) is cut after 125 s; B2 locked, the alert on top, a run refused, reset
@@ -141,6 +151,11 @@ script:
       - script.execute: {id: gp_mark, label: s5_b}
       - gp.run_zone: {id: gp_greenhouse, zone: 1, duration: 2s}
       - delay: 4s
+      # the HA zone switch is refused while the watchdog is tripped: it falls back to OFF, the relay stays off
+      - switch.turn_on: gh_bed2_switch
+      - delay: 3s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "locked_switch=%d", (int) (!id(gh_bed2_switch).state && !id(board_relay_2).state));
       - script.execute: {id: gp_mark, label: s5_c}
       - gp.reset_watchdog: gp_greenhouse
       - delay: 3s
@@ -181,4 +196,49 @@ script:
       - delay: 1s
       - lambda: |-
           ESP_LOGI("GZTEST", "history_ok=%d", (int) (id(gp_greenhouse)->history().size() >= 3));
+      # 8. the HA zone switch (gp_zone): ON runs the zone and follows the model, OFF stops within 1 s
+      - script.execute: {id: gp_mark, label: s8_a}
+      - switch.turn_on: gh_bed2_switch
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_2).state;"
+          timeout: 10s
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "sw_on=%d", (int) (id(gh_bed2_switch).state && id(board_relay_2).state &&
+                                               id(gp_greenhouse)->zone_running(1)));
+      - switch.turn_off: gh_bed2_switch
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "sw_off=%d", (int) (!id(gh_bed2_switch).state && !id(board_relay_2).state &&
+                                                !id(gp_greenhouse)->summary().running));
+      # OFF right after ON, and OFF during the engine's switching delay: the valve must never open
+      - switch.turn_on: gh_bed3_switch
+      - switch.turn_off: gh_bed3_switch
+      - delay: 5s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "quick_off=%d", (int) (!id(board_relay_3).state && !id(gp_greenhouse)->summary().running));
+      - switch.turn_on: gh_bed3_switch
+      - delay: 1s
+      - switch.turn_off: gh_bed3_switch
+      - delay: 5s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "delay_off=%d", (int) (!id(board_relay_3).state && !id(gp_greenhouse)->summary().running));
+      # service mode (inhibit): the switch is refused, a service run is accepted
+      - gp.inhibit: {id: gp_greenhouse, state: true}
+      - switch.turn_on: gh_bed1_switch
+      - delay: 3s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "inhibit_refused=%d", (int) (!id(gh_bed1_switch).state && !id(board_relay_1).state));
+      - gp.run_zone: {id: gp_greenhouse, zone: 0, duration: 4s, source: service}
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_1).state;"
+          timeout: 10s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "inhibit_service_ok=%d", (int) id(board_relay_1).state);
+      - gp.stop_all: gp_greenhouse
+      - gp.inhibit: {id: gp_greenhouse, state: false}
+      - delay: 2s
+      - script.execute: {id: gp_mark, label: s8_b}
       - logger.log: {level: INFO, tag: GZTEST, format: "done"}

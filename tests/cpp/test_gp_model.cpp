@@ -375,5 +375,8 @@ TEST_CASE("run_source") {
   CHECK(rec.source == gp::Source::SERVICE);
   CHECK(rec.duration == 3u);
   CHECK(!m.take_completed(rec));
+  // a service run does not become the zone's last watering
+  CHECK(!m.zone(1).last_duration.has_value());
+  CHECK(!m.zone(1).last_start_uptime.has_value());
 }
 
