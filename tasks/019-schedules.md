@@ -40,6 +40,13 @@ boot), DST changes and missed runs after a power cut is defined and covered by C
   not complete are run again (an interrupted zone runs its full duration again); completed zones are not repeated.
   This replaces the "at most one run per slot per day, mark at start" rule where they conflict.
 - **"Greenhouse schedules" master switch:** default ON; every slot defaults OFF.
+- **A user STOP settles the slot (2026-10-11, review Required 1):** a STOP (`gp.stop_all` from any caller) and entering
+  service mode drop today's pending zones of every slot ("stopped" in history / last result, not "missed"), clear the
+  engine queue and any held-back start, and nothing re-runs after a reboot. Only zones cut by a power loss / reboot (no
+  STOP) are re-run inside the catch-up window. This replaces "an interrupted zone stays pending" for the STOP case.
+- **A slot firing while a manual full cycle runs waits for it (2026-10-11, review Required 5):** the cycle runs to its
+  end, then the slot's zones (with the slot's multiplier) run; INFO log; the done marks follow the zones as usual. If the
+  cycle is stopped by the user the held-back zones are settled like any STOP.
 
 ## Context
 
@@ -397,19 +404,7 @@ Not verified on hardware: everything (breadboard run, SNTP-only clock, power cut
 - Slot entities per slot: 11 (days are 7 switches); add a card/grouping on the HA side if it is too noisy.
 
 ## Review round 1 fixes
-Awaiting the author's decision (behaviour NOT changed; today's behaviour is documented in
-`components/garden_schedule/README.md` and pinned by a clearly named test):
-- **Required 1 - what a user STOP / entering service mode does to pending zones.** Today: the stopped zone and the zones
-  still queued stay pending, and a restart inside the catch-up window runs them (cpp case
-  `awaiting_decision_stop_keeps_pending_and_a_restart_resumes_it`; the gp scenario step 9 pins `completed=0` for a
-  stop). Options: (a) STOP settles today's pending zones of every slot (e.g. a gp `on_stop` -> `garden_schedule.cancel_pending`, result
-  "stopped") so nothing resumes after a reboot; (b) keep it: a STOP is like an interruption and the rest resumes after
-  a reboot inside the window.
-- **Required 5 - a slot firing during a manual full cycle.** Today: `gp.start_queue` switches the lane to queue mode, the
-  current zone finishes, the scheduled zones run, the rest of the cycle is dropped; `GpGroup::start_queue` now logs a
-  WARN (a cycle started from Home Assistant's main switch is also detected, as any running non-queue run). Options: (a) interrupt with WARN
-  (today); (b) queue the slot's zones and start them only after the cycle ends; (c) skip the slot ("skipped: cycle running"). Not
-  covered by a scenario step (needs the chosen behaviour).
+Decided by the author on 2026-10-11 (~21:50), implemented in round 2: see "Human decisions" (items 6 and 7) and "Round 2" below.
 
 Done:
 - Required 2: `Scheduler::resumed_`; pending zones resume only on the first valid tick after boot. A later clock jump
@@ -438,3 +433,36 @@ Follow-ups added:
 - Final full run after the fixes: `UV_OFFLINE=1 GP_REQUIRE_CXX=1 script/test` -> 744 passed in 994 s (16:34), no skips.
   WALLTIME: the "before" run (a `git archive 8440aea` copy) was NOT done (would cost another ~15 min); the box stays
   unticked. The reviewer's earlier run of the branch was 978 s, so the new tests add little.
+
+## Round 2 (the two decisions of 2026-10-11)
+Implemented:
+- Decision 1: `Scheduler::stop_pending()` (core; result `STOPPED`, `DayRunState::STOPPED`, day mark kept) and the hub action
+  `garden_schedule.cancel_pending` (saves + syncs at once, "last schedule" = `06:00 #1 stopped`). New `gp` group trigger
+  `on_stop` (fires in `stop_all` and when `gp.inhibit: true` is set, so the valve test's SERVICE entry counts) and action
+  `gp.clear_queue`. `packages/greenhouse/gp.yaml` calls the hook script `gp_gh_stopped`; `schedule.yaml` extends it with
+  `garden_schedule.cancel_pending` + `gp.clear_queue` (so a config without schedules keeps the old STOP behaviour: the
+  queue is kept). `tests/cpp/test_schedule.cpp`: `awaiting_decision_stop_keeps_pending_and_a_restart_resumes_it` replaced
+  by `stop_settles_the_slot_and_nothing_resumes_after_a_restart`, `stop_settles_every_slot_with_pending_zones`,
+  `a_power_cut_without_a_stop_still_resumes_the_pending_zones`, `a_stopped_slot_does_not_fire_again_today_but_fires_tomorrow`.
+  The gp scenario step 9 still pins `completed=0` for a stop (comment updated: the settle happens through `on_stop`).
+- Decision 2: finding while testing: the engine in groups mode has no queue-enable switch, so queued zones are picked at the
+  NEXT zone change, also in the middle of a cycle (a first version that only deferred `start_queue` ran the slot's zone
+  right after the current cycle zone, before the rest of the cycle). So `gp` now holds back both `enqueue_zones` and
+  `start_queue` while a non-queue run is active (`start_must_wait`, pure `components/gp/deferred_start.h`, cpp
+  `test_gp_deferred_start.cpp`), and queues + starts them 5 s after the last zone stopped (cycle gaps are shorter).
+  Cancelled by `stop_all`, `gp.clear_queue` and entering service mode. The previous WARN is gone.
+- Host scenario `tests/configs/schedule_sim.yaml` (phases 4 and 5, plus slot 3): phase 4 STOP in the middle of slot 2 ->
+  idle, queue empty, last = `#2 stopped`; phase 5 restart inside the window -> nothing runs (`quiet=1 queue=0`); (a) a
+  manual cycle with a held-back enqueue + start, then STOP -> nothing starts, queue empty; (b) slot 3 fires in the second
+  bed of a manual cycle (beds 1 and 2): the cycle's beds ran 60 s each undisturbed, then the slot's beds 1 and 2 ran 6 s
+  each after a >= 4 s gap, last = `#3 ran`. The host scenario now takes about 7.5 min (was about 2).
+- Docs: `components/garden_schedule/README.md` (the "Awaiting" bullet replaced by the two rules), `components/gp/README.md`
+  (actions, `on_stop`), CLAUDE.md gotcha, SPEC 4.
+Notes / limits:
+- A cycle zone that finishes after the slot fired counts as "done" for the slot (queue-classified run) although the
+  slot's own run of that zone follows after the cycle; the slot's zone list is held back as a whole, so such a zone runs
+  twice (the second time at the slot's percentage). Harmless; a power loss before the held-back run leaves the not-yet-run
+  zones pending (the held-back request is RAM only) and a restart inside the window runs them.
+- Home Assistant turning off the engine's main switch is still not a STOP for the schedule (no `gp` involvement).
+- `gp.enqueue_zone` (single zone, e.g. from Home Assistant) is NOT held back during a cycle (only `enqueue_zones`).
+- Not verified on hardware: nothing of round 2.
