@@ -140,3 +140,114 @@ Reviewed: `git diff 6a514f2 82b1e0b` (6 commits on `task/018-gp-layer`), against
 - Soil reading + soil alert + SKIPPED-by-soil scenario (cut 1); air-sensor alerts; legacy `on_value` LVGL updates in
   `sensors_air_dht.yaml` / `sensors_soil.yaml`; enable switches OFF on a fresh device; PAUSED time-left in the adapter;
   `sim-ctl` buttons/actions.
+
+---
+
+# 018 — Review (round 2)
+
+Verdict: APPROVE
+
+Reviewed: `git diff 82b1e0b 5f9d326` (round-1 fixes) against the round-1 findings above, and the whole range
+`6a514f2..5f9d326` for regressions.
+
+## Checks run
+- `podman exec gp-dev-014 script/lint` → `esphome config OK: garden-pilot.yaml` (yamllint clean)
+- `podman exec gp-dev-014 script/test-cpp` → `39 test cases, 0 failed checks`
+- `podman exec -e UV_OFFLINE=1 -e GP_REQUIRE_CXX=1 gp-dev-014 script/test` → `697 passed in 865.29s (0:14:25)`, no
+  skips and no failures (the 014 and gp host scenarios and `test_sim_ui` included).
+- ESP32 pinned compile after the fixes: run by the main session (OK), not repeated here.
+
+## Round-1 required items
+1. **GpZoneSwitch has no behavioural check: resolved.** `bed.yaml` gives the switch the id `gh_bed${bed}_switch`
+   (`test_bed_shape` updated). The gp host scenario now checks: OFF after boot (`sw_boot_off`); refused and back to OFF
+   with the relay off while the watchdog is tripped (`locked_switch`); ON runs the zone and the switch follows the model
+   (`sw_on`); OFF stops within 1 s (`sw_off`); OFF right after ON and OFF 1 s into the switching delay leave the valve
+   closed (`quick_off`, `delay_off`); refused under inhibit while `source: service` is still accepted
+   (`inhibit_refused`, `inhibit_service_ok`). These would fail without the change. With the old OFF logic the
+   `delay_off` case would leave relay 3 open at the check, because the model is not yet RUNNING during the switching
+   delay.
+2. **CLAUDE.md stale lines: resolved.** The `packages:` order item 5 now lists `core_gp` → `core_gp_api` → `gh_gp`.
+   The greenhouse layout row names `gp.yaml` for the watchdog sensor, reset button and status, and says which packages
+   a bed needs. The valve-test gotcha now says "`duration` of `gp.run_zone`".
+3. **Flaky 014 host scenario: resolved for this round.** The implementer ran the base `6a514f2` 5/5 green, the
+   current tree 5/5 green, and my full run is green. The step-4 assertion now prints the step 3-4 timeline on failure,
+   so a repeat can be diagnosed. See Suggestion R2-3 on what the added waits hide.
+
+## Safety additions (focus of this round)
+- **Service-mode inhibit (`gp.inhibit`): cannot stay on, but does not cover every HA path.**
+  - Coverage: `GpGroup::set_inhibit` refuses `run_zone` unless `source: service`, plus `enqueue_zone`,
+    `start_queue` and `full_cycle`. `stop_all` is always allowed.
+  - Persistence: the flag is a plain RAM member (`inhibited_{false}`), so a reboot always clears it. Nothing persists
+    it and no API action sets it. `gp_api.yaml` exposes no `source` parameter, so HA cannot pass `source: service`.
+  - Set and clear: the flag is set only in `gp_service_enter` (page `on_load`). It is cleared in both
+    `gp_service_exit` (EXIT SERVICE and the 10 min `gp_service_session` timeout) and `gp_service_leave` (page
+    `on_unload`, any route). `test_service.py` asserts both.
+  - Screensaver: it cannot leave the page in service mode, because `screensaver.yaml:39` blocks `on_idle` while
+    `gp_service_mode` is on. It is also only a top-layer overlay, not a page change.
+  - Result: the inhibit cannot get stuck ON. It and `gp_service_mode` are set and cleared together, with no delay in
+    between.
+  - Gap: one HA start path bypasses it, see R2-1.
+- **Switch OFF always stops: OK.** `write_state(false)` calls `stop_all(false)` when the switch state is ON or the zone
+  is RUNNING/PAUSED. Stopping the whole lane is the intended semantics. Stops are never inhibited, so an HA OFF also
+  ends a valve test, which is safe.
+- **Minutes cap: OK in code, no check.**
+  - The cap: `gp_api.yaml` caps at 1440 min / 86400 s before multiplying, so `int` cannot overflow; negative
+    values give 0 (the configured duration). `GpGroup::clamp_` then cuts the run to
+    `Engine::max_run_seconds(zone)`.
+  - Where the maximum comes from: `groups.py` takes the fixed `run_duration`, or the number's `max_value` converted
+    by `rules.longest_run_ms` (unit-aware). This value already must fit under the watchdog `max_on_time`, so a long
+    HA request now ends normally instead of tripping the watchdog.
+  - Gap: neither cap has a test (R2-2).
+- **Service runs keep the last watering: OK.** Both the RAM tracker (`zone_model.h`) and the persisted blob
+  (`gp.h:186`) skip `Source::SERVICE`, and the history entry is still written. The C++ test covers the tracker. The
+  blob path is only covered by reading the code.
+- **Scenario waits: no safety race hidden.** See R2-3 for a non-safety behaviour they hide.
+
+## Findings
+### Required
+None.
+
+### Suggestions
+1. **Main switch bypasses the inhibit.**
+   - Where: `packages/greenhouse/lvgl_valve_test.yaml:18-19,43` and `packages/greenhouse/irrigation.yaml:37-39`.
+   - The comment says the inhibit means "Home Assistant cannot open a valve in the window before the poller acts". The
+     engine's HA-visible main switch "Greenhouse irrigation" goes straight to `GardenZonesGroup::start_cycle()`
+     (`group.h:57-58`), bypassing `GpGroup`. My round-1 Suggestion 1 wrongly claimed that every HA start path goes
+     through gp.
+   - Why not blocking: the 1 s poller still stops it, and the lane's ~2 s switching delay comes before the valve
+     opens. That is the same as 014, so it is not a regression.
+   - Fix direction: reword the comment ("every gp start path"). As a follow-up, route the main switch through gp or
+     make it `internal` with a gp-owned replacement; that also closes a remaining principle-2 hole.
+2. **No checks for the minutes cap.** `GpGroup::clamp_`, `set_zone_max_run` / `zone_max_run` and the 24 h cap in
+   `gp_api.yaml` are new behaviour without a check. A host-scenario step is enough: `gp.run_zone` with a duration
+   above the zone maximum, then assert `time_remaining` <= max. A unit check on the generated `set_zone_max_run(...)`
+   values (fixed `run_duration` and number `max_value` with unit `min`) would also do. Also add a scenario step that
+   the inhibit refuses `gp.enqueue_zone`, `gp.start_queue` and `gp.full_cycle`; today only `run_zone` via the switch
+   is exercised.
+3. **Scenario waits hide an engine behaviour.**
+   - Where: `tests/configs/greenhouse_zones_sim.yaml:120-125`, `tests/configs/gp_layer_sim.yaml:132-137`.
+   - The waits make the scenarios deterministic, which is fine for these tests. But the round-1 failure shows real
+     behaviour: `queue_zone` + `start_queue` issued within ~1 s of `shutdown_group`, while the lane is still in its
+     switching delay, can be silently dropped. Nothing waters and there is no log. In gp, `queue_run_` is then set
+     while nothing runs.
+   - Why not blocking: it is fail-safe (nothing opens) and pre-existing in 014. On the device the confirm dialog
+     makes STOP followed by Run Q within 1 s unlikely.
+   - Fix direction: follow-up to pin the behaviour in a dedicated scenario step, then either make the engine defer
+     the start until the shutdown finishes, or log a WARN when a start is dropped.
+   - Also: `quick_off` / `delay_off` only check the end state after 5 s. `line.ever(_R3, ...)` over the window would
+     prove the valve never opened at all.
+4. Round-1 suggestions S6, S7 and S8 are deferred with reasons in the Implementation notes; that is acceptable.
+
+## Acceptance criteria (round 2)
+- [x] `script/test-cpp`, `pytest -m unit`, `script/lint`, `script/test` (697 passed, no skips with `GP_REQUIRE_CXX=1`):
+      verified above.
+- [x] `git grep sprinkler_lvgl` / engine names only in the allowed files: unchanged by the fixes.
+      `components/gp/__init__.py` no longer imports the GPL Python, because the type is declared locally.
+- [~] Compile pinned + minimum for both entry files: pinned ESP32 is OK (main session). Minimum ESP32 and the sim host
+      build are left to CI.
+- [ ] CI green: no PR yet.
+- [x] Nothing verified on a real device; the notes say so.
+
+## Follow-ups (not blocking)
+- R2-1 main switch through gp; R2-2 cap/inhibit checks; R2-3 dropped start after shutdown; round-1 S6/S7/S8 and the
+  round-1 follow-up list.

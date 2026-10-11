@@ -16,7 +16,9 @@
 #   (Home Assistant, queue) with a WARN log. Service mode ends by EXIT SERVICE, by leaving the page, after 10 min of
 #   no test (`gp_service_session`) or by a reboot; each end stops the group.
 # - While service mode is on `gp.inhibit` makes the gp layer refuse every start except the test's own (source: service),
-#   so Home Assistant cannot open a valve in the window before the poller below acts.
+#   so Home Assistant zone switches and gp actions cannot open a valve. Exception: the "Greenhouse irrigation" main
+#   switch still starts the engine's full cycle directly; the 1 s poller stops it (as in 014). Follow-up: route it
+#   through gp.
 # - Only gp.run_zone (source: service, so the history can tell tests from waterings) / gp.stop_all on gp_greenhouse;
 #   never a raw relay or a zone switch. A bed locked by the watchdog is refused by gp.run_zone (its row shows "locked").
 # Needs gh_gp, the beds 1-3 and lvgl_page_setup (the SERVICE tile). Tokens only; ASCII only.
@@ -40,7 +42,7 @@ script:
     mode: restart
     then:
       - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
-      # starts other than the test's own (source: service) are refused from here on, so HA cannot open a valve
+      # gp starts other than the test's own (source: service) are refused from here on (main switch: see header)
       - gp.inhibit: {id: gp_greenhouse, state: true}
       - globals.set:
           id: gp_service_mode

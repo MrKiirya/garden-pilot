@@ -466,3 +466,10 @@ Milestone log (updated as I go; final summary at the end).
 - Legacy `on_value` LVGL updates in `sensors_air_dht.yaml` / `sensors_soil.yaml` -> pollers.
 - Enable switches default OFF on a fresh device (restore default): check the intended first-boot behaviour.
 - Time-left for PAUSED zones is not reported by the engine adapter.
+- (review round 2) Route the "Greenhouse irrigation" main switch through gp (or make it internal) so the
+  service-mode inhibit covers it; until then the 1 s service poller stops it, as in 014.
+- (review round 2) Tests for the run-duration clamp to the zone max (`set_zone_max_run`), the 24 h cap in
+  `gp_api.yaml`, and the inhibit on enqueue / start queue / full cycle.
+- (review round 2) A queue start within ~1 s of a shutdown (lane still switching) can be dropped silently
+  (`queue_run_` stays set); pin it in a scenario step and defer the start or log a WARN. `quick_off` / `delay_off`
+  should check the whole window, not only the end state.
