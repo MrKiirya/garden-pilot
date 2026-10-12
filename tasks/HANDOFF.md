@@ -16,7 +16,7 @@ everything below is resolved.
 | 019 schedules | `task/019-schedules` (on 018) | PR #26 ready, review round 2 APPROVE, CI green (checks timeout raised to 40 min) |
 | 020 timeline flake (test only) | `task/020-timeline-flake` (on 019) | PR #27 ready (base 019), CI green; also carries the schedule-scenario handover fix |
 | 021 review follow-ups | `task/021-review-follow-ups` (on 020) | PR #28 (base 020), review APPROVE, CI green |
-| 022 CI speed-up | `task/022-ci-speed` (on 021) | spec done, implementer running (xdist + libfaketime, target `checks` ~12 min) |
+| 022 CI speed-up | `task/022-ci-speed` (on 021) | PR #29 (base 021), review round 2 APPROVE, CI green; `checks` 13.7 min (was ~25) |
 
 Stacked branches: after #20 is squash-merged, 013 and 014 need to be brought up to date with `master` before their
 PRs can merge (CI for a stacked branch: `gh workflow run ci.yml --ref <branch>`).
@@ -80,7 +80,9 @@ marks keyed by slot number, ...).
 ### 022 CI speed-up (planner decisions to confirm)
 - No job split now (required check names unchanged); pytest-xdist inside `checks`, libfaketime in the devcontainer
   image to skip minute-boundary waits in the schedule scenario.
-- Open: parallel `script/test` by default locally, or opt-in? If `checks` lands at 12–15 min: accept or split jobs next?
+- Open: parallel `script/test` by default locally (8 workers), or opt-in? `checks` landed at 13.7 min: accept or split jobs next?
+- Small follow-ups from review round 2: `check_shifted` should compare millis() modulo 2**32 (dev machine uptime
+  > 49.7 days); `test_group_marks_reach_xdist` docstring; `_resolved_version` for labels other than pinned/minimum.
 
 ### Other
 - Flaky test (found 2026-10-11, CI of #25): `test_safety_host_scenario` "a locked group refuses run_zone" fails ~1/50.
