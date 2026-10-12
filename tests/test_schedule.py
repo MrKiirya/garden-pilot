@@ -5,6 +5,7 @@ directory: the persisted per-zone done marks are the point)."""
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import shutil
 import time
@@ -321,6 +322,15 @@ class _Clock:
         self.library = require_faketime_or_none()
         self.offset = 0
 
+    def check_shifted(self, first_on_ms: int, launched: float) -> None:
+        """Started at second 22, the slot (next minute boundary) opens its first valve ~38 s after the start; on the
+        real clock it would be a random 33-93 s. Under GP_REQUIRE_FAKETIME=1 (CI) a library that does not shift the
+        program's clock must not pass silently."""
+        # `t` is the program's CLOCK_MONOTONIC in ms (kept real), `launched` is time.monotonic() before the start.
+        if self.library is not None and os.environ.get("GP_REQUIRE_FAKETIME") == "1":
+            elapsed = first_on_ms / 1000 - launched
+            assert 30 <= elapsed <= 50, f"first valve {elapsed:.1f} s after the start: libfaketime did not shift the clock?"
+
     def env(self, target_second: int | None = None) -> dict[str, str] | None:
         if self.library is None:
             return None
@@ -339,10 +349,11 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     prefs.mkdir()
     clock = _Clock()
     # Phases 1 and 4 compute `now + 90 s` ~3 s after the start; at second 22 that is ~25 s, so the slot starts ~35 s
-    # later. Phase 5 waits for second 20 after ~35 s of other steps, hence a start at second 44. Phases 2 and 3 keep
+    # later. Phase 5 waits for second 20 after ~35 s of other steps, hence a start at second 42 (headroom for slower runners). Phases 2 and 3 keep
     # the offset of phase 1.
 
     # phase 1: configure slot 1, wait for the fire, kill the program in the middle of zone 2
+    launched = time.monotonic()
     one = _run_program(schedule_program, prefs, timeout=240, env_extra=clock.env(22))
     assert "done" in one, one[-20:]
     assert "phase=1" in one
@@ -355,6 +366,7 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     assert "idle_before=1" in one
     rel = _relays(one)
     first_on = next(row for row in rel if row[2] == 1)
+    clock.check_shifted(first_on[0], launched)
     assert first_on[1] <= 6, f"slot 1 fired {first_on[1]} s after the start minute"
     assert all(row[4] == 0 for row in rel), "slot 2 is disabled: zone 3 never runs"
     assert _value(one, "last").endswith("#1 ran")
@@ -382,17 +394,19 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     assert _relays(three) == [] and "quiet=1" in three
 
     # phase 4: STOP in the middle of slot 2 settles the slot ("stopped"), nothing stays queued
+    launched = time.monotonic()
     four = _run_program(schedule_program, prefs, timeout=240, env_extra=clock.env(22))
     assert "done" in four, four[-20:]
     assert "phase=4" in four
     rel4 = _relays(four)
+    clock.check_shifted(next(row for row in rel4 if row[2] == 1)[0], launched)
     assert any(row[2] == 1 for row in rel4) and any(row[3] == 1 for row in rel4), "slot 2 ran zones 1 and 2"
     assert all(row[4] == 0 for row in rel4)
     assert "stopped_idle=1 queue=0" in four, four[-10:]
     assert _value(four, "last").endswith("#2 stopped"), four
 
     # phase 5: restart inside the window: the stopped slot does not resume (decision 1)
-    five = _run_program(schedule_program, prefs, timeout=420, env_extra=clock.env(44))
+    five = _run_program(schedule_program, prefs, timeout=420, env_extra=clock.env(42))
     assert "done" in five, five[-30:]
     assert "phase=5" in five
     assert "quiet=1 queue=0" in five, "a STOP settles the slot: nothing runs after a restart"

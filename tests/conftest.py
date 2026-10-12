@@ -62,8 +62,8 @@ def require_sdl_or_skip() -> None:
 # (`script/test` passes `--dist loadgroup`). `{param}` is replaced by the version param of a parametrized fixture.
 # `host_build_pinned` and `host_build[pinned]` share `.esphome/gz-host/<pinned>`, hence the same group name.
 HOST_GROUPS: dict[str, str] = {
-    "host_build": "gz-host-{param}",
-    "host_build_pinned": "gz-host-pinned",
+    "host_build": "gz-host-{resolved}",
+    "host_build_pinned": "gz-host-{resolved}",
     "groups_program": "gz-groups",
     "safety_program": "gz-safety",
     "overlap_program": "gz-overlap",
@@ -76,13 +76,30 @@ HOST_GROUPS: dict[str, str] = {
 HOST_MODULE_GROUPS: dict[str, str] = {"test_sim_ui": "sim-ui"}
 
 
+def _resolved_version(label: str) -> str:
+    """The ESPHome version behind a label (what script/_esphome --resolve prints): the build directory is keyed by it."""
+    import tomllib
+
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    if label == "minimum":
+        return project["tool"]["garden-pilot"]["esphome-minimum"]
+    for dep in project["dependency-groups"]["dev"]:
+        if dep.startswith("esphome=="):
+            return dep.split("==", 1)[1]
+    return label
+
+
 def host_group(fixturenames: list[str], params: dict, module: str, is_host: bool) -> str | None:
     for name, group in HOST_GROUPS.items():
         if name in fixturenames:
-            return group.format(param=params.get(name, ""))
+            # keyed by the resolved version, like the build directory: pinned == minimum would share one group
+            return group.format(resolved=_resolved_version(params.get(name, "pinned")))
     return HOST_MODULE_GROUPS.get(module) if is_host else None
 
 
+# tryfirst: xdist's own hook reads the `xdist_group` marks (it adds the `@group` suffix to the node ids that
+# `--dist loadgroup` schedules by); without it the marks arrive too late and nothing is grouped.
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         callspec = getattr(item, "callspec", None)
