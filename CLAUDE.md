@@ -49,6 +49,9 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `components/gp/` | The `gp_*` layer (MIT): pure model/alerts/history/format headers + ESPHome glue, `Engine` adapter interface; contract in its README. |
 | `components/gp_zone/` | One `gp_zone:` list item per bed: the HA zone switch (MIT). The `garden_zones` adapter is `components/garden_zones/gp_engine.h`. |
 | `packages/core/gp.yaml`, `gp_api.yaml`, `packages/greenhouse/gp.yaml` | gp hub + alert sensor; generic HA actions; greenhouse group, status/watchdog entities. `packages/greenhouse/gp_lvgl_status.yaml` = pollers for the greenhouse/Home labels. |
+| `components/garden_schedule/` | Device-side schedules (MIT): hub with a pure C++ core (`schedule_core.h`, unit tested with a fake clock), engine-agnostic; fires `on_run(zone_mask, pct, slot)` and takes `garden_schedule.zone_done`. README has the rules. |
+| `components/garden_schedule_slot/` | One `garden_schedule_slot:` list item per slot (schema only; the hub generates the code). |
+| `packages/greenhouse/schedule.yaml`, `schedule_slot.yaml` | Hub `gh_schedule` with master switch, next-run / last-result text sensors, `on_run` -> `gp.enqueue_zones` + `gp.start_queue`; one include per slot (`vars: {slot, start}`, 2 in the entry files, max 8). |
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`irrigation.yaml`: the `garden_zones` group `gh_zones` and its own entities; the watchdog sensor, reset button and status live in `gp.yaml`), LVGL page. Every config that includes `bed.yaml` also needs `core_gp` + `gh_gp` (its `gp_zone:` switch), and `core_gp_api` when `api` is present. |
 | `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), watchdog fault injection "Sim rogue relay 1" (`fault.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
@@ -75,7 +78,7 @@ introduced by roadmap tasks, not ad hoc.
    `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`, `lvgl_boot_wifi`.
 5. `gh_irrigation` (the engine group `gh_zones`) → `gh_bed_N` (+ optional
    `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `core_gp` → `core_gp_api` (needs `core_api`) → `gh_gp` (the gp layer; screens and Home Assistant reach irrigation only through it) → `gh_lvgl_page` → `gh_sensors_air` →
-   `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test).
+   `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test) → `gh_schedule` → `gh_schedule_slot_N` (one include per slot, N unique 1..8).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 `garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `core_diagnostics`, `display_sdl` and
@@ -127,6 +130,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
   mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the lane opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
 - A `garden_zones` group's watchdog is on by default (`max_on_time` 60 min, `pump_max_on_time` 2 h, `pump_idle_timeout` 10 s); only `never` disables a limit (WARN at boot). A zone's `run_duration_number` `max_value` (stock default 86400 s) must fit under its `max_on_time` or config fails (skipped for `never`).
 - `garden_zone:` is always a list item (`- group: ...`): two dict-form entries from different packages merge into one zone.
+- **Schedules:** one run per slot per local day (the mark blocks a repeated DST hour); no `time: on_time` cron triggers for watering (compile-time only). A slot missed while the device was off still runs inside `gh_schedule_catch_up_window` (60min default), else it is logged as missed; the done mark is per zone (`garden_schedule.zone_done` from `gp` `on_zone_finished`), written to flash at once, and a restart runs only the zones that did not complete; a user STOP (or service mode) settles the slots (nothing resumes), a slot firing during a manual cycle runs after it (`gp` holds the enqueue back). Entities of a slot are `entity_category: config`; the skip condition is `gp.inhibited` (service mode). Rules: `components/garden_schedule/README.md`.
 - Stock `sprinkler` limitations the fork works around (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
   queue, queued zones run even when disabled): SPEC §3.
 
@@ -148,7 +152,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 | Compile firmware | `script/compile` (real `secrets.yaml`, or `GP_SECRETS=example` to stage example secrets under `.esphome/example-build/`) |
 | Other ESPHome version | `GP_ESPHOME=pinned\|minimum\|latest\|YYYY.M.P` with `script/config` / `script/compile` |
 | PC emulator (host + SDL window) | `script/sim` (needs a display; always builds with `secrets.example.yaml`; Ctrl+C stops) |
-| Control the running emulator | `script/sim-ctl list \| get NAME \| set NAME VALUE \| switch NAME on\|off` (native API, `127.0.0.1:6053`, key from `secrets.example.yaml`; exit 1 = unreachable, 2 = usage) |
+| Control the running emulator | `script/sim-ctl list \| get NAME \| set NAME VALUE \| switch NAME on\|off \| text NAME VALUE \| time NAME HH:MM` (native API, `127.0.0.1:6053`, key from `secrets.example.yaml`; exit 1 = unreachable, 2 = usage) |
 | Headless emulator screenshots / taps | `script/sim-ui start \| shot [NAME] \| tap X Y \| status \| stop` (private Xvfb, PNGs in `.esphome/shots/`; needs Xvfb + xdotool, in the devcontainer image; exit 3 = already running / port 6053 busy) |
 | SDL window smoke check | `script/sdl-smoke` (needs a display: SDL devcontainer config or a desktop host) |
 | Devcontainer from CLI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . script/test` (add `--docker-path podman` and `PODMAN_USERNS=keep-id` for Podman; `--config .devcontainer/sdl/devcontainer.json` for SDL) |

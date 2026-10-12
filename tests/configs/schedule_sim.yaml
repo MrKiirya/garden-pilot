@@ -1,0 +1,301 @@
+# Test harness over the REAL greenhouse + gp + schedule packages (irrigation.yaml, 3x bed.yaml, core/gp.yaml,
+# greenhouse/gp.yaml, greenhouse/schedule.yaml, 2x schedule_slot.yaml on hardware/sim.yaml, PC clock) - NOT a device
+# configuration and never flashed. A scripted scenario sets slot 1 to start in 30-90 s and logs machine-readable
+# lines (tag GZTEST) that tests/test_schedule.py asserts. The same program is started THREE times on one preferences
+# directory (the persisted marks are the point):
+#   phase 1: slot 1 = zones "1 2" at 10 %, enabled; slot 2 (zone 3) stays disabled. The slot fires, zone 1 completes
+#            (its done mark is written at once), zone 2 starts and the program is killed in the middle of it.
+#   phase 2: restart inside the catch-up window: only the interrupted zone 2 runs again, zone 1 does not.
+#   phase 3: restart again: nothing runs (both zones are done).
+#   phase 4: slot 2 (zones "1 2", 20 %) fires; the user presses STOP in the middle of zone 2: the slot is settled
+#            ("stopped"), the engine queue is empty, the program is then killed.
+#   phase 5: restart inside the catch-up window: nothing runs (a STOP settles the slot, no resume). Then (a) a manual
+#            full cycle is stopped while a queue start is deferred: nothing starts, the queue stays empty; (b) slot 3
+#            (zones "1 2", 10 %) fires while a manual full cycle of beds 1 and 2 runs (in bed 2): the cycle runs to its
+#            end undisturbed (the engine would pick queued zones in the middle of it, so gp holds them back) and the
+#            slot's beds 1 and 2 run after it.
+# Paths are repo-root relative: the file is only used staged at the repo root. No LVGL, no API.
+# Short limits by substitution: watchdog 125 s, bed run duration max 2 min / initial 1 min (10 % = 6 s per zone).
+
+substitutions:
+  gh_max_on_time: 125s
+  gh_bed_run_max: "2"
+  gh_bed_run_initial: "1"
+
+esphome:
+  name: schedule-test
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: gst_scenario
+
+packages:
+  hardware: !include hardware/sim.yaml
+  core_time_host: !include packages/core/time_host.yaml
+  gh_irrigation: !include packages/greenhouse/irrigation.yaml
+  gh_bed_1: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+  gh_bed_2: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "2", bed_name: "Greenhouse bed 2", relay: "2"}
+  gh_bed_3: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+  core_gp: !include packages/core/gp.yaml
+  gh_gp: !include packages/greenhouse/gp.yaml
+  gh_schedule: !include packages/greenhouse/schedule.yaml
+  gh_schedule_slot_1: !include
+    file: packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "1", start: "06:00:00"}
+  gh_schedule_slot_2: !include
+    file: packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "2", start: "07:00:00"}
+  gh_schedule_slot_3: !include
+    file: packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "3", start: "08:00:00"}
+
+logger:
+  level: INFO
+
+globals:
+  # boot counter: 1, 2, 3 = the phase of this run (survives restarts)
+  - id: gst_phase
+    type: int
+    initial_value: "0"
+    restore_value: true
+  - id: gst_expect_today
+    type: std::string
+  - id: gst_expect_tomorrow
+    type: std::string
+  - id: gst_r1
+    type: int
+    initial_value: "0"
+  - id: gst_r2
+    type: int
+    initial_value: "0"
+  - id: gst_r3
+    type: int
+    initial_value: "0"
+
+# Logs the relay states with the second of the minute whenever one changes.
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          int r1 = id(board_relay_1).state, r2 = id(board_relay_2).state, r3 = id(board_relay_3).state;
+          if (r1 != id(gst_r1) || r2 != id(gst_r2) || r3 != id(gst_r3)) {
+            id(gst_r1) = r1;
+            id(gst_r2) = r2;
+            id(gst_r3) = r3;
+            ESP_LOGI("GZTEST", "rel t=%u sec=%d r1=%d r2=%d r3=%d", millis(),
+                     (int) id(ha_time).now().second, r1, r2, r3);
+          }
+
+script:
+  - id: gst_scenario
+    then:
+      - lambda: |-
+          id(gst_phase) += 1;
+          ESP_LOGI("GZTEST", "phase=%d", id(gst_phase));
+      - delay: 3s
+      - switch.turn_on: gh_bed1_enable
+      - switch.turn_on: gh_bed2_enable
+      - switch.turn_on: gh_bed3_enable
+      - if:
+          condition:
+            lambda: "return id(gst_phase) == 1;"
+          then:
+            - script.execute: gst_phase1
+      - if:
+          condition:
+            lambda: "return id(gst_phase) == 2;"
+          then:
+            - script.execute: gst_phase2
+      - if:
+          condition:
+            lambda: "return id(gst_phase) == 3;"
+          then:
+            - script.execute: gst_phase3
+      - if:
+          condition:
+            lambda: "return id(gst_phase) == 4;"
+          then:
+            - script.execute: gst_phase4
+      - if:
+          condition:
+            lambda: "return id(gst_phase) >= 5;"
+          then:
+            - script.execute: gst_phase5
+
+  - id: gst_phase1
+    then:
+      # slot 1: 30-90 s from now, zones 1 and 2 at 10 %; slot 2: the same minute, zone 3, but disabled
+      - lambda: |-
+          ESPTime now = id(ha_time).now();
+          ESPTime start = ESPTime::from_epoch_local(now.timestamp + 90);
+          ESPTime tomorrow = ESPTime::from_epoch_local(start.timestamp + 86400);
+          id(gst_expect_today) = start.strftime("%a %H:%M");
+          id(gst_expect_tomorrow) = tomorrow.strftime("%a %H:%M");
+          id(gh_sched1_start).make_call().set_time(start.hour, start.minute, 0).perform();
+          id(gh_sched2_start).make_call().set_time(start.hour, start.minute, 0).perform();
+          ESP_LOGI("GZTEST", "start=%02d:%02d", start.hour, start.minute);
+      - text.set: {id: gh_sched1_zones, value: "1 2"}
+      - text.set: {id: gh_sched2_zones, value: "3"}
+      - number.set: {id: gh_sched1_multiplier, value: 10}
+      - switch.turn_on: gh_sched1_enabled
+      - delay: 3s
+      # before the start: nothing runs; the next run text shows slot 1's time
+      - lambda: |-
+          ESP_LOGI("GZTEST", "next_before=%s expect=%s", id(gh_next_run_text).state.c_str(),
+                   id(gst_expect_today).c_str());
+          ESP_LOGI("GZTEST", "next_iso=%s", id(gh_next_run).state.c_str());
+          ESP_LOGI("GZTEST", "idle_before=%d",
+                   (int) (!id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state));
+      # the slot fires: zone 1 first
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_1).state;"
+          timeout: 120s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "last=%s", id(gh_last_schedule).state.c_str());
+          ESP_LOGI("GZTEST", "next_after=%s expect=%s", id(gh_next_run_text).state.c_str(),
+                   id(gst_expect_tomorrow).c_str());
+      # zone 1 completes (done mark), zone 2 starts; kill the program in the middle of zone 2
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_2).state;"
+          timeout: 30s
+      - delay: 2s
+      - lambda: 'ESP_LOGI("GZTEST", "mid_zone2=%d", (int) (id(board_relay_2).state && !id(board_relay_1).state));'
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}
+
+  - id: gst_phase2
+    then:
+      # restart inside the window: zone 2 (interrupted) runs again, zone 1 (done) does not
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_2).state;"
+          timeout: 20s
+      - wait_until:
+          condition:
+            lambda: "return !id(board_relay_2).state;"
+          timeout: 30s
+      - delay: 4s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "last=%s", id(gh_last_schedule).state.c_str());
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}
+
+  - id: gst_phase3
+    then:
+      # restart again: both zones are done, nothing runs
+      - delay: 20s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "quiet=%d",
+                   (int) (!id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state));
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}
+
+  - id: gst_phase4
+    then:
+      # slot 2 now runs zones 1 and 2 at 20 % (12 s each), 30-90 s from now
+      - lambda: |-
+          ESPTime now = id(ha_time).now();
+          ESPTime start = ESPTime::from_epoch_local(now.timestamp + 90);
+          id(gh_sched2_start).make_call().set_time(start.hour, start.minute, 0).perform();
+          ESP_LOGI("GZTEST", "start=%02d:%02d", start.hour, start.minute);
+      - text.set: {id: gh_sched2_zones, value: "1 2"}
+      - number.set: {id: gh_sched2_multiplier, value: 20}
+      - switch.turn_on: gh_sched2_enabled
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_1).state;"
+          timeout: 120s
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_2).state;"
+          timeout: 30s
+      - delay: 2s
+      # the user presses STOP in the middle of zone 2 (no clear_queue: the schedule package clears the queue)
+      - gp.stop_all: gp_greenhouse
+      - delay: 3s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "stopped_idle=%d queue=%d", (int) (!id(board_relay_1).state && !id(board_relay_2).state &&
+                   !id(board_relay_3).state), (int) id(gp_greenhouse)->summary().queue_length);
+          ESP_LOGI("GZTEST", "last=%s", id(gh_last_schedule).state.c_str());
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}
+
+  - id: gst_phase5
+    then:
+      # restart inside the window: the stopped slot does not resume, the engine queue is empty
+      - delay: 15s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "quiet=%d queue=%d",
+                   (int) (!id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state),
+                   (int) id(gp_greenhouse)->summary().queue_length);
+      # (a) a queue start deferred by a running cycle, then STOP: nothing starts afterwards, the queue is empty
+      - gp.full_cycle: gp_greenhouse
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_1).state;"
+          timeout: 20s
+      - gp.enqueue_zones: {id: gp_greenhouse, mask: 4, pct: 10}
+      - gp.start_queue: gp_greenhouse
+      - lambda: |-
+          ESP_LOGI("GZTEST", "deferred=%d enq=%d queue=%d", (int) id(gp_greenhouse)->start_deferred(),
+                   (int) id(gp_greenhouse)->deferred_enqueues(), (int) id(gp_greenhouse)->summary().queue_length);
+      - delay: 1s
+      - gp.stop_all: gp_greenhouse
+      - delay: 12s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "cycle_stop_quiet=%d queue=%d deferred=%d enq=%d",
+                   (int) (!id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state),
+                   (int) id(gp_greenhouse)->summary().queue_length, (int) id(gp_greenhouse)->start_deferred(),
+                   (int) id(gp_greenhouse)->deferred_enqueues());
+      # (b) slot 3 fires in the second half of a manual full cycle of beds 1 and 2 (bed 3 is disabled)
+      - switch.turn_off: gh_bed3_enable
+      - wait_until:
+          condition:
+            lambda: "return id(ha_time).now().second == 20;"
+          timeout: 70s
+      - lambda: |-
+          ESPTime now = id(ha_time).now();
+          ESPTime start = ESPTime::from_epoch_local(now.timestamp + 100);
+          id(gh_sched3_start).make_call().set_time(start.hour, start.minute, 0).perform();
+          ESP_LOGI("GZTEST", "cycle_start t=%u slot3=%02d:%02d", millis(), start.hour, start.minute);
+      - text.set: {id: gh_sched3_zones, value: "1 2"}
+      - number.set: {id: gh_sched3_multiplier, value: 10}
+      - switch.turn_on: gh_sched3_enabled
+      - gp.full_cycle: gp_greenhouse
+      - wait_until:
+          condition:
+            lambda: "return id(gh_last_schedule).state.find(\"#3\") != std::string::npos;"
+          timeout: 130s
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "at_fire r1=%d r2=%d deferred=%d enq=%d queue=%d", (int) id(board_relay_1).state,
+                   (int) id(board_relay_2).state, (int) id(gp_greenhouse)->start_deferred(),
+                   (int) id(gp_greenhouse)->deferred_enqueues(), (int) id(gp_greenhouse)->summary().queue_length);
+      # the cycle ends, then the slot's beds 1 and 2 run after it (6 s each), then everything is idle
+      - wait_until:
+          condition:
+            lambda: "return !id(board_relay_2).state;"
+          timeout: 60s
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_1).state;"
+          timeout: 30s
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_2).state;"
+          timeout: 30s
+      - wait_until:
+          condition:
+            lambda: "return !id(board_relay_2).state;"
+          timeout: 30s
+      - delay: 8s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "end_quiet=%d queue=%d deferred=%d",
+                   (int) (!id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state),
+                   (int) id(gp_greenhouse)->summary().queue_length, (int) id(gp_greenhouse)->start_deferred());
+          ESP_LOGI("GZTEST", "last=%s", id(gh_last_schedule).state.c_str());
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}

@@ -2,7 +2,7 @@
 
 Same path as Home Assistant: an `aioesphomeapi` client with the emulator's public dummy key. Only calls the
 aioesphomeapi 46.3.0 client has: connect, list_entities_services, subscribe_states, number_command, switch_command,
-disconnect. Exit codes: 0 ok, 1 connection/timeout error, 2 usage or entity error.
+text_command, time_command, disconnect. Exit codes: 0 ok, 1 connection/timeout error, 2 usage or entity error.
 """
 
 from __future__ import annotations
@@ -36,6 +36,17 @@ def kind_of(info: Any) -> str:
     return (name[:-4] if name.endswith("Info") else name).lower()
 
 
+def parse_time(text: str) -> tuple[int, int, int]:
+    """`HH:MM` or `HH:MM:SS` as (hour, minute, second); argparse reports a bad value as a usage error (exit 2)."""
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", text.strip())
+    if not match:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a time (HH:MM or HH:MM:SS)")
+    hour, minute, second = int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+    if hour > 23 or minute > 59 or second > 59:
+        raise argparse.ArgumentTypeError(f"{text!r} is out of range")
+    return hour, minute, second
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="sim-ctl", description="List, read and set entities of the running PC emulator over the native API."
@@ -54,6 +65,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     switch = sub.add_parser("switch", help="turn a switch entity on or off")
     switch.add_argument("name")
     switch.add_argument("state", choices=["on", "off"])
+    text = sub.add_parser("text", help="set a text entity")
+    text.add_argument("name")
+    text.add_argument("value")
+    time_ = sub.add_parser("time", help="set a time entity (HH:MM or HH:MM:SS)")
+    time_.add_argument("name")
+    time_.add_argument("value", type=parse_time)
     return parser.parse_args(argv)
 
 
@@ -114,6 +131,8 @@ def format_state(state: Any) -> str:
         return "on" if value else "off"
     if isinstance(value, float):
         return f"{value:g}"
+    if value is None and hasattr(state, "hour"):  # a time entity state
+        return f"{state.hour:02d}:{state.minute:02d}:{state.second:02d}"
     return "-" if value is None else str(value)
 
 
@@ -140,7 +159,7 @@ async def run(args: argparse.Namespace, client: Any, out: Callable[[str], None] 
     entities, _services = await client.list_entities_services()
     states: dict[int, Any] = {}
     client.subscribe_states(lambda s: states.__setitem__(s.key, s))
-    stateful = {e.key for e in entities if kind_of(e) in {"number", "sensor", "switch"}}
+    stateful = {e.key for e in entities if kind_of(e) in {"number", "sensor", "switch", "text", "time"}}
     # The device sends the current states right after subscribing; a short wait is enough.
     await _wait_for(lambda: stateful <= set(states), min(args.timeout, 2.0))
 
@@ -158,6 +177,20 @@ async def run(args: argparse.Namespace, client: Any, out: Callable[[str], None] 
         client.number_command(entity.key, args.value)
         done = await _wait_for(
             lambda: entity.key in states and abs(getattr(states[entity.key], "state", math.nan) - as_float32(args.value)) <= 1e-6 * max(1.0, abs(args.value)),
+            args.timeout,
+        )
+    elif args.command == "text":
+        entity = resolve_entity(entities, args.name, "text")
+        client.text_command(entity.key, args.value)
+        done = await _wait_for(
+            lambda: entity.key in states and getattr(states[entity.key], "state", None) == args.value, args.timeout
+        )
+    elif args.command == "time":
+        entity = resolve_entity(entities, args.name, "time")
+        client.time_command(entity.key, *args.value)
+        done = await _wait_for(
+            lambda: entity.key in states
+            and (getattr(states[entity.key], "hour", -1), getattr(states[entity.key], "minute", -1)) == args.value[:2],
             args.timeout,
         )
     else:

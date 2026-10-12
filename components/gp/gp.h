@@ -21,6 +21,7 @@
 #include "esphome/core/preferences.h"
 
 #include "alerts.h"
+#include "deferred_start.h"
 #include "engine.h"
 #include "format.h"
 #include "history.h"
@@ -104,6 +105,48 @@ class GpGroup {
     this->engine_->queue_zone(zone, seconds);
   }
 
+  /// Queues every zone of the bit mask (bit n = zone n, 0-based) in zone order, each for its configured run duration
+  /// times `pct` percent (cut to the zone's maximum). Zones that are already queued or running are not queued again;
+  /// bits beyond the group's zones are ignored. Never starts anything.
+  void enqueue_zones(uint32_t mask, uint8_t pct) {
+    if (this->inhibited_) {
+      ESP_LOGW(TAG, "%s: enqueue_zones refused: service mode is on", this->name_.c_str());
+      return;
+    }
+    if (this->run_blocks_queue_()) {
+      // The engine picks queued zones at the next zone change, also in the middle of a cycle: hold them back here
+      // and queue them after the run has ended (refresh()).
+      if (this->deferred_enq_.size() >= MAX_DEFERRED) {
+        ESP_LOGW(TAG, "%s: enqueue_zones: too many deferred requests, dropped", this->name_.c_str());
+        return;
+      }
+      ESP_LOGI(TAG, "%s: enqueue_zones deferred: a run that is not a queue run is active, the zones queue after it",
+               this->name_.c_str());
+      this->deferred_enq_.push_back(DeferredEnqueue{mask, pct});
+      this->deferred_.request(millis());
+      return;
+    }
+    this->engine_->read(this->input_);  // fresh state: two calls in one tick must not queue a zone twice
+    for (size_t zone = 0; zone < 32; zone++) {
+      if (!(mask & (1u << zone)))
+        continue;
+      if (zone >= this->zone_count_ || zone >= MAX_ZONES) {
+        ESP_LOGW(TAG, "%s: enqueue_zones: no zone %u, ignored", this->name_.c_str(), (unsigned) (zone + 1));
+        continue;
+      }
+      const ZoneInput &in = this->input_.zones[zone];
+      if (in.running || in.paused || in.queued) {
+        ESP_LOGI(TAG, "%s: zone %u is already %s, not queued again", this->name_.c_str(), (unsigned) (zone + 1),
+                 in.queued ? "queued" : "running");
+        continue;
+      }
+      optional<uint32_t> seconds;
+      if (in.run_duration > 0)
+        seconds = static_cast<uint32_t>((static_cast<uint64_t>(in.run_duration) * pct + 50) / 100);
+      this->enqueue_zone(zone, seconds);
+    }
+  }
+
   void dequeue_zone(size_t zone) {
     if (!this->check_zone_("dequeue_zone", zone))
       return;
@@ -116,6 +159,19 @@ class GpGroup {
       ESP_LOGW(TAG, "%s: start_queue refused: service mode is on", this->name_.c_str());
       return;
     }
+    if (this->run_blocks_queue_()) {
+      // A manual full cycle (or any run that is not a queue run) is not cut short: the queue starts after that run
+      // has ended (refresh()).
+      ESP_LOGI(TAG, "%s: start_queue deferred: a run that is not a queue run is active, the queue starts after it",
+               this->name_.c_str());
+      this->deferred_start_ = true;
+      this->deferred_.request(millis());
+      return;
+    }
+    this->apply_deferred_();
+    this->deferred_.cancel();
+    this->deferred_start_ = false;
+    this->cycle_run_ = false;
     ESP_LOGI(TAG, "%s: start queue", this->name_.c_str());
     this->queue_run_ = true;
     this->queue_idle_ms_ = millis();
@@ -128,6 +184,7 @@ class GpGroup {
       return;
     }
     ESP_LOGI(TAG, "%s: full cycle", this->name_.c_str());
+    this->cycle_run_ = true;
     this->queue_run_ = true;
     this->queue_idle_ms_ = millis();
     this->engine_->start_cycle();
@@ -137,13 +194,32 @@ class GpGroup {
   void set_inhibit(bool inhibit) {
     this->inhibited_ = inhibit;
     ESP_LOGI(TAG, "%s: starts %s", this->name_.c_str(), inhibit ? "inhibited (service mode)" : "allowed");
+    if (inhibit) {  // entering service mode settles the schedules like a STOP
+      this->cancel_deferred_();
+      this->stop_cb_.call();
+    }
   }
   bool inhibited() const { return this->inhibited_; }
 
   void stop_all(bool clear_queue) {
     ESP_LOGI(TAG, "%s: stop all%s", this->name_.c_str(), clear_queue ? " (queue cleared)" : "");
     this->queue_run_ = false;
+    this->cycle_run_ = false;
+    this->stop_ms_ = millis() == 0 ? 1 : millis();
+    this->cancel_deferred_();
     this->engine_->shutdown(clear_queue);
+    this->stop_cb_.call();
+  }
+
+  /// Drops every queued zone of the group (a running zone keeps running) and any deferred queue start.
+  void clear_queue() {
+    this->engine_->read(this->input_);
+    for (size_t zone = 0; zone < this->input_.zone_count && zone < MAX_ZONES; zone++) {
+      if (this->input_.zones[zone].queued)
+        this->engine_->remove_queued_zone(zone);
+    }
+    this->cancel_deferred_();
+    ESP_LOGI(TAG, "%s: queue cleared", this->name_.c_str());
   }
 
   void reset_watchdog() {
@@ -177,7 +253,7 @@ class GpGroup {
     if (s.running || s.queue_length > 0)
       this->queue_idle_ms_ = now_ms;
     else if (this->queue_run_ && (uint32_t) (now_ms - this->queue_idle_ms_) > QUEUE_RUN_GRACE_MS)
-      this->queue_run_ = false;
+      this->queue_run_ = this->cycle_run_ = false;
     RunRecord record;
     bool changed = false;
     while (this->model_.take_completed(record)) {
@@ -190,16 +266,71 @@ class GpGroup {
       ESP_LOGI(TAG, "%s: zone %u finished: %u s (%s)", this->name_.c_str(), (unsigned) (record.zone + 1),
                (unsigned) record.duration, source_word(record.source));
       changed = true;
+      const bool stopped = this->stop_ms_ != 0 && (uint32_t) (now_ms - this->stop_ms_) < STOP_WINDOW_MS;
+      this->finished_cb_.call(record.zone, record.source == Source::QUEUE && !stopped);
     }
     if (changed && !this->pref_.save(&this->blob_))
       ESP_LOGW(TAG, "%s: saving the history failed", this->name_.c_str());
+    if (this->deferred_.update(s.running, now_ms)) {
+      ESP_LOGI(TAG, "%s: the run has ended, queueing the deferred zones", this->name_.c_str());
+      const bool start = this->deferred_start_;
+      this->deferred_start_ = false;
+      this->apply_deferred_();
+      if (start)
+        this->start_queue();
+    }
   }
 
   size_t zone_count() const { return this->zone_count_; }
 
+  /// True while a `start_queue` waits for a running cycle / manual run to end (tests, debugging).
+  bool start_deferred() const { return this->deferred_.pending(); }
+  /// Number of enqueue requests waiting for the end of a run (tests, debugging).
+  size_t deferred_enqueues() const { return this->deferred_enq_.size(); }
+
+  /// Fires on every `stop_all` and when service mode is entered: schedules settle their pending zones.
+  void add_on_stop_callback(std::function<void()> &&callback) { this->stop_cb_.add(std::move(callback)); }
+
+  /// Fires when a zone's run ends: (0-based zone, completed). `completed` = a queue run (not manual / service) that
+  /// ran to its end, not stopped by `stop_all` (schedules use it for their per-zone "done" marks).
+  void add_on_zone_finished_callback(std::function<void(uint8_t, bool)> &&callback) {
+    this->finished_cb_.add(std::move(callback));
+  }
+
  protected:
+  static constexpr uint32_t STOP_WINDOW_MS = 3000;
   static constexpr uint32_t INTENT_MS = 15000;
   static constexpr uint32_t QUEUE_RUN_GRACE_MS = 5000;
+
+  struct DeferredEnqueue {
+    uint32_t mask;
+    uint8_t pct;
+  };
+  static constexpr size_t MAX_DEFERRED = 16;
+
+  /// True when queueing / starting now would mix into a running cycle or a manual run (reads the engine).
+  bool run_blocks_queue_() {
+    this->engine_->read(this->input_);
+    bool busy = false;
+    for (size_t i = 0; i < this->input_.zone_count && i < MAX_ZONES; i++)
+      busy = busy || this->input_.zones[i].running;
+    return start_must_wait(busy, this->cycle_run_, this->queue_run_);
+  }
+
+  /// Queues the held-back enqueue requests (in arrival order); nothing is started.
+  void apply_deferred_() {
+    std::vector<DeferredEnqueue> list;
+    list.swap(this->deferred_enq_);
+    for (const DeferredEnqueue &request : list)
+      this->enqueue_zones(request.mask, request.pct);
+  }
+
+  /// A STOP / service mode / queue clear drops everything that waits for the end of a run.
+  void cancel_deferred_() {
+    this->deferred_.cancel();
+    this->deferred_enq_.clear();
+    this->deferred_start_ = false;
+  }
 
   bool check_zone_(const char *what, size_t zone) const {
     if (zone < this->zone_count_ && zone < MAX_ZONES)
@@ -238,7 +369,14 @@ class GpGroup {
   Source intent_[MAX_ZONES]{};
   uint32_t intent_ms_[MAX_ZONES]{};
   bool queue_run_{false};
+  bool cycle_run_{false};  ///< the current run was started by full_cycle (start_queue would drop its rest)
   bool inhibited_{false};
+  uint32_t stop_ms_{0};  ///< millis() of the last stop_all (0 = never)
+  CallbackManager<void(uint8_t, bool)> finished_cb_;
+  CallbackManager<void()> stop_cb_;
+  DeferredStart deferred_;
+  std::vector<DeferredEnqueue> deferred_enq_;
+  bool deferred_start_{false};
   uint32_t queue_idle_ms_{0};
 };
 
@@ -472,6 +610,17 @@ template<typename... Ts> class EnqueueZoneAction final : public GroupAction<Ts..
   }
 };
 
+template<typename... Ts> class EnqueueZonesAction final : public GroupAction<Ts...> {
+ public:
+  TEMPLATABLE_VALUE(uint32_t, mask)
+  TEMPLATABLE_VALUE(uint8_t, pct)
+  void play(const Ts &...x) override {
+    GpGroup *group = this->resolve_(x...);
+    if (group != nullptr)
+      group->enqueue_zones(this->mask_.value(x...), this->pct_.has_value() ? this->pct_.value(x...) : 100);
+  }
+};
+
 template<typename... Ts> class DequeueZoneAction final : public GroupAction<Ts...> {
  public:
   TEMPLATABLE_VALUE(size_t, zone)
@@ -497,6 +646,15 @@ template<typename... Ts> class FullCycleAction final : public GroupAction<Ts...>
     GpGroup *group = this->resolve_(x...);
     if (group != nullptr)
       group->full_cycle();
+  }
+};
+
+template<typename... Ts> class ClearQueueAction final : public GroupAction<Ts...> {
+ public:
+  void play(const Ts &...x) override {
+    GpGroup *group = this->resolve_(x...);
+    if (group != nullptr)
+      group->clear_queue();
   }
 };
 
@@ -584,6 +742,16 @@ template<typename... Ts> class WatchdogTrippedCondition final : public Condition
   GpGroup *group_;
 };
 
+/// True while service mode (`gp.inhibit`) refuses starts: schedules use it to skip a due slot.
+template<typename... Ts> class InhibitedCondition final : public Condition<Ts...> {
+ public:
+  explicit InhibitedCondition(GpGroup *group) : group_(group) {}
+  bool check(const Ts &...x) override { return this->group_->inhibited(); }
+
+ protected:
+  GpGroup *group_;
+};
+
 template<typename... Ts> class AlertActiveCondition final : public Condition<Ts...> {
  public:
   explicit AlertActiveCondition(GpHub *hub) : hub_(hub) {}
@@ -597,6 +765,22 @@ template<typename... Ts> class AlertActiveCondition final : public Condition<Ts.
   GpHub *hub_;
   std::string key_;
   bool any_{true};
+};
+
+/// `on_zone_finished` of a group: (zone 0-based, completed).
+class ZoneFinishedTrigger : public Trigger<uint8_t, bool> {
+ public:
+  explicit ZoneFinishedTrigger(GpGroup *group) {
+    group->add_on_zone_finished_callback([this](uint8_t zone, bool completed) { this->trigger(zone, completed); });
+  }
+};
+
+/// `on_stop` of a group: a `stop_all` or entering service mode (no arguments).
+class StopTrigger : public Trigger<> {
+ public:
+  explicit StopTrigger(GpGroup *group) {
+    group->add_on_stop_callback([this]() { this->trigger(); });
+  }
 };
 
 class AlertChangeTrigger : public Trigger<> {

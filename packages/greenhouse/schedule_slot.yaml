@@ -1,0 +1,118 @@
+# One schedule slot of the greenhouse schedule: five kinds of Home Assistant entities (all `entity_category: config`,
+# restored from flash) and the `garden_schedule_slot:` list item that ties them to the hub `gh_schedule`.
+# Include it once per slot from the entry file (slots 1..8; two by default, cheap to add more):
+#
+#   gh_schedule_slot_1: !include
+#     file: packages/greenhouse/schedule_slot.yaml
+#     vars: {slot: "1", start: "06:00:00"}
+#
+#   slot    slot number 1..8, unique; used in ids (gh_sched<slot>_*) and names.
+#   start   default start time HH:MM:SS (used until Home Assistant or the device sets another one).
+#
+# Entities per slot N (defaults): "Greenhouse schedule N" switch (OFF), "... start" time, "... Mon" .. "... Sun" day
+# switches (all ON), "... zones" text ("all" or bed numbers "1 3"), "... multiplier" % (100, 10..200 step 10).
+# Needs packages/greenhouse/schedule.yaml (the hub). An invalid zone text disables the slot with one warning.
+
+switch:
+  - platform: template
+    id: gh_sched${slot}_enabled
+    name: "Greenhouse schedule ${slot}"
+    entity_category: config
+    icon: mdi:calendar-clock
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    id: gh_sched${slot}_day_mon
+    name: "Greenhouse schedule ${slot} Mon"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    id: gh_sched${slot}_day_tue
+    name: "Greenhouse schedule ${slot} Tue"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    id: gh_sched${slot}_day_wed
+    name: "Greenhouse schedule ${slot} Wed"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    id: gh_sched${slot}_day_thu
+    name: "Greenhouse schedule ${slot} Thu"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    id: gh_sched${slot}_day_fri
+    name: "Greenhouse schedule ${slot} Fri"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    id: gh_sched${slot}_day_sat
+    name: "Greenhouse schedule ${slot} Sat"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    id: gh_sched${slot}_day_sun
+    name: "Greenhouse schedule ${slot} Sun"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+datetime:
+  - platform: template
+    type: time
+    id: gh_sched${slot}_start
+    name: "Greenhouse schedule ${slot} start"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: "${start}"
+
+text:
+  - platform: template
+    id: gh_sched${slot}_zones
+    name: "Greenhouse schedule ${slot} zones"
+    entity_category: config
+    mode: text
+    min_length: 1
+    max_length: 47
+    pattern: '^(all|[1-9][0-9]?( [1-9][0-9]?)*)$'
+    optimistic: true
+    restore_value: true
+    initial_value: "all"
+
+number:
+  - platform: template
+    id: gh_sched${slot}_multiplier
+    name: "Greenhouse schedule ${slot} multiplier"
+    entity_category: config
+    unit_of_measurement: "%"
+    min_value: 10
+    max_value: 200
+    step: 10
+    initial_value: 100
+    optimistic: true
+    restore_value: true
+    mode: BOX
+
+garden_schedule_slot:
+  - schedule: gh_schedule
+    slot: ${slot}
+    enabled_id: gh_sched${slot}_enabled
+    start_id: gh_sched${slot}_start
+    days_ids:
+      - gh_sched${slot}_day_mon
+      - gh_sched${slot}_day_tue
+      - gh_sched${slot}_day_wed
+      - gh_sched${slot}_day_thu
+      - gh_sched${slot}_day_fri
+      - gh_sched${slot}_day_sat
+      - gh_sched${slot}_day_sun
+    zones_id: gh_sched${slot}_zones
+    multiplier_id: gh_sched${slot}_multiplier

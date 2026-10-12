@@ -440,6 +440,8 @@ def test_device_uses_groups_form() -> None:
             assert isinstance(config, dict) and isinstance(config["garden_zones"], dict), "groups form (a dict)"
             assert "groups" in config["garden_zones"]
             assert "external_components" in config
+        elif path.name == "schedule.yaml":  # external_components of the schedule components (task 019)
+            assert not re.search(r"^garden_zones:|^garden_zone:", code, re.MULTILINE), path
         elif path.name == "gp.yaml" and path.parent.name == "core":  # external_components of the gp layer
             assert not re.search(r"^garden_zones:|^garden_zone:", code, re.MULTILINE), path
         elif path != bed:

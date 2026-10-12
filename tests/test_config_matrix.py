@@ -22,6 +22,7 @@ GP_API = ["core_gp", "core_gp_api", "gh_gp"]
 BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API]
 SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP]
 SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP]
+SCHEDULE = ["gh_schedule", "gh_schedule_slot_1", "gh_schedule_slot_2"]
 SIM = "hardware/sim.yaml"
 SIM_ENTRY = "garden-pilot-sim.yaml"
 SIM_API_ONLY = [
@@ -80,6 +81,19 @@ VARIANTS: dict[str, Variant] = {
     "max_on_time_never": Variant(
         "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API], subst=("gh_max_on_time", "never"),
     ),
+    # schedules (task 019): headless (no LVGL: the skip condition is gp.inhibited), hub without slots, bad slot number,
+    # catch-up window limits
+    "schedule_headless": Variant("keep", [*BEDS_2, *SCHEDULE]),
+    "schedule_no_slots": Variant("keep", [*BEDS_2, "gh_schedule"]),
+    "schedule_window_zero": Variant("keep", [*BEDS_2, *SCHEDULE], subst=("gh_schedule_catch_up_window", "0s")),
+    "schedule_window_too_long": Variant(
+        "keep", [*BEDS_2, *SCHEDULE], subst=("gh_schedule_catch_up_window", "7h"), fails_with=("6 hours",)
+    ),
+    "schedule_bad_slot": Variant(
+        "keep", [*BEDS_2, *SCHEDULE],
+        edits=(('vars: {slot: "2", start: "07:00:00"}', 'vars: {slot: "9", start: "07:00:00"}'),),
+        fails_with=("slot", "8"),
+    ),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
     "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1", *GP], hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),
@@ -88,6 +102,7 @@ VARIANTS: dict[str, Variant] = {
     "sim_no_touch_debug": Variant("without", ["touch_dot_test"], source=SIM_ENTRY),
     "sim_no_board_page": Variant("without", ["sim_sensors_lvgl", "sim_page_board"], source=SIM_ENTRY),
     "sim_api_only": Variant("keep", SIM_API_ONLY, source=SIM_ENTRY),
+    "sim_schedule_api_only": Variant("keep", [*SIM_API_ONLY, *SCHEDULE], source=SIM_ENTRY),
 }
 
 _KEY = re.compile(r"^  ([A-Za-z0-9_]+):")
