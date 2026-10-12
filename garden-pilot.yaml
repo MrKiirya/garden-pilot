@@ -8,6 +8,9 @@ substitutions:
   wifi_ssid: !secret wifi_ssid
   wifi_password: !secret wifi_password
   wifi_ap_password: !secret wifi_ap_password
+  # Your timezone (IANA name, e.g. Europe/Berlin). Default is UTC. With it set, Home Assistant no longer overrides
+  # the zone and the clock is right after a reboot without Home Assistant.
+  # timezone: Europe/Berlin
 
 esphome:
   name: garden-pilot
@@ -30,6 +33,9 @@ packages:
   core_ota: !include packages/core/ota.yaml
   core_network: !include packages/core/network.yaml
   core_time: !include packages/core/time.yaml
+  # Clock fallback without Home Assistant (NTP over Wi-Fi). Comment out for HA-only time; servers via
+  # sntp_server_N substitutions.
+  core_time_sntp: !include packages/core/time_sntp.yaml
   # ESPHome version, uptime and restart button for the Network page (internal: no Home Assistant entities).
   core_diagnostics: !include packages/core/diagnostics.yaml
 
