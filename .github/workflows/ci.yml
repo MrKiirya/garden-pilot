@@ -19,7 +19,7 @@ jobs:
   checks:
     name: checks
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -36,10 +36,14 @@ jobs:
           docker volume create --driver local --opt type=none --opt o=bind \
             --opt device="$RUNNER_TEMP/gp-platformio" garden-pilot-platformio
 
+      # Same toolchain caches as `compile`, with their own key prefix (ESPHome minimum env, PlatformIO host platform).
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/gp-cache/uv
-          key: gp-uv-v1-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          path: |
+            ${{ runner.temp }}/gp-cache/uv
+            ${{ runner.temp }}/gp-cache/esphome
+            ${{ runner.temp }}/gp-platformio
+          key: gp-checks-v1-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
 
       - name: Lint and test in the devcontainer
         uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
@@ -48,10 +52,11 @@ jobs:
           push: never
           # If Docker on the runner rejects the committed runArgs, set the host env vars read by
           # devcontainer.json (GP_SERIAL_DEVICE, GP_SERIAL_GROUP) on this step instead of editing it.
-          runCmd: script/lint && script/test && uv cache prune --ci
+          runCmd: script/lint && script/test --durations=25 && uv cache prune --ci
           env: |
             GP_SECRETS=example
             GP_REQUIRE_SDL=1
+            GP_REQUIRE_FAKETIME=1
             GP_SKIP_SIM_UI=1
 
   compile:
