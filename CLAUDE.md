@@ -15,7 +15,7 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
 3. **Modules are packages.** A feature (bed, lawn, heating, …) is a package that can be enabled by uncommenting
    one line in the entry file; hardware pins live in `hardware/<board>.yaml` substitutions, not in feature files.
 4. **Safety first for actuators.** Raw GPIO switches are `internal: true`; valves and heaters default OFF on boot
-   (`restore_mode: RESTORE_DEFAULT_OFF` or `ALWAYS_OFF`); every actuator has a maximum on-time guard.
+   (`restore_mode: RESTORE_DEFAULT_OFF` or `ALWAYS_OFF`); every actuator has a maximum on-time guard, on by default (disable only explicitly with `never`).
 5. **Design tokens are the source of truth for the UI.** Colours, font sizes and geometry in LVGL YAML come from
    `design/tokens.json`; don't invent new colours or font sizes (each font size is baked into flash).
 6. **Secrets only via `!secret`.** Never in tracked YAML; remote packages must not use `!secret`.
@@ -119,6 +119,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
   (`tests/test_service.py`); it is enforced by `run_duration` and by the separate `gp_valve_test_guard` script. Service
   mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the sprinkler opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
+- A `garden_zones` group's watchdog is on by default (`max_on_time` 60 min, `pump_max_on_time` 2 h, `pump_idle_timeout` 10 s); only `never` disables a limit (WARN at boot). A zone's `run_duration_number` `max_value` (stock default 86400 s) must fit under its `max_on_time` or config fails (skipped for `never`).
 - `garden_zone:` is always a list item (`- group: ...`): two dict-form entries from different packages merge into one zone.
 - `sprinkler` limitations (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
   queue, queued zones run even when disabled): SPEC §3.

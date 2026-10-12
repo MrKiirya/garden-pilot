@@ -38,6 +38,9 @@ The project must not depend on one specific board.
 Checked against `esphome/components/sprinkler/` on the `dev` branch, 2026-10-01:
 - **One valve at a time** per controller. A second `valve_op` exists only for overlap during transitions.
   Parallel watering needs several `sprinkler:` blocks, and a valve belongs to exactly one controller.
+  At a run-to-run transition the stock code starts the next valve before it switches the finished one off, so both are
+  on for up to one main-loop pass. Accepted by design (human decision 2026-10-10): the pump must never run against
+  closed valves; a deliberate longer overlap is the stock `valve_overlap` option.
 - **Closed queue.** `queued_valves_` is `protected`. Public API: `queued_valve()` (next), `total_queue_time()`,
   `clear_queued_valves()`. No list, no "is zone N queued", no removal of one zone. Duplicates are allowed.
   The queue does not survive a reboot.
@@ -77,10 +80,17 @@ Decision: no intermediate MVP on the stock `sprinkler`; we copy `esphome/compone
   ```
   Verified (task 012): all lanes of a block are registered with each other (stock `add_controller`), so a pump
   shared by lanes stays on while any lane still needs it; a pump belongs to one group only for now.
-- **Safety:** a watchdog for maximum valve on-time (principle 4).
-- **Soil moisture (optional per zone):** any ESPHome sensor; if present and the soil is wet, the zone's run is
-  skipped. Today (task 005) a bed can have such a sensor as a reporting-only `sensor` (`packages/greenhouse/
-  bed_soil.yaml`); skipping a run when wet comes with `garden_zones` (stage 7).
+- **Safety (task 013, groups form):** a watchdog per group, on by default (a limit is disabled only explicitly with `never`, with a WARN at boot). It watches the real state of every
+  raw valve switch and the pump switch, independent of the sprinkler state machine: a valve on longer than
+  `max_on_time` (default 60 min, per group or zone, any duration or `never`), a pump on longer than `pump_max_on_time` (default 2 h,
+  a watering session, any duration or `never`) or on with no open valve longer than `pump_idle_timeout` (default 10 s, any duration or `never`) is
+  forced off, logged at ERROR and latched (zone, or the whole group for a pump trip) until
+  `garden_zones.reset_watchdog` or a reboot. Raw actuators must be `ALWAYS_OFF` / `RESTORE_DEFAULT_OFF`; a zone's
+  longest configured run must fit under its limit (validated at config time). The 008 list form has no watchdog.
+- **Soil moisture (optional per zone, task 013):** any ESPHome sensor via `soil_moisture:` (`sensor_id`, `skip_above`,
+  `max_age` 30 min, `when_unavailable: water | skip`, default `water`); checked when the zone's turn comes in a queue
+  or a cycle, skipped when wetter (queue and cycle only; manual runs ignore it). Before `garden_zones` is on the
+  device (014), a bed's sensor is reporting-only (task 005, `packages/greenhouse/bed_soil.yaml`).
 - **History** of runs per zone (wanted; see the backlog in §9).
 
 It takes valves from YAML by id and exposes standard ESPHome entities (switch / number / sensor / text_sensor),
@@ -281,8 +291,8 @@ tests/
 7. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
    via lanes, watchdog, optional soil-moisture skip. Task 008: fork + open/persistent queue, manual run keeps the
    queue, disabled zones skipped; task 012: `groups:` / `garden_zone:` config with generated lanes, shared pump and
-   group actions (in a host test build only); watchdog for valves and the pump
-   + soil 013, device switch 014.
+   group actions (in a host test build only); task 013: watchdog for valves and the pump and the per-zone soil-moisture
+   skip (host test build only); device switch 014.
 8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time.

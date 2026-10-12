@@ -34,6 +34,9 @@ from esphome.helpers import fnv1_hash
 # GZ-PATCH-END(queue-persist)
 
 AUTO_LOAD = ["number", "switch"]
+# GZ-PATCH-BEGIN(zone-skip)
+AUTO_LOAD.append("sensor")  # group.h includes sensor/sensor.h for the soil moisture rule
+# GZ-PATCH-END(zone-skip)
 CODEOWNERS = ["@kbx81"]
 
 CONF_AUTO_ADVANCE_SWITCH = "auto_advance_switch"
