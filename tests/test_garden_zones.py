@@ -18,9 +18,14 @@ import pytest
 from conftest import REPO_ROOT, load_esphome_yaml
 
 COMPONENT = REPO_ROOT / "components" / "garden_zones"
-SIM_CONFIG = REPO_ROOT / "tests" / "configs" / "garden_zones_sim.yaml"
+ZONE_COMPONENT = REPO_ROOT / "components" / "garden_zone"
+CONFIGS = REPO_ROOT / "tests" / "configs"
+SIM_CONFIG = CONFIGS / "garden_zones_sim.yaml"
+GROUPS_CONFIG = CONFIGS / "garden_zones_groups_sim.yaml"
+ZONE_ENTRY = CONFIGS / "garden_zone_entry.yaml"
 FORKED = ["__init__.py", "automation.h", "sprinkler.h", "sprinkler.cpp"]
-ALL_FILES = [*FORKED, "queue_ops.h", "LICENSE", "PATCHES.md", "README.md"]
+NEW_FILES = ["groups.py", "lane_plan.py", "lanes.h", "group.h"]
+ALL_FILES = [*FORKED, "queue_ops.h", *NEW_FILES, "LICENSE", "PATCHES.md", "README.md"]
 BASE_TAG = "2026.9.1"
 VERSIONS = ["pinned", "minimum"]
 
@@ -172,6 +177,123 @@ def test_queue_ops_is_esphome_free() -> None:
 
 
 @pytest.mark.unit
+def test_lanes_header_is_esphome_free() -> None:
+    includes = re.findall(r"^\s*#\s*include\s+(.+)$", (COMPONENT / "lanes.h").read_text(encoding="utf-8"), re.M)
+    assert includes
+    for include in includes:
+        assert include.strip().startswith("<") and "esphome" not in include, include
+
+
+def _load_lane_plan():
+    spec = importlib.util.spec_from_file_location("gz_lane_plan", COMPONENT / "lane_plan.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.unit
+def test_lane_plan_is_esphome_free() -> None:
+    import ast
+    import sys
+
+    tree = ast.parse((COMPONENT / "lane_plan.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0, "relative import in lane_plan.py"
+            names = [node.module or ""]
+        for name in names:
+            assert name.split(".")[0] in sys.stdlib_module_names, f"lane_plan.py imports {name}"
+
+
+@pytest.mark.unit
+def test_lane_plan_modes() -> None:
+    plan = _load_lane_plan().plan_lanes
+    assert plan("g", 1, [None] * 4) == [[0, 1, 2, 3]]
+    assert plan("g", "all", [None] * 3) == [[0], [1], [2]]
+    assert plan("g", "ALL", [None] * 2) == [[0], [1]]
+    assert plan("g", 2, [None] * 5) == [[0, 2, 4], [1, 3]]
+    assert plan("g", 3, [None] * 2) == [[0], [1]]
+    assert plan("g", 2, [None] * 2) == [[0], [1]]
+    assert plan("g", 1, [None]) == [[0]]
+
+
+@pytest.mark.unit
+def test_lane_plan_pins() -> None:
+    module = _load_lane_plan()
+    plan, error = module.plan_lanes, module.LanePlanError
+    assert plan("g", 3, [1, 0, 1, 0]) == [[1, 3], [0, 2]]  # order kept inside a lane
+    assert plan("g", 3, [2, 0, 2]) == [[1], [0, 2]]  # an empty pinned lane is dropped (lanes renumbered)
+    with pytest.raises(error, match="lawn.*all-or-none"):
+        plan("lawn", 2, [0, None, 1])
+    with pytest.raises(error, match="lawn.*lane 2"):
+        plan("lawn", 2, [0, 2])
+    with pytest.raises(error, match="lawn.*'lane'"):
+        plan("lawn", 1, [0, 0])
+    with pytest.raises(error, match="lawn.*'lane'"):
+        plan("lawn", "all", [0, 1])
+    with pytest.raises(error, match="lawn"):
+        plan("lawn", 0, [None])
+    with pytest.raises(error, match="lawn"):
+        plan("lawn", 2, [])
+
+
+@pytest.mark.unit
+def test_new_files_headers() -> None:
+    for name in NEW_FILES:
+        head = "\n".join((COMPONENT / name).read_text(encoding="utf-8").splitlines()[:6])
+        assert "General Public License v3" in head, name
+        assert "Copyright (c) GardenPilot contributors" in head, name
+        assert "modified copy" not in head.lower(), name
+        assert "GZ-PATCH" not in (COMPONENT / name).read_text(encoding="utf-8"), name
+    head = "\n".join((ZONE_COMPONENT / "__init__.py").read_text(encoding="utf-8").splitlines()[:4])
+    assert "MIT" in head and "GardenPilot contributors" in head
+    assert "General Public" not in (ZONE_COMPONENT / "__init__.py").read_text(encoding="utf-8")
+    assert not (ZONE_COMPONENT / "LICENSE").exists()
+
+
+@pytest.mark.unit
+def test_garden_zone_entries_are_lists() -> None:
+    paths = [*CONFIGS.rglob("*.yaml"), *(REPO_ROOT / "packages").rglob("*.yaml")]
+    assert ZONE_ENTRY in paths
+    for path in paths:
+        config = load_esphome_yaml(path)
+        if isinstance(config, dict) and "garden_zone" in config:
+            assert isinstance(config["garden_zone"], list), f"{path}: write garden_zone: as a list item (- group: ...)"
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("garden_zone:"):
+                assert line.strip() == "garden_zone:", f"{path}: garden_zone: must be followed by a list"
+
+
+@pytest.mark.unit
+def test_groups_test_config_shape() -> None:
+    text = GROUPS_CONFIG.read_text(encoding="utf-8")
+    assert "!secret" not in text
+    assert not re.search(r"GPIO\d+", text)
+    config = load_esphome_yaml(GROUPS_CONFIG)
+    assert isinstance(config, dict)
+    for forbidden in ("api", "wifi", "ota"):
+        assert forbidden not in config
+    assert config["packages"]["hardware"] == {"__tag__": "include", "value": "hardware/sim.yaml"}
+    includes = [v for v in config["packages"].values() if v != config["packages"]["hardware"]]
+    assert len(includes) == 2
+    for include in includes:
+        assert include["__tag__"] == "include"
+        assert include["value"]["file"] == "garden_zone_entry.yaml"
+    assert config["external_components"] == [{"source": "components", "components": ["garden_zones", "garden_zone"]}]
+    groups = {g["id"]: g for g in config["garden_zones"]["groups"]}
+    assert groups["beds"]["max_parallel"] == "all"
+    assert groups["lawn"]["max_parallel"] == 2 and groups["lawn"]["pump_switch_id"] == "gz_pump"
+    assert groups["solo"]["max_parallel"] == 1
+    assert "garden_zone" not in config  # the beds zones come from the two includes
+    entry = load_esphome_yaml(ZONE_ENTRY)
+    assert isinstance(entry, dict) and isinstance(entry["garden_zone"], list)
+
+
+@pytest.mark.unit
 def test_device_unchanged() -> None:
     paths = [REPO_ROOT / "garden-pilot.yaml"]
     for folder in ("packages", "hardware"):
@@ -252,15 +374,17 @@ def _resolve(version: str) -> str:
     return out.stdout.strip()
 
 
-def _stage(dest: Path) -> Path:
-    """Copy the test config and everything it includes to `dest` (the config expects to sit at the root)."""
+def _stage(dest: Path, source: Path = SIM_CONFIG, name: str = "garden-zones-sim.yaml") -> Path:
+    """Copy a test config and everything it includes to `dest` (the config expects to sit at the root)."""
     dest.mkdir(parents=True, exist_ok=True)
-    for name in ("hardware", "components"):
+    for folder in ("hardware", "components"):
         shutil.copytree(
-            REPO_ROOT / name, dest / name, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__")
+            REPO_ROOT / folder, dest / folder, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__")
         )
-    config = dest / "garden-zones-sim.yaml"
-    shutil.copy(SIM_CONFIG, config)
+    config = dest / name
+    shutil.copy(source, config)
+    if source == GROUPS_CONFIG:
+        shutil.copy(ZONE_ENTRY, dest / ZONE_ENTRY.name)
     return config
 
 
@@ -421,3 +545,305 @@ def test_host_scenario(host_build_pinned: Path, tmp_path: Path) -> None:
     assert "boot_queue=0,1" in before_scenario, "restored queue must still be listed after the idle period"
     started = [m for m in before_scenario if m.startswith("active=") and m != "active=none"]
     assert not started, f"restored queue started by itself: {started}"
+
+
+# ---------------------------------------------------------------------------------------------- groups (task 012)
+
+GROUPS_NAME = "garden-zones-groups"
+_GZTEST_STATE = re.compile(r"state=([01]{7}) pump=([01])$")
+
+
+def _stage_groups(dest: Path) -> Path:
+    return _stage(dest, GROUPS_CONFIG, f"{GROUPS_NAME}.yaml")
+
+
+@pytest.mark.config
+@pytest.mark.parametrize("version", VERSIONS)
+def test_groups_config(version: str, tmp_path: Path) -> None:
+    config = _stage_groups(tmp_path)
+    result = _esphome(version, "config", str(config), timeout=600)
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output[-4000:]
+    section = output[output.index("\ngarden_zone:") :]
+    section = section[: section.index("\nlogger:")]
+    assert section.index("name: GZ bed 1") < section.index("name: GZ bed 2")
+    assert section.count("- group: beds") == 2
+    assert section.index("valve_switch_id: board_relay_1") < section.index("valve_switch_id: board_relay_2")
+
+
+_ERROR_HEAD = """\
+esphome:
+  name: gz-error
+packages:
+  hardware: !include hardware/sim.yaml
+logger:
+  level: INFO
+external_components:
+  - source: components
+    components: [garden_zones, garden_zone]
+switch:
+  - {platform: template, id: gz_pump, internal: true, optimistic: true}
+  - {platform: template, id: gz_pump_2, internal: true, optimistic: true}
+"""
+
+
+def _zone(group: str, relay: str, extra: str = "", name: str | None = None) -> str:
+    return (
+        f"    - group: {group}\n      valve_switch: {name or f'Zone {relay}'}\n      valve_switch_id: board_relay_{relay}\n"
+        f"      run_duration: 2s\n{extra}"
+    )
+
+
+_ERROR_CASES = {
+    "unknown-group": (
+        "garden_zones:\n  groups:\n    - {id: g, max_parallel: all}\n  zones:\n" + _zone("nope", "1"),
+        "nope",
+    ),
+    "mixed-pins": (
+        "garden_zones:\n  groups:\n    - {id: g, max_parallel: 2}\n  zones:\n"
+        + _zone("g", "1", "      lane: 0\n")
+        + _zone("g", "2"),
+        "all-or-none",
+    ),
+    "lane-with-all": (
+        "garden_zones:\n  groups:\n    - {id: g, max_parallel: all}\n  zones:\n" + _zone("g", "1", "      lane: 0\n"),
+        "'lane' needs an integer max_parallel",
+    ),
+    "pump-in-two-groups": (
+        "garden_zones:\n  groups:\n    - {id: a, max_parallel: all, pump_switch_id: gz_pump}\n"
+        "    - {id: b, max_parallel: all, pump_switch_id: gz_pump}\n  zones:\n" + _zone("a", "1") + _zone("b", "2"),
+        "a pump can belong to one group only",
+    ),
+    "valve-twice": (
+        "garden_zones:\n  groups:\n    - {id: g, max_parallel: all}\n  zones:\n" + _zone("g", "1") + _zone("g", "1", name="Zone again"),
+        "is used by two zones",
+    ),
+    "pump-is-a-valve": (
+        "garden_zones:\n  groups:\n    - {id: g, max_parallel: all, pump_switch_id: board_relay_1}\n  zones:\n"
+        + _zone("g", "1"),
+        "is also the valve switch",
+    ),
+    "group-without-zones": (
+        "garden_zones:\n  groups:\n    - {id: g, max_parallel: all}\n    - {id: h, max_parallel: 1}\n  zones:\n"
+        + _zone("g", "1"),
+        "has no zones",
+    ),
+    "lane-id-clash": (
+        "sensor:\n  - {platform: template, id: g_lane_0}\n"
+        "garden_zones:\n  groups:\n    - {id: g, max_parallel: all}\n  zones:\n" + _zone("g", "1"),
+        "generated lane id 'g_lane_0'",
+    ),
+    "list-form-plus-entry": (
+        "garden_zones:\n  - id: gz\n    main_switch: Main\n    auto_advance_switch: Auto\n    valves:\n"
+        "      - {valve_switch: V1, valve_switch_id: board_relay_1, run_duration: 2s}\n"
+        "      - {valve_switch: V2, valve_switch_id: board_relay_2, run_duration: 2s}\n"
+        "garden_zone:\n  - group: gz\n    valve_switch: Z\n    valve_switch_id: board_relay_3\n    run_duration: 2s\n",
+        # the id check of `group:` fires before the final validation (which has its own "cannot be mixed" message)
+        "doesn't inherit from garden_zones::GardenZonesGroup",
+    ),
+}
+
+
+@pytest.mark.config
+@pytest.mark.parametrize("case", sorted(_ERROR_CASES))
+def test_groups_config_errors(case: str, tmp_path: Path) -> None:
+    body, expected = _ERROR_CASES[case]
+    config = _stage_groups(tmp_path)  # stages hardware/ and components/
+    config.unlink()
+    (tmp_path / ZONE_ENTRY.name).unlink()
+    config = tmp_path / "gz-error.yaml"
+    config.write_text(_ERROR_HEAD + body, encoding="utf-8")
+    result = _esphome("pinned", "config", str(config), timeout=600)
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, output[-2000:]
+    assert expected in output, output[-3000:]
+
+
+@pytest.mark.config
+def test_garden_zone_dict_form_collapses(tmp_path: Path) -> None:
+    config = _stage_groups(tmp_path)
+    config.unlink()
+    (tmp_path / ZONE_ENTRY.name).unlink()
+    config = tmp_path / "gz-dict.yaml"
+    config.write_text(
+        """\
+esphome:
+  name: gz-dict
+packages:
+  hardware: !include hardware/sim.yaml
+  zone_a:
+    garden_zone:
+      group: g
+      valve_switch: Zone A
+      valve_switch_id: board_relay_1
+      run_duration: 2s
+  zone_b:
+    garden_zone:
+      group: g
+      valve_switch: Zone B
+      valve_switch_id: board_relay_2
+      run_duration: 2s
+logger:
+  level: INFO
+external_components:
+  - source: components
+    components: [garden_zones, garden_zone]
+garden_zones:
+  groups:
+    - {id: g, max_parallel: all}
+""",
+        encoding="utf-8",
+    )
+    result = _esphome("pinned", "config", str(config), timeout=600)
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output[-3000:]
+    section = output[output.index("\ngarden_zone:") :]
+    section = section[: section.index("\nlogger:")]
+    assert section.count("- group: g") == 1, "two dict-form entries must collapse into one zone (merge behaviour)"
+    assert "valve_switch_id: board_relay_2" in section and "valve_switch_id: board_relay_1" not in section
+
+
+@pytest.fixture(scope="module", params=VERSIONS)
+def groups_generated(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Build directory of `esphome compile --only-generate` for the staged groups config (once per version)."""
+    tmp_path = tmp_path_factory.mktemp(f"groups-gen-{request.param}")
+    config = _stage_groups(tmp_path)
+    result = _esphome(request.param, "compile", "--only-generate", str(config), timeout=900)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+    return tmp_path / ".esphome" / "build" / GROUPS_NAME
+
+
+@pytest.mark.config
+def test_groups_component_count(groups_generated: Path) -> None:
+    defines = (groups_generated / "src" / "esphome" / "core" / "defines.h").read_text(encoding="utf-8")
+    count = int(re.search(r"#define ESPHOME_COMPONENT_COUNT (\d+)", defines).group(1))
+    main_cpp = (groups_generated / "src" / "main.cpp").read_text(encoding="utf-8")
+    registered = main_cpp.count("App.register_component_(")
+    assert count >= registered, f"ESPHOME_COMPONENT_COUNT {count} < {registered} registered components"
+
+
+@pytest.mark.config
+def test_groups_codegen(groups_generated: Path) -> None:
+    main_cpp = (groups_generated / "src" / "main.cpp").read_text(encoding="utf-8")
+    for lane in ("beds_lane_0", "beds_lane_1", "lawn_lane_0", "lawn_lane_1", "solo_lane_0"):
+        assert re.search(rf"\b{lane}->set_lane_mode\(true\);", main_cpp), lane
+    assert "solo_lane_1" not in main_cpp and "lawn_lane_2" not in main_cpp and "beds_lane_2" not in main_cpp
+    assert main_cpp.count("set_lane_mode(true)") == 5
+    assert main_cpp.count("->add_controller(") == 5 * 4
+    pumps = re.findall(r"(\w+)->configure_valve_pump_switch\(\d+, gz_pump\);", main_cpp)
+    assert sorted(pumps) == ["lawn_lane_0", "lawn_lane_0", "lawn_lane_1"]
+    assert main_cpp.count("configure_valve_pump_switch") == 3
+    assert len(re.findall(r"new\(\w+\) garden_zones::GardenZonesGroup\(", main_cpp)) == 3
+
+
+def _groups_host_dir() -> Path:
+    return REPO_ROOT / ".esphome" / "gz-groups-host" / _resolve("pinned")
+
+
+@pytest.fixture(scope="module")
+def groups_program() -> Path:
+    _need_compiler()
+    config = _stage_groups(_groups_host_dir())
+    result = _esphome("pinned", "compile", str(config), timeout=1800)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-6000:]
+    program = (
+        _groups_host_dir() / ".esphome" / "build" / GROUPS_NAME / ".pioenvs" / GROUPS_NAME / "program"
+    )
+    assert program.is_file(), f"host program not found at {program}"
+    return program
+
+
+@pytest.mark.host
+def test_groups_host_compile(groups_program: Path) -> None:
+    assert groups_program.is_file()
+
+
+def _states(messages: list[str], start: str, end: str | None) -> list[tuple[str, int]]:
+    begin = messages.index(start)
+    stop = messages.index(end) if end else len(messages)
+    found = [_GZTEST_STATE.match(m) for m in messages[begin:stop]]
+    return [(m.group(1), int(m.group(2))) for m in found if m]
+
+
+def _on(state: str, *valves: int) -> bool:
+    """True when every given valve (1-based) is on in the 7-character state."""
+    return all(state[v - 1] == "1" for v in valves)
+
+
+def _rising(states: list[tuple[str, int]], valve: int) -> int:
+    count, previous = 0, False
+    for state, _ in states:
+        now = _on(state, valve)
+        count += int(now and not previous)
+        previous = now
+    return count
+
+
+@pytest.mark.host
+def test_groups_host_scenario(groups_program: Path, tmp_path: Path) -> None:
+    prefdir = tmp_path / "prefs"
+    prefdir.mkdir()
+    first = _run_program(groups_program, prefdir, timeout=300)
+    assert "done" in first, first[-15:]
+
+    assert "restored beds= lawn= solo=" in first and "boot beds= lawn= solo=" in first
+    assert not [s for s in _states(first, "restored beds= lawn= solo=", "step=2") if "1" in s[0] or s[1]]
+
+    # 2. beds: both lanes run together, then everything is off
+    step2 = _states(first, "step=2", "step=3")
+    assert "queue beds=0,1 lawn= solo=" in first[first.index("step=2") : first.index("step=3")]
+    assert any(_on(s, 1, 2) for s, _ in step2), step2
+    assert step2[-1][0][:2] == "00"
+
+    # 3. lawn: lanes [[0,2],[1]] and the shared pump
+    step3_msgs = first[first.index("step=3") : first.index("step=4")]
+    assert [m for m in step3_msgs if m.startswith(("queue ", "queued2="))] == [
+        "queue beds= lawn=0,1,2 solo=",
+        "queued2=1",
+        "queue beds= lawn=0,1 solo=",
+        "queued2=0",
+        "queue beds= lawn=0,1,2 solo=",
+    ]
+    step3 = _states(first, "step=3", "step=4")
+    assert any(_on(s, 3, 4) for s, _ in step3), "zone 0 and zone 1 (different lanes) must run together"
+    assert not any(_on(s, 3, 5) for s, _ in step3), "zones 0 and 2 share a lane"
+    assert all(s[0] == "0" and s[1] == "0" and s[5] == "0" and s[6] == "0" for s, _ in step3)
+    assert all(pump == 1 for s, pump in step3 if "1" in s[2:5]), "the pump must be on while any lawn valve is on"
+    assert any(_on(a, 3, 4) and _on(b, 3) and not _on(b, 4) and pb == 1 for (a, _), (b, pb) in zip(step3, step3[1:])), (
+        "the pump must stay on when one lane finishes while the other still runs"
+    )
+    assert _on(step3[-1][0], 3) is False and step3[-1][1] == 0, "pump off after the queue drained"
+    assert _rising(step3, 5) == 1 and _rising(step3, 3) == 1 and _rising(step3, 4) == 1
+
+    # 4. solo: max_parallel 1
+    step4 = _states(first, "step=4", "step=4b")
+    assert not any(_on(s, 6, 7) for s, _ in step4)
+    assert _rising(step4, 6) == 1 and _rising(step4, 7) == 1, step4
+    assert step4[-1][0] == "0000000"
+    step4b = _states(first, "step=4b", "step=5")
+    assert _rising(step4b, 6) == 1 and _rising(step4b, 7) == 0, step4b
+    assert step4b[-1][0] == "0000000", "solo must be idle (every valve off) at the end of step 4b"
+
+    # 5. a manual run keeps the other lane
+    step5 = _states(first, "step=5", "step=6")
+    assert not any(_on(s, 3, 5) for s, _ in step5)
+    start4 = next(i for i, (s, _) in enumerate(step5) if _on(s, 4))
+    manual = next(i for i, (s, _) in enumerate(step5) if _on(s, 5))
+    end_manual = next(i for i in range(manual, len(step5)) if not _on(step5[i][0], 5))
+    assert all(_on(s, 4) for s, _ in step5[start4 : end_manual + 1]), "zone 1 (lane 1) must not be interrupted"
+    resumed = next(i for i in range(end_manual, len(step5)) if _on(step5[i][0], 3))
+    assert all(pump == 1 for _, pump in step5[start4 : resumed + 1]), "pump must stay on throughout"
+
+    # 6. shutdown of one group does not touch the others
+    step6 = first[first.index("step=6") :]
+    assert "before_shutdown v1=1 v4=1 pump=1" in step6
+    assert "after_shutdown v1=1 v4=0 pump=0" in step6
+    assert "all_off v1=0 v4=0 pump=0" in step6
+    assert "end beds= lawn=2,1 solo=" in step6
+
+    # second boot, same preference directory: the per-lane queues come back and do not start by themselves
+    second = _run_program(groups_program, prefdir, timeout=300)
+    assert "restored beds= lawn=2,1 solo=" in second, second[:6]
+    before = second[: second.index("step=2")]
+    assert "boot beds= lawn=2,1 solo=" in before, "restored queue must still be listed after the idle period"
+    assert not [s for s in _states(second, "restored beds= lawn=2,1 solo=", "step=2") if "1" in s[0] or s[1]], before

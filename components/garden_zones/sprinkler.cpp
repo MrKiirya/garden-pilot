@@ -548,6 +548,12 @@ void Sprinkler::set_valve_run_duration(const optional<size_t> valve_number, cons
 }
 
 void Sprinkler::set_auto_advance(const bool auto_advance) {
+  // GZ-PATCH-BEGIN(lanes)
+  if (this->auto_adv_sw_ == nullptr && this->lane_mode_) {
+    this->lane_auto_advance_ = auto_advance;
+    return;
+  }
+  // GZ-PATCH-END(lanes)
   if (this->auto_adv_sw_ == nullptr) {
     return;
   }
@@ -649,6 +655,11 @@ bool Sprinkler::auto_advance() {
   if (this->auto_adv_sw_ != nullptr) {
     return this->auto_adv_sw_->state;
   }
+  // GZ-PATCH-BEGIN(lanes)
+  if (this->lane_mode_) {
+    return this->lane_auto_advance_;
+  }
+  // GZ-PATCH-END(lanes)
   return true;
 }
 

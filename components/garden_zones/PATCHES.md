@@ -56,3 +56,27 @@ against the `sprinkler` sources of the installed ESPHome package and fails on an
   `next_valve` / `previous_valve` do not clear the flags (they only select a valve with a delay).
 - Re-port notes: the extra branch sits between the `next_req_` branch and the queue branch of
   `load_next_valve_run_request_`.
+
+## groups
+- Purpose: the groups form of `garden_zones:` (task 012); the stock list form is untouched.
+- Files: `__init__.py` (two small regions: `CONFIG_SCHEMA` dispatch plus `FINAL_VALIDATE_SCHEMA` after the stock
+  schema, and a dispatch at the top of `to_code`). All new logic is in the non-forked files `groups.py` (schemas,
+  actions, lane code generation), `lane_plan.py` (pure lane assignment), `lanes.h` (pure routing helper) and
+  `group.h` (`GardenZonesGroup` and its actions); `components/garden_zone/` (MIT) holds the `garden_zone:` entry.
+- Behaviour change: a dict with `groups:` / `zones:` selects the groups schema and code generation; anything else
+  takes the stock path unchanged.
+- Re-port notes: re-add the dispatch lines; the rest does not depend on upstream code except the valve schema
+  (`SPRINKLER_VALVE_SCHEMA`) and the constants that `groups.py` imports.
+
+## lanes
+- Purpose: a controller without an auto-advance switch (every lane of a group) must not start a full cycle when its
+  queue drains.
+- Files: `sprinkler.h` (`set_lane_mode()`, two members), `sprinkler.cpp` (`set_auto_advance()`, `auto_advance()`).
+- Behaviour change: only with `set_lane_mode(true)` (called by the groups code generation for every lane): without an
+  auto-advance switch `set_auto_advance(x)` stores `x` in a member and `auto_advance()` returns it (default
+  `false`). Stock configs behave exactly as upstream.
+- Note for 013/014: after `start_group_cycle` a lane's stored auto-advance stays `true` while idle (the stock switch
+  would also stay on); `start_from_queue()` / `start_single_valve()` reset it. A group auto-advance switch must set
+  it explicitly.
+- Re-port notes: re-add the early return in `set_auto_advance()` and the branch before `return true` in
+  `auto_advance()`.
