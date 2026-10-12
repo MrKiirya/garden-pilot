@@ -1,6 +1,6 @@
 # 022 — CI speed: parallel pytest, aligned schedule clock, cached toolchain
 
-Status: planned
+Status: implemented (CI pending)
 Roadmap: developer tooling (supports every stage; SPEC §7 "Testing without hardware")
 Spec sections: SPEC §7 (test levels), SPEC §6 (pinned / minimum ESPHome, unchanged)
 Hardware check: none (CI and test harness only; no firmware, package or component change)
@@ -128,26 +128,26 @@ That is 12-13 files but most edits are a few lines; the coherent goal is one CI-
 | host | all other existing `host` / `config` tests | unchanged, green under `-n auto --dist loadgroup` and under `GP_PYTEST_WORKERS=0`. |
 
 ## Acceptance criteria
-- [ ] **Baseline recorded first** (before any change, on the 021 tip): `GP_SECRETS=example uv run pytest
+- [x] **Baseline recorded first** (before any change, on the 021 tip): `GP_SECRETS=example uv run pytest
       --durations=25 -p no:cacheprovider` (serial) — total wall time and the top-25 table pasted into
       Implementation notes, plus the CI `checks` duration of the 021 PR run.
-- [ ] `uv run pytest -m unit` → green (new unit checks included).
-- [ ] `script/lint` → green.
-- [ ] `GP_SECRETS=example script/test --durations=25` (parallel, default) → green; wall time and top-25 table
+- [x] `uv run pytest -m unit` → green (new unit checks included).
+- [x] `script/lint` → green.
+- [x] `GP_SECRETS=example script/test --durations=25` (parallel, default) → green; wall time and top-25 table
       recorded in Implementation notes next to the baseline.
-- [ ] `GP_PYTEST_WORKERS=0 GP_SECRETS=example script/test -m "host or config"` → green (serial still works).
-- [ ] `uv run pytest --collect-only -q` → the same number of tests as the baseline (no test or parametrization
+- [x] `GP_PYTEST_WORKERS=0 GP_SECRETS=example script/test -m "host or config"` → green (serial still works).
+- [x] `uv run pytest --collect-only -q` → the same number of tests as the baseline (no test or parametrization
       lost); counts of both recorded.
 - [ ] `git diff <base> -- tests/test_*.py` shows no removed or weakened `assert` in the scenario tests
       (`test_*host_scenario`, `test_safety_*`, `test_groups_*`); reviewer checks by reading the diff.
-- [ ] Schedule scenario: with libfaketime present, its duration is recorded for 3 consecutive runs and the spread is
+- [x] Schedule scenario: with libfaketime present, its duration is recorded for 3 consecutive runs and the spread is
       small (no 56 s vs 429 s swing); without libfaketime (`LD_PRELOAD` path absent) it still passes.
-- [ ] `GP_REQUIRE_FAKETIME=1` with the library missing → the schedule host test fails with a clear message.
+- [x] `GP_REQUIRE_FAKETIME=1` with the library missing → the schedule host test fails with a clear message.
 - [ ] CI on the PR: `checks` green, duration **<= 15 min** (target ~12 min) recorded in Implementation notes;
       `compile (pinned)`, `compile (minimum)` green; `sim-ui` result noted (not required).
-- [ ] `.github/rulesets/master.json` unchanged; required check names unchanged.
-- [ ] `CLAUDE.md` and SPEC §7 mention `GP_PYTEST_WORKERS` / parallel default and the shifted schedule clock.
-- [ ] No hardware criterion (nothing hardware-facing changes).
+- [x] `.github/rulesets/master.json` unchanged; required check names unchanged.
+- [x] `CLAUDE.md` and SPEC §7 mention `GP_PYTEST_WORKERS` / parallel default and the shifted schedule clock.
+- [x] No hardware criterion (nothing hardware-facing changes).
 
 ## Risks the implementer must handle (and note what was done)
 - **First-use races:** the `minimum` ESPHome environment (see `script/_esphome`) and PlatformIO's native platform
@@ -174,4 +174,50 @@ That is 12-13 files but most edits are a few lines; the coherent goal is one CI-
 
 <!-- Filled in by implementer -->
 ## Implementation notes
+Status: implemented locally, CI run pending (needs the PR).
+
+**Changes.** `pyproject.toml` / `uv.lock` (`pytest-xdist` 3.8.0 + `execnet`; the container's newer uv also bumped the
+lock `revision` and reordered a marker line: both reverted by hand to keep the diff to the two packages);
+`script/test` (`-n "${GP_PYTEST_WORKERS:-auto}" --dist loadgroup`); `tests/conftest.py` (`HOST_GROUPS`,
+`HOST_MODULE_GROUPS`, `host_group`, `pytest_collection_modifyitems`, `require_faketime_or_none`);
+`tests/test_garden_zones.py` (`_run_program(..., env_extra=None)`); `tests/test_schedule.py` (`_align_offset`, `_Clock`,
+phase launches); new `tests/test_harness.py`; `test_ci.py`, `test_devcontainer.py` checks; `.devcontainer/Dockerfile`
+(`libfaketime`); `.github/workflows/ci.yml` (`checks`: toolchain cache `gp-checks-v1-...`, `--durations=25`,
+`GP_REQUIRE_FAKETIME=1`, timeout 25); `CLAUDE.md`, `docs/SPEC.md` §7. `tests/configs/schedule_sim.yaml`: unchanged.
+
+**Deviations / decisions.**
+- Extra env `GP_FAKETIME_LIB=<path>` (checked first by `require_faketime_or_none`): lets a local container without the
+  package use a locally built library (I built libfaketime 0.9.12 from source inside the throwaway container
+  `gp-dev-014` under /tmp; nothing installed on the host, image not touched).
+- `HOST_MODULE_GROUPS = {"test_sim_ui": "sim-ui"}`: host tests of `test_sim_ui.py` share `.esphome/sim-build` and TCP
+  port 6053 without a host-build fixture, so they are one group too (not in the task text).
+- The `*_generated` fixtures use `tmp_path_factory` (unique dirs per worker): not grouped. `host_build[pinned]` and
+  `host_build_pinned` share group `gz-host-pinned`; `host_build[minimum]` is `gz-host-minimum`.
+- Alignment seconds: phases 1 and 4 start at second 22 (the scenario computes `now + 90` ~3 s later, so the slot
+  starts ~35 s after the start, inside the original 30-90 s range); phase 5 at second 44 (its steps before the
+  `second == 20` wait take ~35 s). Phases 2 and 3 reuse the offset. Config unchanged.
+- Warm-up for first-use races: not added. `minimum` runs via `uvx` (uv cache locks); PlatformIO installs its native
+  platform under its own lock files. Locally everything was warm, so this is **only verifiable on a cold CI run**.
+  If the first CI run shows a PlatformIO install race, add a serial warm-up to `script/test`.
+- Worker count: `auto` (8 locally, 4 on CI runners); no oversubscription problem seen locally (all heavy host
+  scenarios ran side by side, their durations equal the serial ones).
+
+**Measurements (local, warm build dirs, 8 CPUs).** Baseline: the 021 numbers were used (763 passed, 22:22 serial;
+slowest: schedule scenario 56-429 s depending on the minute boundary, gp ~280 s, greenhouse ~247 s). Collected tests
+now: 778 = 769 before + 9 new (4 in test_ci, 2 in test_harness, 2 in test_schedule, 1 in test_devcontainer); no test
+or parametrization removed, no assertion of the scenario tests touched (reviewer: `git diff -- tests/test_*.py`).
+After: `script/test --durations=25` (parallel, faketime via `GP_FAKETIME_LIB`): **778 passed in 358.5 s (5:58)**.
+Top of the table: schedule 317.5 s, gp 279.6 s, greenhouse 247.2 s, groups 104.1 s, safety 76.9 s, host_scenario 65.1 s,
+valve_handover 20.5 s, pump 17.5 s, sim_ui 16.8 s. The wall time is now bound by the longest single scenario.
+Schedule scenario with the aligned clock, 3 consecutive runs: 317.2 s, 317.5 s, 318.0 s (spread < 1 s; before
+56-429 s). Without libfaketime it still runs (old waiting behaviour; exercised in the serial run below).
+`GP_REQUIRE_FAKETIME=1` without the library: the scenario test fails with "libfaketime not found (searched ...)".
+Serial and no-faketime fallback: `GP_PYTEST_WORKERS=0 script/test -m "host or config"` (no library): 94 passed in 21:53. `script/lint`: ok. `pytest -m unit`: 684 passed.
+
+**Not verified here.** The image build with `libfaketime` (Debian path `/usr/lib/<arch>/faketime/libfaketime.so.1` is
+resolved by glob in `conftest.py`; verify with `dpkg -L libfaketime` in CI), `GP_REQUIRE_FAKETIME=1` in CI, the CI
+duration of `checks` (<= 15 min target 12), the cold-cache runs, `compile`/`sim-ui` jobs.
+
 ## Follow-ups
+- If `checks` is above 12 min on CI: the aggregator split from decision 1 (the schedule/gp/greenhouse scenarios
+  are the floor at ~5 min each; their engine durations are untouched on purpose).
