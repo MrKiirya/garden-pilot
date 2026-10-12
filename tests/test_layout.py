@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -16,6 +17,11 @@ pytestmark = pytest.mark.unit
 ENTRY = REPO_ROOT / "garden-pilot.yaml"
 SIM_ENTRY = REPO_ROOT / "garden-pilot-sim.yaml"
 ENTRIES = [ENTRY, SIM_ENTRY]
+EXAMPLES_DIR = REPO_ROOT / "examples"
+EXAMPLES = sorted(p for p in EXAMPLES_DIR.glob("*.yaml") if p.name != "secrets.yaml")
+DEVICE_ENTRIES = [ENTRY, *EXAMPLES]  # entry files for real hardware: each is checked against ITS board profile
+BREADBOARD = REPO_ROOT / "hardware" / "esp32-s3-devkitc1-breadboard.yaml"
+LILYGO = REPO_ROOT / "hardware" / "lilygo-t-relay-s3.yaml"
 
 
 def tracked_files() -> list[Path]:
@@ -64,6 +70,10 @@ def _subst_keys(path: Path) -> set[str]:
 
 BED = REPO_ROOT / "packages" / "greenhouse" / "bed.yaml"
 BED_SOIL = REPO_ROOT / "packages" / "greenhouse" / "bed_soil.yaml"
+BED_SOIL_SKIP = REPO_ROOT / "packages" / "greenhouse" / "bed_soil_skip.yaml"
+BED_SOIL_SKIP_FILE = "packages/greenhouse/bed_soil_skip.yaml"
+IRRIGATION = REPO_ROOT / "packages" / "greenhouse" / "irrigation.yaml"
+IRRIGATION_PUMP = REPO_ROOT / "packages" / "greenhouse" / "irrigation_pump.yaml"
 BED_FILE = "packages/greenhouse/bed.yaml"
 BED_SOIL_FILE = "packages/greenhouse/bed_soil.yaml"
 SIM_BED_SOIL = REPO_ROOT / "packages" / "sim" / "bed_soil.yaml"
@@ -117,6 +127,32 @@ def _entry_includes(path_suffix: str, entry: Path = ENTRY) -> list[dict]:
     return items
 
 
+def _entry_packages(entry: Path) -> dict[str, dict]:
+    """Entry-file package key -> {path: repo-relative file, vars}. Commented-out example blocks count as active.
+
+    Include paths resolve relative to the entry file (`../packages/...` in examples/).
+    """
+    text, _ = _uncomment_examples(entry.read_text(encoding="utf-8"))
+    data = yaml.load(text, Loader=_EsphomeLoader)  # noqa: S506 - SafeLoader subclass
+    result = {}
+    for key, pkg in data["packages"].items():
+        assert isinstance(pkg, dict) and pkg.get("__tag__") == "include", f"{entry.name}: {key}"
+        value = pkg["value"]
+        file = value["file"] if isinstance(value, dict) else value
+        vars_ = (value.get("vars") or {}) if isinstance(value, dict) else {}
+        path = Path(os.path.normpath(entry.parent / file)).relative_to(REPO_ROOT)
+        result[key] = {"path": path.as_posix(), "vars": vars_}
+    return result
+
+
+def _entry_profile(entry: Path) -> Path:
+    return REPO_ROOT / _entry_packages(entry)["hardware"]["path"]
+
+
+def _entry_text(entry: Path) -> str:
+    return _strip_comments(_uncomment_examples(entry.read_text(encoding="utf-8"))[0])
+
+
 def _template_vars(path: Path) -> set[str]:
     return set(re.findall(r"\$\{(\w+)\}", _strip_comments(path.read_text(encoding="utf-8"))))
 
@@ -136,6 +172,8 @@ def _pin_refs() -> set[str]:
             continue  # their ${adc_pin} is a var, not a board pin
         refs |= set(re.findall(r"\$\{(\w+_pin)\}", _strip_comments(path.read_text(encoding="utf-8"))))
     refs |= set(re.findall(r"\$\{(\w+_pin)\}", _strip_comments(_entry_text_with_examples())))
+    for example in EXAMPLES:
+        refs |= set(re.findall(r"\$\{(\w+_pin)\}", _entry_text(example)))
     return refs
 
 
@@ -159,31 +197,64 @@ def test_hardware_profiles_shape() -> None:
     for path in profiles:
         data = load_esphome_yaml(path)
         assert isinstance(data, dict)
-        assert set(data) <= {"substitutions", "esp32", "psram", "host", "switch"}, path.name
+        assert set(data) <= {"substitutions", "esp32", "psram", "host", "switch", "sn74hc595"}, path.name
         assert ("esp32" in data) != ("host" in data), f"{path.name}: exactly one of esp32 / host"
         if "esp32" in data:
             assert "board" in data["esp32"], path.name
             assert data.get("substitutions"), path.name
 
 
-def test_hardware_profiles_define_every_pin_used() -> None:
+@pytest.mark.parametrize("entry", DEVICE_ENTRIES, ids=lambda p: p.name)
+def test_entry_pins_defined_by_profile(entry: Path) -> None:
+    """Every ${..._pin} an entry file (its packages and its vars) uses must come from ITS board profile."""
+    packages = _entry_packages(entry)
+    profile = REPO_ROOT / packages["hardware"]["path"]
+    pins = {k for k in _subst_keys(profile) if k.endswith("_pin")}
+    used = set(re.findall(r"\$\{(\w+_pin)\}", _entry_text(entry)))
+    for key, pkg in packages.items():
+        path = REPO_ROOT / pkg["path"]
+        if key == "hardware" or path in (BED, BED_SOIL, BED_SOIL_SKIP):
+            continue  # their ${adc_pin} is a var, not a board pin
+        used |= set(re.findall(r"\$\{(\w+_pin)\}", _strip_comments(path.read_text(encoding="utf-8"))))
+    assert used, entry.name
+    assert used <= pins, f"{entry.name}: {profile.name} lacks pins {sorted(used - pins)}"
+
+
+def test_hardware_profiles_define_only_used_pins() -> None:
     used = _pin_refs()
     assert used
     for path in _esp32_profiles():
         pins = {k for k in _subst_keys(path) if k.endswith("_pin")}
-        assert used <= pins, f"{path.name} lacks pins: {sorted(used - pins)}"
         own = set(re.findall(r"\$\{(\w+_pin)\}", _strip_comments(path.read_text(encoding="utf-8"))))
         assert pins <= used | own, f"{path.name} defines unused pins: {sorted(pins - used - own)}"
+
+
+@pytest.mark.parametrize("entry", DEVICE_ENTRIES, ids=lambda p: p.name)
+def test_entry_relays_exist(entry: Path) -> None:
+    """Every relay an entry references (bed `relay` vars, gh_pump_relay) exists in its profile."""
+    packages = _entry_packages(entry)
+    relays = _relay_ids(REPO_ROOT / packages["hardware"]["path"])
+    wanted = {str(p["vars"]["relay"]) for p in packages.values() if "relay" in p["vars"]}
+    subst = load_esphome_yaml(entry)["substitutions"]  # type: ignore[index]
+    if "gh_pump_relay" in subst:
+        wanted.add(str(subst["gh_pump_relay"]))
+    assert wanted, entry.name
+    for n in wanted:
+        assert f"board_relay_{n}" in relays, f"{entry.name}: no board_relay_{n} in its profile"
+    text = _entry_text(entry)
+    for n in re.findall(r"board_relay_(\d+)", text):
+        assert f"board_relay_{n}" in relays, f"{entry.name}: no board_relay_{n} in its profile"
 
 
 def test_hardware_board_settings_are_used() -> None:
     """Non-pin board substitutions (display/touch orientation, calibration) must be referenced by a package."""
     text = "\n".join(_strip_comments(p.read_text(encoding="utf-8")) for p in _yaml_files("packages"))
     for path in _hardware_profiles():
+        own = _strip_comments(path.read_text(encoding="utf-8"))
         for key in _subst_keys(path):
             if key.endswith("_pin"):
                 continue
-            assert f"${{{key}}}" in text, f"{path.name}: {key} is not used under packages/"
+            assert f"${{{key}}}" in text or f"${{{key}}}" in own, f"{path.name}: {key} is not used"
 
 
 def test_analog_pins_named_by_function() -> None:
@@ -192,7 +263,8 @@ def test_analog_pins_named_by_function() -> None:
         # Literal split on purpose: the acceptance grep for the old analog pin name must find nothing outside tasks/
         assert "soil_ao" "_pin" not in keys, f"{path.name}: analog soil input must be adc_<n>_pin"
         adc = {k for k in keys if k.endswith("_pin") and ("adc" in k or "ao" in k.split("_"))}
-        assert adc, f"{path.name} defines no analog input pin"
+        if path != LILYGO:  # the LilyGO board has no analog inputs on its headers wired in the profile
+            assert adc, f"{path.name} defines no analog input pin"
         for key in adc:
             assert re.fullmatch(r"adc_\d+_pin", key), f"{path.name}: analog pin {key} must be adc_<n>_pin"
     for path in tracked_files():
@@ -223,20 +295,124 @@ def _relay_ids(path: Path) -> set[str]:
     return {sw["id"] for sw in data.get("switch") or []}
 
 
+RELAY_COUNTS = {"esp32-s3-devkitc1-breadboard.yaml": 12, "lilygo-t-relay-s3.yaml": 12, "sim.yaml": 3}
+
+
 def test_board_relays_are_safe() -> None:
-    reference: set[str] | None = None
+    """Contiguous board_relay_1..N (N >= 3), internal, OFF at boot; the relay count may differ per profile."""
+    assert {p.name for p in _hardware_profiles()} == set(RELAY_COUNTS), "add the new profile to RELAY_COUNTS"
     for path in _hardware_profiles():
         data = load_esphome_yaml(path)
         assert isinstance(data, dict)
         for sw in data.get("switch") or []:
+            if sw.get("id") == "board_backlight":  # display backlight, not an actuator
+                assert path == LILYGO and sw.get("internal") is True and sw.get("restore_mode") == "ALWAYS_ON"
+                continue
             assert re.fullmatch(r"board_relay_\d+", str(sw.get("id"))), f"{path.name}: bad relay id {sw.get('id')}"
             assert sw.get("internal") is True, f"{path.name}: {sw['id']} must be internal"
             assert sw.get("restore_mode") in {"RESTORE_DEFAULT_OFF", "ALWAYS_OFF"}, f"{path.name}: {sw['id']}"
-        ids = _relay_ids(path)
-        assert ids, f"{path.name} defines no board_relay_N"
-        if reference is None:
-            reference = ids
-        assert ids == reference, f"{path.name}: relay ids {sorted(ids)} differ from {sorted(reference)}"
+        ids = {i for i in _relay_ids(path) if i != "board_backlight"}
+        n = len(ids)
+        assert n >= 3, f"{path.name} defines fewer than 3 relays"
+        assert ids == {f"board_relay_{i}" for i in range(1, n + 1)}, f"{path.name}: relay ids not contiguous: {sorted(ids)}"
+        assert n == RELAY_COUNTS[path.name], f"{path.name}: {n} relays"
+
+
+def _gpio_number(value: str) -> int:
+    m = re.fullmatch(r"GPIO(\d+)", str(value))
+    assert m, value
+    return int(m.group(1))
+
+
+# ESP32-S3 N16R8: flash 26-32, octal PSRAM 33-37, USB 19/20, UART0 43/44, strapping 0/3/45/46
+AVOID_PINS = {0, 3, 19, 20, *range(26, 38), *range(43, 47)}
+
+
+def test_breadboard_relay_pins_safe() -> None:
+    subst = _subst_keys(BREADBOARD)
+    values = {k: v for k, v in load_esphome_yaml(BREADBOARD)["substitutions"].items() if k.endswith("_pin")}  # type: ignore[index]
+    relay_pins = {k: _gpio_number(v) for k, v in values.items() if re.fullmatch(r"relay_\d+_pin", k)}
+    assert set(relay_pins) == {f"relay_{n}_pin" for n in range(1, 13)}, sorted(subst)
+    assert not set(relay_pins.values()) & AVOID_PINS, sorted(set(relay_pins.values()) & AVOID_PINS)
+    numbers = [_gpio_number(v) for v in values.values()]
+    assert len(set(numbers)) == len(numbers), "two *_pin substitutions share a GPIO"
+
+
+def test_lilygo_profile() -> None:
+    data = load_esphome_yaml(LILYGO)
+    assert isinstance(data, dict)
+    hubs = data["sn74hc595"]
+    assert len(hubs) == 1 and hubs[0]["id"] == "board_sr" and hubs[0]["sr_count"] == 2
+    pins = {k: v for k, v in data["substitutions"].items() if k.endswith("_pin")}
+    for key, field in (("sr_data_pin", "data_pin"), ("sr_clock_pin", "clock_pin"), ("sr_latch_pin", "latch_pin"), ("sr_oe_pin", "oe_pin")):
+        assert hubs[0][field] == "${" + key + "}" and key in pins, key
+    relays = {sw["id"]: sw for sw in data["switch"] if sw["id"] != "board_backlight"}
+    numbers = []
+    for n in range(1, 13):
+        sw = relays[f"board_relay_{n}"]
+        assert sw["platform"] == "gpio" and sw["internal"] is True and sw["restore_mode"] == "ALWAYS_OFF", n
+        assert sw["pin"]["sn74hc595"] == "board_sr" and not sw["pin"].get("inverted"), n
+        numbers.append(sw["pin"]["number"])
+    assert numbers == [*range(0, 6), *range(8, 14)], "main board relays 0-5, expansion relays 8-13"
+    # display/touch pins stay clear of the shift register, RTC, DS18B20, USB, flash/PSRAM and UART0; TFT_RST (GPIO3)
+    # and TFT_DC (GPIO46) are wired to the display header by the board itself (strapping pins, see the profile header)
+    forbidden = {0, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, *range(26, 38), 43, 44, 45}
+    for key, value in pins.items():
+        if key.startswith("sr_"):
+            continue
+        n = _gpio_number(value)
+        assert n not in forbidden, f"{key}: GPIO{n}"
+        if n in (3, 46):
+            assert key in ("display_reset_pin", "display_dc_pin"), f"{key}: GPIO{n} is a strapping pin"
+    numbers_all = [_gpio_number(v) for v in pins.values()]
+    assert len(set(numbers_all)) == len(numbers_all), "two *_pin substitutions share a GPIO"
+    assert "inverted: true" not in _strip_comments(LILYGO.read_text(encoding="utf-8"))
+
+
+def test_irrigation_pump_matches() -> None:
+    """irrigation_pump.yaml = irrigation.yaml + the three pump keys; the pump relay is not a bed relay."""
+    plain = load_esphome_yaml(IRRIGATION)
+    pump = load_esphome_yaml(IRRIGATION_PUMP)
+    assert isinstance(plain, dict) and isinstance(pump, dict)
+    assert pump["substitutions"]["gh_pump_max_on_time"] == "2h" and pump["substitutions"]["gh_pump_idle_timeout"] == "10s"
+    assert "gh_pump_relay" not in pump["substitutions"], "the pump relay has no default: the entry file sets it"
+    for key in ("gh_pump_max_on_time", "gh_pump_idle_timeout"):
+        del pump["substitutions"][key]
+    group = pump["garden_zones"]["groups"][0]
+    assert group.pop("pump_switch_id") == "board_relay_${gh_pump_relay}"
+    assert group.pop("pump_max_on_time") == "${gh_pump_max_on_time}"
+    assert group.pop("pump_idle_timeout") == "${gh_pump_idle_timeout}"
+    assert pump == plain
+    for entry in DEVICE_ENTRIES:
+        packages = _entry_packages(entry)
+        if packages["gh_irrigation"]["path"] != "packages/greenhouse/irrigation_pump.yaml":
+            continue
+        pump_relay = str(load_esphome_yaml(entry)["substitutions"]["gh_pump_relay"])  # type: ignore[index]
+        bed_relays = {str(p["vars"]["relay"]) for p in packages.values() if "relay" in p["vars"]}
+        assert pump_relay not in bed_relays, f"{entry.name}: the pump relay is also a bed relay"
+
+
+def test_bed_soil_skip_shape() -> None:
+    plain = load_esphome_yaml(BED)
+    skip = load_esphome_yaml(BED_SOIL_SKIP)
+    assert isinstance(plain, dict) and isinstance(skip, dict)
+    block = skip["garden_zone"][0].pop("soil_moisture")
+    assert block == {
+        "sensor_id": "gh_bed${bed}_soil_moisture", "skip_above": "${skip_above}", "max_age": "30min", "when_unavailable": "water"
+    }
+    assert skip == plain
+    for entry in DEVICE_ENTRIES:
+        packages = _entry_packages(entry)
+        soils = {str(p["vars"]["bed"]): k for k, p in packages.items() if p["path"] == BED_SOIL_FILE}
+        keys = list(packages)
+        for key, pkg in packages.items():
+            if pkg["path"] != BED_SOIL_SKIP_FILE:
+                continue
+            assert set(pkg["vars"]) == {"bed", "bed_name", "relay", "skip_above"}, f"{entry.name}: {key}"
+            soil = soils.get(str(pkg["vars"]["bed"]))
+            assert soil, f"{entry.name}: {key} needs a bed_soil.yaml include for the same bed"
+            assert packages[soil]["vars"]["bed_name"] == pkg["vars"]["bed_name"]
+            assert keys.index(soil) > keys.index(key)
 
 
 def test_no_gpio_switch_in_packages() -> None:
@@ -263,10 +439,9 @@ def test_bed_includes() -> None:
     first, last = keys.index("gh_irrigation"), keys.index("gh_lvgl_page")
     for b in beds:
         assert first < keys.index(b["key"]) < last, f"{b['key']} must sit between gh_irrigation and gh_lvgl_page"
-    for path in _hardware_profiles():
-        relays = _relay_ids(path)
-        for b in beds:
-            assert f"board_relay_{b['vars']['relay']}" in relays, f"{path.name}: no relay for {b['key']}"
+    relays = _relay_ids(_entry_profile(ENTRY))
+    for b in beds:
+        assert f"board_relay_{b['vars']['relay']}" in relays, f"no relay for {b['key']}"
 
 
 def load_esphome_yaml_text(text: str) -> dict:
@@ -280,7 +455,7 @@ def test_bed_soil_includes() -> None:
     assert expected == {"bed", "bed_name", "adc_pin", "cal_dry_v", "cal_wet_v"}, expected
     beds = {str(b["vars"]["bed"]): b for b in _entry_includes(BED_FILE)}
     keys = list(load_esphome_yaml_text(_entry_text_with_examples())["packages"])
-    adc_keys = [{k for k in _subst_keys(p) if re.fullmatch(r"adc_\d+_pin", k)} for p in _esp32_profiles()]
+    adc_keys = [{k for k in _subst_keys(_entry_profile(ENTRY)) if re.fullmatch(r"adc_\d+_pin", k)}]
     active_pins: list[str] = []
     for s in soils:
         assert set(s["vars"]) == expected, f"{s['key']}: vars {sorted(s['vars'])}"
@@ -373,6 +548,8 @@ def test_substitutions_resolve() -> None:
     defined |= set(entry.get("substitutions") or {})
     for path in _hardware_profiles():
         defined |= _subst_keys(path)
+    for example in EXAMPLES:
+        defined |= set((load_esphome_yaml(example) or {}).get("substitutions") or {})  # type: ignore[union-attr]
     package_files = _yaml_files("packages")
     for path in package_files:
         data = load_esphome_yaml(path)
@@ -382,6 +559,7 @@ def test_substitutions_resolve() -> None:
         BED: set().union(*(set(i["vars"]) for i in _entry_includes(BED_FILE))),
         BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(BED_SOIL_FILE))),
         SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
+        BED_SOIL_SKIP: set().union(*(set(p["vars"]) for e in EXAMPLES for p in _entry_packages(e).values() if p["path"] == BED_SOIL_SKIP_FILE)),
         SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
     }
     missing = set()
@@ -454,6 +632,8 @@ def test_gpio_actuators_are_safe() -> None:
             continue
         for sw in data.get("switch") or []:
             if isinstance(sw, dict) and sw.get("platform") == "gpio":
+                if sw.get("id") == "board_backlight":  # display backlight (LilyGO profile): always on, not an actuator
+                    continue
                 checked += 1
                 assert sw.get("internal") is True, f"{path.name}: gpio switch must be internal"
                 assert sw.get("restore_mode") in {"RESTORE_DEFAULT_OFF", "ALWAYS_OFF"}, path.name

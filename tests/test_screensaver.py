@@ -33,7 +33,7 @@ def test_font_matches_token() -> None:
     font = fonts[0]
     assert font["size"] == int(token["fontSize"].rstrip("px")) == 40
     assert font["glyphs"] == token["glyphs"]
-    path = REPO_ROOT / font["file"]
+    path = REPO_ROOT / font["file"].replace("${gp_root}/", "")
     assert path.is_file() and path.parent == FONT_DIR
     assert (FONT_DIR / "OFL.txt").is_file()
     header = (REPO_ROOT / SAVER).read_text(encoding="utf-8")

@@ -455,10 +455,12 @@ def test_device_uses_groups_form() -> None:
         paths += [p for p in (REPO_ROOT / folder).rglob("*.yaml") if p.is_file()]
     irrigation = REPO_ROOT / "packages" / "greenhouse" / "irrigation.yaml"
     bed = REPO_ROOT / "packages" / "greenhouse" / "bed.yaml"
+    irrigation_pump = REPO_ROOT / "packages" / "greenhouse" / "irrigation_pump.yaml"
+    bed_soil_skip = REPO_ROOT / "packages" / "greenhouse" / "bed_soil_skip.yaml"  # variants of irrigation.yaml / bed.yaml
     for path in paths:
         text = path.read_text(encoding="utf-8")
         code = "\n".join(re.sub(r"(^|\s)#.*$", "", line) for line in text.splitlines())
-        if path == irrigation:
+        if path in (irrigation, irrigation_pump):
             config = load_esphome_yaml(path)
             assert isinstance(config, dict) and isinstance(config["garden_zones"], dict), "groups form (a dict)"
             assert "groups" in config["garden_zones"]
@@ -467,7 +469,7 @@ def test_device_uses_groups_form() -> None:
             assert not re.search(r"^garden_zones:|^garden_zone:", code, re.MULTILINE), path
         elif path.name == "gp.yaml" and path.parent.name == "core":  # external_components of the gp layer
             assert not re.search(r"^garden_zones:|^garden_zone:", code, re.MULTILINE), path
-        elif path != bed:
+        elif path not in (bed, bed_soil_skip):
             assert not re.search(r"^garden_zones:|^garden_zone:|^external_components:", code, re.MULTILINE), (
                 f"{path.relative_to(REPO_ROOT)}: garden_zones belongs to packages/greenhouse/irrigation.yaml"
             )

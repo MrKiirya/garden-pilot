@@ -45,12 +45,13 @@ def test_irrigation_shape() -> None:
     config = load_esphome_yaml(IRRIGATION)
     assert isinstance(config, dict)
     assert "sprinkler" not in config
-    assert config["external_components"] == [{"source": "components", "components": ["garden_zones", "garden_zone"]}]
+    assert config["external_components"] == [{"source": "${gp_root}/components", "components": ["garden_zones", "garden_zone"]}]
     assert config["substitutions"] == {
         "gh_max_parallel": "1",
         "gh_max_on_time": "60min",
         "gh_bed_run_max": "55",
         "gh_bed_run_initial": "5",
+        "gp_root": ".",
     }
     groups = config["garden_zones"]["groups"]
     assert len(groups) == 1
