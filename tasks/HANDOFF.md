@@ -112,3 +112,8 @@ git switch task/014-switch-to-garden-zones   # latest code (012 → 013 → 014 
 script/setup && script/test
 ```
 Read `CLAUDE.md`, then the task file of the step you continue. Specs 018/019: `git switch handoff/2026-10-10`.
+
+## Answered 2026-10-12 (morning)
+All open questions above are answered; behaviour stays as implemented: main switch OFF = full STOP (also when idle);
+queue hold-back for every manual run; STOP clears the whole queue; "+Q" shown as queued → stage 9 screens; `checks`
+up to 15 min is fine (above → split jobs); local `script/test` 4 workers by default (pushed on #29).
