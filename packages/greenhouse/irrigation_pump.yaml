@@ -1,0 +1,62 @@
+# Greenhouse irrigation: one `garden_zones` group, gh_zones ("Greenhouse"). The beds come from
+# packages/greenhouse/bed.yaml (one include per bed, each adds a `garden_zone:` list item; include this file first).
+# This is the ENGINE side. Screens, schedules and Home Assistant talk to it only through the gp_* layer
+# (packages/core/gp.yaml + packages/greenhouse/gp.yaml: group gp_greenhouse, watchdog sensor and reset button, zone
+# switches, the "Greenhouse irrigation" main switch, Home Assistant actions); do not call garden_zones.* from anywhere
+# else.
+# PUMP VARIANT of packages/greenhouse/irrigation.yaml: the same group gh_zones plus a shared pump. Use it INSTEAD of
+# irrigation.yaml under the same package key `gh_irrigation` (a second package cannot add `pump_switch_id` to an
+# existing group item). A test keeps both files equal apart from the pump keys. The pump is the raw relay
+# board_relay_${gh_pump_relay} of the board profile (it must not be a bed relay); the engine switches it on before the
+# first valve opens and off after the last one closes. The raw relay drivers (board_relay_N) live in the board profile
+# under hardware/.
+# Do not call lvgl.* from run_duration_number on_value — restore/HA can fire outside LVGL-safe context and crash.
+# Greenhouse page shows run durations as text only (no LVGL spinbox <-> number sync).
+#
+# Override any of these substitutions in the entry file:
+#   gh_max_parallel     "1" = one valve at a time (default, safe for any power supply); "all" = every bed at once
+#                       (only if the valve power supply and the relay board handle all valves together).
+#   gh_max_on_time      watchdog limit of every bed valve (default 60min, `never` disables it, see
+#                       components/garden_zones/README.md). Raise it together with gh_bed_run_max.
+#   gh_bed_run_max      maximum of the bed run-duration numbers, minutes. Must satisfy
+#                       gh_bed_run_max * 60 s + 2 s <= gh_max_on_time, else the configuration is rejected.
+#   gh_bed_run_initial  initial value of the bed run-duration numbers, minutes (<= gh_bed_run_max).
+#   gh_pump_relay       REQUIRED: the board relay number of the pump (no default: set it in the entry file).
+#   gh_pump_max_on_time pump limit for one watering session (default 2h, the component default; must be >=
+#                       gh_max_on_time; `never` disables it). Changing a safety limit is your call.
+#   gh_pump_idle_timeout  the pump is forced off after this long with no open valve (default 10s, the component
+#                       default; `never` disables it).
+
+substitutions:
+  gh_max_parallel: "1"
+  gh_max_on_time: 60min
+  gh_bed_run_max: "55"
+  gh_bed_run_initial: "5"
+  gh_pump_max_on_time: 2h
+  gh_pump_idle_timeout: 10s
+  # Path from the entry file to the repo root (SPEC §4.2): "." for garden-pilot.yaml, ".." for examples/*.yaml.
+  gp_root: "."
+
+# Remote-package users pin a tag here instead of `source: components` (SPEC §4.2).
+external_components:
+  - source: ${gp_root}/components
+    components: [garden_zones, garden_zone]
+
+garden_zones:
+  groups:
+    - id: gh_zones
+      name: "Greenhouse"
+      max_parallel: ${gh_max_parallel}
+      max_on_time: ${gh_max_on_time}
+      pump_switch_id: board_relay_${gh_pump_relay}
+      pump_max_on_time: ${gh_pump_max_on_time}
+      pump_idle_timeout: ${gh_pump_idle_timeout}
+      auto_advance_switch:
+        id: gh_zones_auto_advance
+        name: "Greenhouse auto advance"
+      on_watchdog_trip:
+        - logger.log:
+            level: ERROR
+            tag: gh_zones
+            format: "Watchdog tripped: zone %d, reason %s"
+            args: ['(int) zone', 'reason.c_str()']

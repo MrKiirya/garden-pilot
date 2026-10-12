@@ -1,0 +1,65 @@
+# SOIL-SKIP VARIANT of packages/greenhouse/bed.yaml: the same bed plus `soil_moisture:` on its zone, so a run is
+# skipped when the soil of the bed is wetter than `skip_above` (task 013). Use it INSTEAD of bed.yaml for that bed,
+# together with the bed's own packages/greenhouse/bed_soil.yaml include (the sensor
+# gh_bed<bed>_soil_moisture); a second package
+# cannot add `soil_moisture:` to an existing `garden_zone:` list item. A test keeps both files equal apart from this
+# block. Extra var: skip_above = the percentage above which the bed is skipped (a literal string, e.g. "60").
+# An unavailable or older than 30 min reading waters as scheduled (a broken probe does not stop watering).
+#
+# One greenhouse bed: a `garden_zone:` list item of the group gh_zones (engine side: enable switch, run-duration number,
+# the raw-relay valve switch kept internal) and a `gp_zone:` list item of the gp group gp_greenhouse (the Home Assistant
+# switch "${bed_name}": on = run the bed, off = stop). Needs packages/core/gp.yaml and packages/greenhouse/gp.yaml.
+# Include it once per bed from the entry file (vars are all required, literal strings):
+#
+#   gh_bed_1: !include
+#     file: packages/greenhouse/bed.yaml
+#     vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+#
+#   bed        bed number; used in ids (gh_bed<bed>_run_duration). Unique per bed.
+#   bed_name   entity name in Home Assistant; "<bed_name> enable" and "<bed_name> run duration" derive from it.
+#   relay      board relay number; the bed drives `board_relay_<relay>` from the hardware profile.
+#
+# Requirements and rules:
+# - Include packages/greenhouse/irrigation.yaml (gh_irrigation) BEFORE the beds: it declares the group gh_zones. The gp
+#   packages (core_gp, gh_gp) come after the last bed.
+# - The order of the bed blocks in the entry file is the zone order (zone_number 0, 1, 2, ... used by the greenhouse
+#   page).
+# - One bed is enough (headless; the greenhouse page still expects beds 1-3 until roadmap stage 9).
+# - The run-duration number max (gh_bed_run_max, minutes) must fit under the watchdog limit gh_max_on_time, see
+#   packages/greenhouse/irrigation.yaml. A restored value above the max is clamped at boot.
+# - Optional soil moisture sensor for the bed: packages/greenhouse/bed_soil.yaml (separate include, reports only).
+# - Do not call lvgl.* from run_duration_number on_value (restore/HA can fire outside an LVGL-safe context).
+
+garden_zone:
+  - group: gh_zones
+    # The engine's own zone switch is internal: Home Assistant sees the gp_zone switch below with the same name.
+    valve_switch:
+      id: gh_bed${bed}_engine_valve
+      name: "${bed_name}"
+      internal: true
+    enable_switch:
+      id: gh_bed${bed}_enable
+      name: "${bed_name} enable"
+    run_duration_number:
+      id: gh_bed${bed}_run_duration
+      name: "${bed_name} run duration"
+      initial_value: ${gh_bed_run_initial}
+      min_value: 1
+      max_value: ${gh_bed_run_max}
+      step: 1
+      unit_of_measurement: "min"
+      restore_value: true
+      icon: mdi:timer-outline
+      mode: BOX
+    valve_switch_id: board_relay_${relay}
+    soil_moisture:
+      sensor_id: gh_bed${bed}_soil_moisture
+      skip_above: ${skip_above}
+      max_age: 30min
+      when_unavailable: water
+
+gp_zone:
+  - group: gp_greenhouse
+    position: ${bed}
+    id: gh_bed${bed}_switch
+    name: "${bed_name}"
