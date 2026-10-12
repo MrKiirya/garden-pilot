@@ -146,7 +146,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 |---|---|
 | Install / update deps | `script/setup` (= `uv sync`) |
 | Lint (yamllint + `esphome config`) | `script/lint` |
-| All checks | `script/test` (pytest, includes `esphome config`) |
+| All checks | `script/test` (pytest in parallel via xdist, 4 workers by default, includes `esphome config`; `GP_PYTEST_WORKERS=0` = serial, `N` or `auto` = other worker counts; extra args pass through) |
 | Fast checks only | `uv run pytest -m unit` |
 | Validate config by hand | `script/config` (uses `secrets.yaml`, or `secrets.example.yaml` if absent). For `garden-pilot-sim.yaml` a real `secrets.yaml` without `sim_api_encryption_key` fails with "Secret not defined": use `GP_SECRETS=example` (same for `script/compile`; `script/sim` always does) |
 | Compile firmware | `script/compile` (real `secrets.yaml`, or `GP_SECRETS=example` to stage example secrets under `.esphome/example-build/`) |
@@ -169,6 +169,7 @@ Always pass the config path explicitly; run from the repo root.
 - Sim entry order after the beds: `sim_bed_N_soil` right after `gh_bed_N`, then `sim_sensors`, `sim_drift`, `sim_sensors_lvgl`, `sim_page_board` (the last two are optional and LVGL-only; `sim_*` ids stay out of device files).
 - The emulator entry file is checked by `esphome config` rows (need `sdl2-config`; skipped without it unless `GP_REQUIRE_SDL=1`, set in CI) and compiled in the CI `compile` jobs.
 - The `host` level also has the emulator screen test (`test_sim_ui.py`: Xvfb + `script/sim-ui` shot, tap, shot). CI runs it in the separate, non-required job `sim-ui` (`GP_REQUIRE_SIM_UI=1`, screenshots uploaded as an artifact); `checks` sets `GP_SKIP_SIM_UI=1`. Elsewhere it skips without Xvfb/xdotool.
+- Parallel runs: each host build + its tests is one xdist group (`HOST_GROUPS` in `tests/conftest.py`, `--dist loadgroup`); a new module fixture that builds a host program must be added there (`tests/test_harness.py` checks). The schedule scenario shifts its clock with `libfaketime` (installed in the image; `GP_REQUIRE_FAKETIME=1` in CI; without the library, e.g. an older local container, it still passes but waits for real minute boundaries; `GP_FAKETIME_LIB=<path>` points at a local build).
 - `cpp` (minimal header-only harness, `script/test-cpp`) and `host` (host compile + scenario of `tests/configs/`) exist for `garden_zones`; both skip when no C++ compiler is installed.
 - Later (roadmap): reference-image comparison of the `script/sim-ui` screenshots, `aioesphomeapi` integration scenarios.
 

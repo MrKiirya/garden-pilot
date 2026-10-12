@@ -5,14 +5,17 @@ directory: the persisted per-zone done marks are the point)."""
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import shutil
+import time
 import types
 from pathlib import Path
 
 import pytest
 
-from conftest import REPO_ROOT, load_esphome_yaml
+import conftest
+from conftest import REPO_ROOT, load_esphome_yaml, require_faketime_or_none
 from test_garden_zones import _need_compiler, _resolve, _run_program
 from test_greenhouse_zones import VERSIONS, _esphome, _generate
 from test_layout import _strip_comments
@@ -241,6 +244,39 @@ def test_schedule_codegen(version: str, tmp_path: Path) -> None:
 # --------------------------------------------------------------------------------------------------------------- host
 
 
+def _align_offset(now_epoch: float, target_second: int, previous: int) -> int:
+    """Smallest clock offset (whole seconds) >= `previous` that puts `now_epoch + offset` in second `target_second` of
+    a minute. Offsets never decrease, so the faked clock stays continuous between the phases of the scenario."""
+    offset = previous
+    while int(now_epoch + offset) % 60 != target_second:
+        offset += 1
+    return offset
+
+
+@pytest.mark.unit
+def test_align_offset() -> None:
+    for now in (1_700_000_000.0, 1_700_000_017.9, 1_700_000_059.99, 1_700_000_060.0):
+        for target in (0, 24, 40, 59):
+            for previous in (0, 5, 61, 125):
+                result = _align_offset(now, target, previous)
+                assert previous <= result < previous + 60
+                assert int(now + result) % 60 == target
+    # a larger previous offset keeps monotonicity: it wraps to the next minute instead of going back
+    natural = _align_offset(1_700_000_000.0, 24, 0)
+    assert _align_offset(1_700_000_000.0, 24, natural + 1) == natural + 60
+
+
+@pytest.mark.unit
+def test_faketime_required_in_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(conftest, "FAKETIME_GLOBS", ["/nonexistent/faketime/libfaketime.so.1"])
+    monkeypatch.delenv("GP_REQUIRE_FAKETIME", raising=False)
+    monkeypatch.delenv("GP_FAKETIME_LIB", raising=False)
+    assert require_faketime_or_none() is None
+    monkeypatch.setenv("GP_REQUIRE_FAKETIME", "1")
+    with pytest.raises(pytest.fail.Exception, match="libfaketime not found"):
+        require_faketime_or_none()
+
+
 def _host_dir() -> Path:
     return REPO_ROOT / ".esphome" / "schedule-host" / _resolve("pinned")
 
@@ -276,13 +312,49 @@ def _value(messages: list[str], key: str) -> str:
     return next(m.split("=", 1)[1] for m in messages if m.startswith(key + "="))
 
 
+class _Clock:
+    """Starts the host program at a chosen second of the minute through libfaketime (relative offset, monotonic clock
+    left real, offsets never decrease). The scenario waits for minute boundaries (the slot granularity is one minute):
+    aligned, those waits are short and the same every time. Without libfaketime it returns no env and the scenario runs
+    on the real clock exactly as before (slow, random waits, same assertions)."""
+
+    def __init__(self) -> None:
+        self.library = require_faketime_or_none()
+        self.offset = 0
+
+    def check_shifted(self, first_on_ms: int, launched: float) -> None:
+        """Started at second 22, the slot (next minute boundary) opens its first valve ~38 s after the start; on the
+        real clock it would be a random 33-93 s. Under GP_REQUIRE_FAKETIME=1 (CI) a library that does not shift the
+        program's clock must not pass silently."""
+        # `t` is the program's CLOCK_MONOTONIC in ms (kept real), `launched` is time.monotonic() before the start.
+        if self.library is not None and os.environ.get("GP_REQUIRE_FAKETIME") == "1":
+            elapsed = first_on_ms / 1000 - launched
+            assert 30 <= elapsed <= 50, f"first valve {elapsed:.1f} s after the start: libfaketime did not shift the clock?"
+
+    def env(self, target_second: int | None = None) -> dict[str, str] | None:
+        if self.library is None:
+            return None
+        if target_second is not None:
+            self.offset = _align_offset(time.time(), target_second, self.offset)
+        return {
+            "LD_PRELOAD": self.library,
+            "FAKETIME": f"+{self.offset}",
+            "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+        }
+
+
 @pytest.mark.host
 def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     prefs = tmp_path / "prefs"
     prefs.mkdir()
+    clock = _Clock()
+    # Phases 1 and 4 compute `now + 90 s` ~3 s after the start; at second 22 that is ~25 s, so the slot starts ~35 s
+    # later. Phase 5 waits for second 20 after ~35 s of other steps, hence a start at second 42 (headroom for slower runners). Phases 2 and 3 keep
+    # the offset of phase 1.
 
     # phase 1: configure slot 1, wait for the fire, kill the program in the middle of zone 2
-    one = _run_program(schedule_program, prefs, timeout=240)
+    launched = time.monotonic()
+    one = _run_program(schedule_program, prefs, timeout=240, env_extra=clock.env(22))
     assert "done" in one, one[-20:]
     assert "phase=1" in one
     start = _value(one, "start")
@@ -294,6 +366,7 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     assert "idle_before=1" in one
     rel = _relays(one)
     first_on = next(row for row in rel if row[2] == 1)
+    clock.check_shifted(first_on[0], launched)
     assert first_on[1] <= 6, f"slot 1 fired {first_on[1]} s after the start minute"
     assert all(row[4] == 0 for row in rel), "slot 2 is disabled: zone 3 never runs"
     assert _value(one, "last").endswith("#1 ran")
@@ -301,11 +374,12 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     assert after == expect_tomorrow, "after the run the next run is tomorrow's"
     assert "mid_zone2=1" in one, "zone 1 completed (relay off) before zone 2 started"
     # zone 1 ran once for about the 10 % duration, then zone 2 (cut by the kill)
-    zone1_on = [row for row in rel if row[2] == 1]
+    # (count rising edges: during the stock valve handover relay 1 is still on in the row where relay 2 opens)
+    zone1_on = [cur for prev, cur in zip([(0, 0, 0, 0, 0)] + rel, rel) if prev[2] == 0 and cur[2] == 1]
     assert len(zone1_on) == 1
 
     # phase 2: restart inside the catch-up window: only the interrupted zone 2 runs again
-    two = _run_program(schedule_program, prefs, timeout=120)
+    two = _run_program(schedule_program, prefs, timeout=120, env_extra=clock.env())
     assert "done" in two, two[-20:]
     assert "phase=2" in two
     rel2 = _relays(two)
@@ -315,23 +389,25 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     assert _value(two, "last").endswith("ran (catch-up)"), two
 
     # phase 3: both zones are done: nothing runs
-    three = _run_program(schedule_program, prefs, timeout=120)
+    three = _run_program(schedule_program, prefs, timeout=120, env_extra=clock.env())
     assert "done" in three, three[-20:]
     assert "phase=3" in three
     assert _relays(three) == [] and "quiet=1" in three
 
     # phase 4: STOP in the middle of slot 2 settles the slot ("stopped"), nothing stays queued
-    four = _run_program(schedule_program, prefs, timeout=240)
+    launched = time.monotonic()
+    four = _run_program(schedule_program, prefs, timeout=240, env_extra=clock.env(22))
     assert "done" in four, four[-20:]
     assert "phase=4" in four
     rel4 = _relays(four)
+    clock.check_shifted(next(row for row in rel4 if row[2] == 1)[0], launched)
     assert any(row[2] == 1 for row in rel4) and any(row[3] == 1 for row in rel4), "slot 2 ran zones 1 and 2"
     assert all(row[4] == 0 for row in rel4)
     assert "stopped_idle=1 queue=0" in four, four[-10:]
     assert _value(four, "last").endswith("#2 stopped"), four
 
     # phase 5: restart inside the window: the stopped slot does not resume (decision 1)
-    five = _run_program(schedule_program, prefs, timeout=420)
+    five = _run_program(schedule_program, prefs, timeout=420, env_extra=clock.env(42))
     assert "done" in five, five[-30:]
     assert "phase=5" in five
     assert "quiet=1 queue=0" in five, "a STOP settles the slot: nothing runs after a restart"

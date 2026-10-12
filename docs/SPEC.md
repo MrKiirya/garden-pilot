@@ -214,6 +214,7 @@ tests/
   `canary-failure` issue.
 
 ## 7. Testing without hardware
+Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${GP_PYTEST_WORKERS:-4} --dist loadgroup`, 4 workers by default so the machine stays usable; `GP_PYTEST_WORKERS=0` = serial, `auto` = every CPU). Every host build and its tests form one xdist group (`HOST_GROUPS` in `tests/conftest.py`), so no two workers share a build directory. The schedule host scenario starts its program at a chosen second of the minute through `libfaketime` (shifted wall clock, real monotonic clock, offsets only grow), which removes the random minute-boundary waits; without the library it runs on the real clock, and `GP_REQUIRE_FAKETIME=1` (CI) turns a missing library into a failure.
 1. `esphome config` for every module combination: the matrix in `tests/test_config_matrix.py` (variants built from
    the real entry file) runs in CI job `checks` via `script/test`; 2 beds, a bed with its own soil sensor and the sim board were added by task 005; task 006 adds rows for the emulator entry file `garden-pilot-sim.yaml` (the two SDL rows need `sdl2-config`; `GP_REQUIRE_SDL=1` in CI makes a missing one a failure).
 2. `esphome compile` for ESP32 and for the host emulator build `garden-pilot-sim.yaml` (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary for the device build).

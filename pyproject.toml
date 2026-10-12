@@ -13,6 +13,7 @@ dependencies = []
 dev = [
     "esphome==2026.9.1",
     "pytest>=8",
+    "pytest-xdist>=3",
     "pyyaml>=6",
     "yamllint>=1.35",
 ]
