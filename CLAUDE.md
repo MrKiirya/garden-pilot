@@ -31,9 +31,12 @@ task's scope, and don't block a review on it — list it as a follow-up.
 |---|---|
 | `garden-pilot.yaml` | Device entry point only: secret substitutions, `esphome:`, `logger:`, ordered `packages:`. |
 | `garden-pilot-sim.yaml` | PC emulator entry point (ESPHome `host` + SDL window), same packages as the device; run with `script/sim`, never flash. |
+| `examples/*.yaml` | Four complete device configs (display + touch): `minimal-1-bed`, `beds-with-pump`, `soil-sensors`, `relay-module-8ch`. `../` includes, `gp_root: ".."`, secrets in `examples/secrets.yaml` (git-ignored); `examples/README.md`. |
 | `hardware/<board>.yaml` | Board profile: `esp32:` block, every GPIO pin (relays `relay_N_pin`, analog `adc_N_pin`, ...) plus display/touch orientation and calibration as substitutions, and the raw relay drivers as internal switches `board_relay_N`. |
+| `hardware/lilygo-t-relay-s3.yaml` | LilyGO T-Relay-S3 (6 relays + 6 expansion through `sn74hc595` `board_sr`, display on the TFT header); config-checked only, not run on a board. |
 | `hardware/sim.yaml` | Emulator profile (`host:` + template relays that log state changes) for irrigation + beds; no Wi-Fi, OTA, display or sensors. |
 | `packages/greenhouse/bed.yaml` | One bed per `!include` with `vars` (`bed`, `bed_name`, `relay`): adds one `garden_zone:` list item (a zone with its enable switch and run-duration number) to the group `gh_zones`. |
+| `packages/greenhouse/bed_soil_skip.yaml`, `irrigation_pump.yaml` | Variants used INSTEAD of `bed.yaml` (adds `soil_moisture` with var `skip_above`; needs that bed's `bed_soil.yaml`) and of `irrigation.yaml` (adds the shared pump `board_relay_${gh_pump_relay}`, `gh_pump_max_on_time`, `gh_pump_idle_timeout`). Tests keep them equal to the originals apart from those keys. |
 | `packages/greenhouse/bed_soil.yaml` | Optional per-bed soil moisture sensor (reports only), second include with `vars`. |
 | `packages/core/api.yaml`, `ota.yaml` | `api` (encryption) and `ota`; secrets arrive as substitutions. |
 | `packages/core/network.yaml` | `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`; device only. |
@@ -85,6 +88,8 @@ introduced by roadmap tasks, not ad hoc.
 without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors and bed soil sensors.
 
 ### ESPHome YAML conventions
+- **`gp_root`:** packages with a repo-relative path (`external_components` `source`, the screensaver font) write `${gp_root}/...` and define `gp_root: "."`; entry files in `examples/` set `gp_root: ".."` and use `../packages/...` / `../hardware/...` includes (`!include` resolves against the including file, `external_components` and fonts against the main config's directory, `!secret` reads `secrets.yaml` next to the file with the tag). Never write a literal `source: components` under `packages/`.
+- **Pins per entry file:** every `${..._pin}` and every relay (`board_relay_N`, bed `relay`, `gh_pump_relay`) an entry file uses must exist in ITS board profile; profiles have contiguous `board_relay_1..N` (N >= 3) and no longer have to define the same relays. Active-low relay modules are not supported (no `inverted:`): they energise while the ESP32 resets.
 - **Pins only in `hardware/`, secrets only as entry-file substitutions** (`substitutions: x: !secret x`);
   packages use `${x}`. `tests/test_layout.py` enforces both.
 - **Add a bed** = one `!include` block with `vars` in the entry file; features reference relays as `board_relay_N`
@@ -160,7 +165,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 | C++ unit tests | `script/test-cpp` |
 | Flash / logs | `uv run esphome run garden-pilot.yaml` / `uv run esphome logs garden-pilot.yaml` |
 
-Always pass the config path explicitly; run from the repo root.
+Always pass the config path explicitly; run from the repo root. Configs in a subdirectory work too: `script/config examples/<file>.yaml` (and `script/compile`) stage the config at its relative path with `secrets.example.yaml` next to it (`GP_SECRETS=example`) or use `examples/secrets.yaml`.
 
 ## Test levels
 - `unit` — pytest repo checks with no ESPHome toolchain: secrets template, public hygiene, YAML shape.
