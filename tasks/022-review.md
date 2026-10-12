@@ -107,3 +107,62 @@ Range: `git diff task/021-review-follow-ups HEAD` (4 commits, stacked on 021).
 - `GP_FAKETIME_LIB` override (an implementer addition) and the `sim-ui` module group (not in the task text): both
   sensible.
 - Decision 6 (no ccache / build-dir cache) and decision 7 (scenario durations untouched): agreed.
+
+---
+
+# 022 — Review (round 2)
+
+**Verdict: APPROVE**
+
+Scope of round 2: `git diff 4638954 HEAD` (`tests/conftest.py`, `tests/test_harness.py`, `tests/test_schedule.py`,
+task notes). No YAML, component, CI or Dockerfile changes.
+
+## Checks run (round 2)
+- `podman exec ... -e GP_REQUIRE_CXX=1 gp-dev-014 script/test -v` (parallel, default workers):
+  `781 passed in 452.17s (0:07:32)`, 0 skipped. This container has no system libfaketime, so the schedule scenario ran
+  on the real clock here, which explains the longer wall time compared with the implementer's 5:04.
+- Groups from the `-v` output (group: worker). Each group stayed on one worker: gp-host gw5, greenhouse-host gw3,
+  gz-groups gw1, gz-host-2026.6.3 gw4, gz-host-2026.9.1 gw0, gz-overlap gw4, gz-pump gw6, gz-safety gw2,
+  schedule-host gw7, sim-ui gw6.
+- `GP_REQUIRE_FAKETIME=1 GP_FAKETIME_LIB=<local build> uv run pytest tests/test_schedule.py -k "host_scenario or faketime"`:
+  `2 passed in 322.92s`, scenario call 319.61 s. `check_shifted` passed in phases 1 and 4.
+- `script/lint`: `esphome config OK: garden-pilot.yaml`, rc 0.
+
+## Round 1 items
+- **Required 1 (xdist groups ignored): resolved.** The hook is now `@pytest.hookimpl(tryfirst=True)`, and the full
+  run shows `@<group>` ids with one worker per group (above). I checked the regression test separately with the same
+  tiny two-test session in the container. Without `tryfirst`, the tests ran as `test_a` on gw0 and `test_b` on gw1,
+  with no suffix. With `tryfirst`, the ids were `test_a@g1` and `test_b@g1`, both on gw0. So the subprocess check
+  would fail without the fix, and the `pytest_impl["tryfirst"]` assertion pins the real hook.
+- **Suggestion 2 (group by resolved version): done.** Both `host_build` and `host_build_pinned` map to
+  `gz-host-<resolved>`, read from `pyproject.toml` the same way `script/_esphome` reads it. The run shows
+  `gz-host-2026.9.1` and `gz-host-2026.6.3`. The harness test now asserts that no other group starts with `gz-host-`.
+- **Suggestion 3 (phase 5 headroom): done.** `clock.env(42)`.
+- **Suggestion 1 (clock-shift assertion): done.** `_Clock.check_shifted` asserts that the first valve opens 30-50 s
+  after launch in phases 1 and 4. It applies only when the library is present and `GP_REQUIRE_FAKETIME=1`. Both
+  clocks are `CLOCK_MONOTONIC`: ESPHome host `millis()` and Python `time.monotonic()`. It passed in the faketime run
+  above.
+
+## New findings
+### Required
+None.
+
+### Suggestions
+1. `tests/test_schedule.py` `_Clock.check_shifted`: `t` is the host `millis()`, which is
+   `static_cast<uint32_t>` of the absolute `CLOCK_MONOTONIC` in ms (`esphome/components/host/hal.cpp`). It wraps
+   after about 49.7 days of machine uptime. On such a machine, `first_on_ms / 1000 - launched` is off by a multiple
+   of 4294967.296 s, and the assertion fails falsely under `GP_REQUIRE_FAKETIME=1`. CI runners are fresh, so this
+   only affects long-running dev hosts that set the flag. Fix direction: compare modulo 2**32 ms, i.e.
+   `((first_on_ms - int(launched * 1000)) % 2**32) / 1000`.
+2. `tests/test_harness.py::test_group_marks_reach_xdist` docstring says "with the real conftest hook". The subprocess
+   uses its own copy of a tryfirst hook, and the real hook is covered only by the attribute assertion. Reword the
+   docstring, or load the real `host_group` logic in the subprocess conftest.
+3. `tests/conftest.py` `_resolved_version`: any label other than `minimum` resolves to the pin. That is correct for
+   `VERSIONS = ["pinned", "minimum"]`. If an explicit version or `latest` is ever added as a param, it would share
+   the pinned group. A short comment, or returning the label when it looks like a version, would prevent that.
+
+## Acceptance criteria (round 2 delta)
+- Parallel `script/test` groups host builds by directory: verified (above).
+- Schedule scenario aligned with libfaketime and guarded under `GP_REQUIRE_FAKETIME=1`: verified locally with a
+  built library. The CI-side check (Debian package path, `checks` duration <= 15 min, target 12) remains for the CI
+  run on the branch, as the task notes say.
