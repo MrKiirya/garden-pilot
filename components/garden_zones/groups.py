@@ -26,6 +26,7 @@ from esphome.const import (
     CONF_STEP,
     CONF_TRIGGER_ID,
     CONF_UNIT_OF_MEASUREMENT,
+    ENTITY_CATEGORY_CONFIG,
 )
 from esphome.core import CORE, ID
 from esphome.helpers import fnv1_hash
@@ -49,6 +50,8 @@ CONF_PUMP_MAX_ON_TIME = "pump_max_on_time"
 CONF_SKIP_ABOVE = "skip_above"
 CONF_SOIL_MOISTURE = "soil_moisture"
 CONF_WHEN_UNAVAILABLE = "when_unavailable"
+CONF_AUTO_ADVANCE_SWITCH = "auto_advance_switch"
+CONF_MAIN_SWITCH = "main_switch"
 ZONE_KEY = "garden_zone"
 
 group_ns = gz.sprinkler_ns
@@ -62,6 +65,7 @@ RemoveQueuedZoneAction = group_ns.class_("RemoveQueuedZoneAction", automation.Ac
 RunZoneAction = group_ns.class_("RunZoneAction", automation.Action)
 StartGroupQueueAction = group_ns.class_("StartGroupQueueAction", automation.Action)
 StartGroupCycleAction = group_ns.class_("StartGroupCycleAction", automation.Action)
+ClearGroupQueueAction = group_ns.class_("ClearGroupQueueAction", automation.Action)
 ShutdownGroupAction = group_ns.class_("ShutdownGroupAction", automation.Action)
 IsZoneQueuedCondition = group_ns.class_("IsZoneQueuedCondition", automation.Condition)
 
@@ -186,6 +190,19 @@ _group_base = cv.Schema(
         cv.Optional(CONF_MAX_ON_TIME, default="60min"): _limit,
         cv.Optional(CONF_PUMP_MAX_ON_TIME): _limit,
         cv.Optional(CONF_PUMP_IDLE_TIMEOUT): _limit,
+        # Group entities: same sub-schemas, names and defaults as the stock controller's switches.
+        cv.Optional(CONF_MAIN_SWITCH): cv.maybe_simple_value(
+            switch.switch_schema(gz.SprinklerControllerSwitch),
+            key=CONF_NAME,
+        ),
+        cv.Optional(CONF_AUTO_ADVANCE_SWITCH): cv.maybe_simple_value(
+            switch.switch_schema(
+                gz.SprinklerControllerSwitch,
+                entity_category=ENTITY_CATEGORY_CONFIG,
+                default_restore_mode="RESTORE_DEFAULT_OFF",
+            ),
+            key=CONF_NAME,
+        ),
         cv.Optional(CONF_ON_WATCHDOG_TRIP): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(WatchdogTripTrigger)}
         ),
@@ -498,6 +515,12 @@ async def watchdog_tripped_to_code(config, condition_id, template_arg, args):
 
 
 @automation.register_action(
+    "garden_zones.clear_group_queue",
+    ClearGroupQueueAction,
+    GROUP_ACTION_SCHEMA,
+    synchronous=True,
+)
+@automation.register_action(
     "garden_zones.start_group_queue",
     StartGroupQueueAction,
     GROUP_ACTION_SCHEMA,
@@ -558,6 +581,14 @@ async def to_code_groups(config):
         watchdog = cg.new_Pvariable(watchdog_decl, name)
         await cg.register_component(watchdog, {})
         cg.add(group_var.set_watchdog(watchdog))
+        if CONF_MAIN_SWITCH in group:
+            sw_main = await switch.new_switch(group[CONF_MAIN_SWITCH])
+            await cg.register_component(sw_main, group[CONF_MAIN_SWITCH])
+            cg.add(group_var.set_main_switch(sw_main))
+        if CONF_AUTO_ADVANCE_SWITCH in group:
+            sw_aa = await switch.new_switch(group[CONF_AUTO_ADVANCE_SWITCH])
+            await cg.register_component(sw_aa, group[CONF_AUTO_ADVANCE_SWITCH])
+            cg.add(group_var.set_auto_advance_switch(sw_aa))
         pump = None
         if gz.CONF_PUMP_SWITCH_ID in group:
             pump = await cg.get_variable(group[gz.CONF_PUMP_SWITCH_ID])

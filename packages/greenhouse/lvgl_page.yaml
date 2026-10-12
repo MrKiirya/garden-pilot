@@ -61,9 +61,9 @@ lvgl:
             width: 92
             height: 30
             on_click:
-              - sprinkler.start_single_valve:
-                  id: gh_sprinkler
-                  valve_number: 0
+              - garden_zones.run_zone:
+                  id: gh_zones
+                  zone_number: 0
             widgets:
               - label:
                   align: CENTER
@@ -75,9 +75,9 @@ lvgl:
             width: 92
             height: 30
             on_click:
-              - sprinkler.start_single_valve:
-                  id: gh_sprinkler
-                  valve_number: 1
+              - garden_zones.run_zone:
+                  id: gh_zones
+                  zone_number: 1
             widgets:
               - label:
                   align: CENTER
@@ -89,9 +89,9 @@ lvgl:
             width: 92
             height: 30
             on_click:
-              - sprinkler.start_single_valve:
-                  id: gh_sprinkler
-                  valve_number: 2
+              - garden_zones.run_zone:
+                  id: gh_zones
+                  zone_number: 2
             widgets:
               - label:
                   align: CENTER
@@ -103,9 +103,9 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - sprinkler.queue_valve:
-                  id: gh_sprinkler
-                  valve_number: 0
+              - garden_zones.queue_zone:
+                  id: gh_zones
+                  zone_number: 0
             widgets:
               - label:
                   align: CENTER
@@ -117,9 +117,9 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - sprinkler.queue_valve:
-                  id: gh_sprinkler
-                  valve_number: 1
+              - garden_zones.queue_zone:
+                  id: gh_zones
+                  zone_number: 1
             widgets:
               - label:
                   align: CENTER
@@ -131,9 +131,9 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - sprinkler.queue_valve:
-                  id: gh_sprinkler
-                  valve_number: 2
+              - garden_zones.queue_zone:
+                  id: gh_zones
+                  zone_number: 2
             widgets:
               - label:
                   align: CENTER
@@ -145,7 +145,7 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              # Asks first (packages/lvgl/dialog_confirm.yaml); the legacy direct sprinkler call stays until stage 8.
+              # Asks first (packages/lvgl/dialog_confirm.yaml); the legacy direct garden_zones call stays until stage 8.
               - if:
                   condition:
                     not:
@@ -162,7 +162,7 @@ lvgl:
                         condition:
                           lambda: "return id(gp_confirm_result);"
                         then:
-                          - sprinkler.shutdown: gh_sprinkler
+                          - garden_zones.shutdown_group: gh_zones
             widgets:
               - label:
                   align: CENTER
@@ -174,8 +174,8 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - sprinkler.start_from_queue:
-                  id: gh_sprinkler
+              - garden_zones.start_group_queue:
+                  id: gh_zones
             widgets:
               - label:
                   align: CENTER

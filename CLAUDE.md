@@ -22,7 +22,7 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
 7. **Tests first** where code is testable (Python checks now, C++ core of `garden_zones` later).
 
 These principles apply to **new and changed code**. Existing greenhouse packages predate them (the greenhouse
-page calls `sprinkler.*` directly, valves have no on-time guard beyond `run_duration_number`); they migrate in
+page calls `garden_zones.*` on the group `gh_zones` directly instead of going through `gp_*`); they migrate in
 roadmap stages 7-9. Don't "fix" legacy code outside a
 task's scope, and don't block a review on it — list it as a follow-up.
 
@@ -33,7 +33,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `garden-pilot-sim.yaml` | PC emulator entry point (ESPHome `host` + SDL window), same packages as the device; run with `script/sim`, never flash. |
 | `hardware/<board>.yaml` | Board profile: `esp32:` block, every GPIO pin (relays `relay_N_pin`, analog `adc_N_pin`, ...) plus display/touch orientation and calibration as substitutions, and the raw relay drivers as internal switches `board_relay_N`. |
 | `hardware/sim.yaml` | Emulator profile (`host:` + template relays that log state changes) for irrigation + beds; no Wi-Fi, OTA, display or sensors. |
-| `packages/greenhouse/bed.yaml` | One bed per `!include` with `vars` (`bed`, `bed_name`, `relay`): adds a valve to `gh_sprinkler` via `!extend`. |
+| `packages/greenhouse/bed.yaml` | One bed per `!include` with `vars` (`bed`, `bed_name`, `relay`): adds one `garden_zone:` list item (a zone with its enable switch and run-duration number) to the group `gh_zones`. |
 | `packages/greenhouse/bed_soil.yaml` | Optional per-bed soil moisture sensor (reports only), second include with `vars`. |
 | `packages/core/api.yaml`, `ota.yaml` | `api` (encryption) and `ota`; secrets arrive as substitutions. |
 | `packages/core/network.yaml` | `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`; device only. |
@@ -46,15 +46,15 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/lvgl/fonts/` | Vendored TTF (Montserrat Bold) + `OFL.txt` for the glyph-limited custom font. |
 | `packages/lvgl/dialog_confirm.yaml` | Confirm dialog on the LVGL top layer + `gp_confirm` script (pattern in its header). |
 | `packages/core/diagnostics.yaml` | Internal version / uptime / restart button for the Network page (no new HA entities). |
-| `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`sprinkler`), LVGL page. |
-| `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
+| `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`irrigation.yaml`: the `garden_zones` group `gh_zones`, its entities, watchdog sensor and reset button), LVGL page. |
+| `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), watchdog fault injection "Sim rogue relay 1" (`fault.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
 | `secrets.example.yaml` | Template with obvious dummy values; copy to git-ignored `secrets.yaml`. |
 | `.devcontainer/` | Reference dev environment: shared `Dockerfile`, default config, opt-in `sdl/` config (host display). |
 | `design/` | Snapshot of the design system (rules, tokens, icons); the live design lives in claude.ai artifacts. |
 | `docs/SPEC.md` | Product spec, architecture, roadmap, open questions. |
 | `.github/` | CI (`workflows/ci.yml`, weekly `canary.yml`) and `dependabot.yml`. |
-| `components/garden_zones/` | Fork of the stock `sprinkler`, GPLv3; patches listed in `PATCHES.md`, marked `GZ-PATCH` in the code. Not used by the device yet. |
+| `components/garden_zones/` | Fork of the stock `sprinkler`, GPLv3; patches listed in `PATCHES.md`, marked `GZ-PATCH` in the code. Used by the device and the emulator (group `gh_zones`, task 014). |
 | `components/garden_zone/` | One `garden_zone:` entry of a `garden_zones` group (`MULTI_CONF`, schema only); MIT like the repo. |
 | `tasks/` | Task specs and reviews (see `tasks/README.md`). |
 | `tests/` | pytest repo checks; `script/*` wraps all commands. |
@@ -70,8 +70,8 @@ introduced by roadmap tasks, not ad hoc.
    `core_diagnostics` and the home page); then `lvgl_page_home`, other `lvgl_page_*`, `lvgl_dialog_confirm`,
    `lvgl_screensaver`,
    `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`, `lvgl_boot_wifi`.
-5. `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) → `gh_bed_N` (+ optional
-   `gh_bed_N_soil` after its bed) in valve order, at least 2 beds → `gh_lvgl_page` → `gh_sensors_air` →
+5. `gh_irrigation` (before the greenhouse page: its buttons call the group `gh_zones`) → `gh_bed_N` (+ optional
+   `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `gh_lvgl_page` → `gh_sensors_air` →
    `gh_sensors_soil` → `gh_sprinkler_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
@@ -82,16 +82,17 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - **Pins only in `hardware/`, secrets only as entry-file substitutions** (`substitutions: x: !secret x`);
   packages use `${x}`. `tests/test_layout.py` enforces both.
 - **Add a bed** = one `!include` block with `vars` in the entry file; features reference relays as `board_relay_N`
-  and analog inputs as `${adc_N_pin}`, never GPIO numbers. With the stock sprinkler at least 2 beds are needed.
+  and analog inputs as `${adc_N_pin}`, never GPIO numbers. One bed is enough; its run-duration max (`gh_bed_run_max`) must fit under `gh_max_on_time`.
 - **Board:** match the `esp32:` board declared in the `hardware/` profile until a migration task changes it.
 - **Secrets files:** `secrets.yaml` / `secrets.example.yaml` are substitution files only (no `esphome:` block);
   `.vscode/settings.json` maps them to plain YAML so the ESPHome extension doesn't validate them as devices.
 - **Remote packages** must not use `!secret`: expose `substitutions` and assign secrets from the entry file or a
   local include.
-- **`sprinkler`** ([docs](https://esphome.io/components/sprinkler/)): every valve has `valve_switch_id`
-  pointing at a real switch; with more than one valve `main_switch` and `auto_advance_switch` are required. Home
-  Assistant and automations use the controller's zone switches and actions (`sprinkler.start_full_cycle`,
-  `start_single_valve`, `shutdown`, queue actions) — never the raw GPIO switches, which stay `internal: true`.
+- **`garden_zones`** (groups form, `components/garden_zones/README.md`): zones come from `garden_zone:` list items, every
+  zone has `valve_switch_id` pointing at a real switch (the raw relay, `internal: true`). Home Assistant and automations
+  use the zone switches and the group entities ("Greenhouse irrigation", "Greenhouse auto advance") and actions
+  (`garden_zones.run_zone`, `queue_zone`, `start_group_queue`, `start_group_cycle`, `shutdown_group`,
+  `clear_group_queue`) — never the raw GPIO switches.
 - **Adding an LVGL page:** create `packages/lvgl/page_<name>.yaml` with `lvgl: pages: [{id: <page_id>,
   widgets: …}]`, add it to `packages:` after `lvgl_base` (order matters only for the boot page), navigate with
   `lvgl.page.show: <page_id>`.
@@ -109,19 +110,20 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - Actions extended into a `script` run outside the `on_touch` trigger: don't use the trigger-only `touch`
   variable there; use `id(touch)->get_touch()`.
 - Don't call `lvgl.*` from a `number`'s `on_value` that can fire on restore/HA before LVGL is ready; poll from
-  an `interval` instead (see `packages/greenhouse/sprinkler_lvgl_status.yaml`).
+  an `interval` instead (see `packages/greenhouse/sprinkler_lvgl_status.yaml`, name kept from the stock-sprinkler days).
 - Package merge: substitutions in the entry file win; dicts merge by key; component lists merge by `id`.
   Prefer small includes over deep `!extend` / `!remove` chains.
 - The sim entry file needs `sdl2-config` (SDL2 dev files) even for `esphome config`; `web_server` is not available on
   the `host` platform, and `on_time_sync` does not fire on `host` (poll the clock from an `interval`).
 - `xdotool click` is too short for LVGL to register a touch: use press, move, release with pauses (`script/sim-ui tap`). SDL `headless: true` disables the SDL touchscreen, so screenshots are X-level grabs under Xvfb instead.
+- A template entity must not reuse the generated id `<group>_watchdog` (the group's watchdog component) or `<group>_lane_<n>`.
 - Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
   (`tests/test_service.py`); it is enforced by `run_duration` and by the separate `gp_valve_test_guard` script. Service
-  mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the sprinkler opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
+  mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the lane opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
 - A `garden_zones` group's watchdog is on by default (`max_on_time` 60 min, `pump_max_on_time` 2 h, `pump_idle_timeout` 10 s); only `never` disables a limit (WARN at boot). A zone's `run_duration_number` `max_value` (stock default 86400 s) must fit under its `max_on_time` or config fails (skipped for `never`).
 - `garden_zone:` is always a list item (`- group: ...`): two dict-form entries from different packages merge into one zone.
-- `sprinkler` limitations (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
+- Stock `sprinkler` limitations the fork works around (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
   queue, queued zones run even when disabled): SPEC §3.
 
 ## Environment
