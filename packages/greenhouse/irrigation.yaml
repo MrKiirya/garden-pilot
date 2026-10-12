@@ -2,7 +2,8 @@
 # packages/greenhouse/bed.yaml (one include per bed, each adds a `garden_zone:` list item; include this file first).
 # This is the ENGINE side. Screens, schedules and Home Assistant talk to it only through the gp_* layer
 # (packages/core/gp.yaml + packages/greenhouse/gp.yaml: group gp_greenhouse, watchdog sensor and reset button, zone
-# switches, Home Assistant actions); do not call garden_zones.* from anywhere else.
+# switches, the "Greenhouse irrigation" main switch, Home Assistant actions); do not call garden_zones.* from anywhere
+# else.
 # Gravity-fed bed zones from a shared barrel, no pump (self-drain barrel line). The raw relay drivers (board_relay_N)
 # live in the board profile under hardware/.
 # Do not call lvgl.* from run_duration_number on_value — restore/HA can fire outside LVGL-safe context and crash.
@@ -34,20 +35,6 @@ garden_zones:
       name: "Greenhouse"
       max_parallel: ${gh_max_parallel}
       max_on_time: ${gh_max_on_time}
-      main_switch:
-        id: gh_zones_main_switch
-        name: "Greenhouse irrigation"
-        icon: mdi:water-pump
-        on_turn_on:
-          - logger.log:
-              level: INFO
-              tag: gh_zones_main
-              format: "Greenhouse irrigation main: ON"
-        on_turn_off:
-          - logger.log:
-              level: INFO
-              tag: gh_zones_main
-              format: "Greenhouse irrigation main: OFF"
       auto_advance_switch:
         id: gh_zones_auto_advance
         name: "Greenhouse auto advance"

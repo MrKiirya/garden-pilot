@@ -25,6 +25,7 @@
 #include "engine.h"
 #include "format.h"
 #include "history.h"
+#include "limits.h"
 #include "zone_model.h"
 
 namespace esphome::gp {
@@ -101,8 +102,18 @@ class GpGroup {
       return;
     }
     seconds = this->clamp_(zone, seconds);
-    ESP_LOGI(TAG, "%s: enqueue zone %u", this->name_.c_str(), (unsigned) (zone + 1));
-    this->engine_->queue_zone(zone, seconds);
+    if (this->run_blocks_queue_(false)) {
+      if (this->deferred_enq_.size() >= MAX_DEFERRED) {
+        ESP_LOGW(TAG, "%s: enqueue_zone: too many deferred requests, dropped", this->name_.c_str());
+        return;
+      }
+      ESP_LOGI(TAG, "%s: enqueue_zone deferred: a run that is not a queue run is active, the zone queues after it",
+               this->name_.c_str());
+      this->deferred_enq_.push_back(DeferredEnqueue{0, 0, zone, seconds, true});
+      this->deferred_.request(millis());
+      return;
+    }
+    this->queue_now_(zone, seconds);
   }
 
   /// Queues every zone of the bit mask (bit n = zone n, 0-based) in zone order, each for its configured run duration
@@ -113,7 +124,7 @@ class GpGroup {
       ESP_LOGW(TAG, "%s: enqueue_zones refused: service mode is on", this->name_.c_str());
       return;
     }
-    if (this->run_blocks_queue_()) {
+    if (this->run_blocks_queue_(false)) {
       // The engine picks queued zones at the next zone change, also in the middle of a cycle: hold them back here
       // and queue them after the run has ended (refresh()).
       if (this->deferred_enq_.size() >= MAX_DEFERRED) {
@@ -122,7 +133,7 @@ class GpGroup {
       }
       ESP_LOGI(TAG, "%s: enqueue_zones deferred: a run that is not a queue run is active, the zones queue after it",
                this->name_.c_str());
-      this->deferred_enq_.push_back(DeferredEnqueue{mask, pct});
+      this->deferred_enq_.push_back(DeferredEnqueue{mask, pct, 0, {}, false});
       this->deferred_.request(millis());
       return;
     }
@@ -143,7 +154,7 @@ class GpGroup {
       optional<uint32_t> seconds;
       if (in.run_duration > 0)
         seconds = static_cast<uint32_t>((static_cast<uint64_t>(in.run_duration) * pct + 50) / 100);
-      this->enqueue_zone(zone, seconds);
+      this->queue_now_(zone, this->clamp_(zone, seconds));
     }
   }
 
@@ -159,18 +170,19 @@ class GpGroup {
       ESP_LOGW(TAG, "%s: start_queue refused: service mode is on", this->name_.c_str());
       return;
     }
-    if (this->run_blocks_queue_()) {
-      // A manual full cycle (or any run that is not a queue run) is not cut short: the queue starts after that run
-      // has ended (refresh()).
-      ESP_LOGI(TAG, "%s: start_queue deferred: a run that is not a queue run is active, the queue starts after it",
-               this->name_.c_str());
+    if (this->run_blocks_queue_(true)) {
+      // A manual full cycle (or any run that is not a queue run) is not cut short, and the engine loses a start while
+      // it is stopping: the queue starts after that run / the stop has ended (refresh()).
+      ESP_LOGI(TAG, "%s: start_queue deferred: %s", this->name_.c_str(), this->block_reason_());
       this->deferred_start_ = true;
+      this->deferred_cycle_ = false;
       this->deferred_.request(millis());
       return;
     }
     this->apply_deferred_();
     this->deferred_.cancel();
     this->deferred_start_ = false;
+    this->deferred_cycle_ = false;
     this->cycle_run_ = false;
     ESP_LOGI(TAG, "%s: start queue", this->name_.c_str());
     this->queue_run_ = true;
@@ -183,6 +195,15 @@ class GpGroup {
       ESP_LOGW(TAG, "%s: full_cycle refused: service mode is on", this->name_.c_str());
       return;
     }
+    if (this->engine_->stopping()) {
+      ESP_LOGI(TAG, "%s: full_cycle deferred: the group is still stopping, the cycle starts after it",
+               this->name_.c_str());
+      this->deferred_cycle_ = true;
+      this->deferred_start_ = false;
+      this->deferred_.request(millis());
+      return;
+    }
+    this->deferred_cycle_ = false;
     ESP_LOGI(TAG, "%s: full cycle", this->name_.c_str());
     this->cycle_run_ = true;
     this->queue_run_ = true;
@@ -274,9 +295,13 @@ class GpGroup {
     if (this->deferred_.update(s.running, now_ms)) {
       ESP_LOGI(TAG, "%s: the run has ended, queueing the deferred zones", this->name_.c_str());
       const bool start = this->deferred_start_;
+      const bool cycle = this->deferred_cycle_;
       this->deferred_start_ = false;
+      this->deferred_cycle_ = false;
       this->apply_deferred_();
-      if (start)
+      if (cycle)
+        this->full_cycle();
+      else if (start)
         this->start_queue();
     }
   }
@@ -302,27 +327,47 @@ class GpGroup {
   static constexpr uint32_t INTENT_MS = 15000;
   static constexpr uint32_t QUEUE_RUN_GRACE_MS = 5000;
 
+  /// A held-back enqueue: a zone mask + percent (`single` false) or one zone + seconds (`single` true).
   struct DeferredEnqueue {
     uint32_t mask;
     uint8_t pct;
+    size_t zone;
+    optional<uint32_t> seconds;
+    bool single;
   };
   static constexpr size_t MAX_DEFERRED = 16;
 
-  /// True when queueing / starting now would mix into a running cycle or a manual run (reads the engine).
-  bool run_blocks_queue_() {
+  /// True when queueing / starting now would mix into a running cycle or a manual run (reads the engine). With
+  /// `start` set, an engine that is still stopping also blocks (it would lose the start).
+  bool run_blocks_queue_(bool start) {
     this->engine_->read(this->input_);
     bool busy = false;
     for (size_t i = 0; i < this->input_.zone_count && i < MAX_ZONES; i++)
       busy = busy || this->input_.zones[i].running;
-    return start_must_wait(busy, this->cycle_run_, this->queue_run_);
+    const bool stopping = start && this->engine_->stopping();
+    this->block_stopping_ = stopping;
+    return start_must_wait(busy, stopping, this->cycle_run_, this->queue_run_);
+  }
+  const char *block_reason_() const {
+    return this->block_stopping_ ? "the group is still stopping, the queue starts after it"
+                                 : "a run that is not a queue run is active, the queue starts after it";
+  }
+
+  void queue_now_(size_t zone, optional<uint32_t> seconds) {
+    ESP_LOGI(TAG, "%s: enqueue zone %u", this->name_.c_str(), (unsigned) (zone + 1));
+    this->engine_->queue_zone(zone, seconds);
   }
 
   /// Queues the held-back enqueue requests (in arrival order); nothing is started.
   void apply_deferred_() {
     std::vector<DeferredEnqueue> list;
     list.swap(this->deferred_enq_);
-    for (const DeferredEnqueue &request : list)
-      this->enqueue_zones(request.mask, request.pct);
+    for (const DeferredEnqueue &request : list) {
+      if (request.single)
+        this->enqueue_zone(request.zone, request.seconds);
+      else
+        this->enqueue_zones(request.mask, request.pct);
+    }
   }
 
   /// A STOP / service mode / queue clear drops everything that waits for the end of a run.
@@ -330,6 +375,7 @@ class GpGroup {
     this->deferred_.cancel();
     this->deferred_enq_.clear();
     this->deferred_start_ = false;
+    this->deferred_cycle_ = false;
   }
 
   bool check_zone_(const char *what, size_t zone) const {
@@ -343,12 +389,11 @@ class GpGroup {
   /// A requested run longer than the zone's maximum (run-duration number max) is cut to it.
   optional<uint32_t> clamp_(size_t zone, optional<uint32_t> seconds) const {
     const uint32_t max = this->engine_->max_run_seconds(zone);
-    if (seconds.has_value() && max > 0 && *seconds > max) {
+    const optional<uint32_t> cut = clamp_run(seconds, max);
+    if (cut != seconds)
       ESP_LOGW(TAG, "%s: zone %u: %u s cut to the maximum %u s", this->name_.c_str(), (unsigned) (zone + 1),
                (unsigned) *seconds, (unsigned) max);
-      return max;
-    }
-    return seconds;
+    return cut;
   }
 
   Source source_for_(size_t zone, uint32_t now_ms) const {
@@ -377,6 +422,8 @@ class GpGroup {
   DeferredStart deferred_;
   std::vector<DeferredEnqueue> deferred_enq_;
   bool deferred_start_{false};
+  bool deferred_cycle_{false};  ///< a full_cycle waits for the engine to finish stopping
+  bool block_stopping_{false};
   uint32_t queue_idle_ms_{0};
 };
 

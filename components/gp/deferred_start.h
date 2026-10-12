@@ -10,8 +10,11 @@
 
 namespace esphome::gp {
 
-/// True when starting the queue now would interrupt a running cycle / manual run.
-inline bool start_must_wait(bool busy, bool cycle_run, bool queue_run) { return busy && (cycle_run || !queue_run); }
+/// True when starting the queue now would interrupt a running cycle / manual run, or when the engine is still stopping
+/// (a start issued then is lost by the engine's state machine, so it is held back until the lane is idle).
+inline bool start_must_wait(bool busy, bool stopping, bool cycle_run, bool queue_run) {
+  return stopping || (busy && (cycle_run || !queue_run));
+}
 
 class DeferredStart {
  public:

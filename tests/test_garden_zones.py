@@ -207,6 +207,29 @@ def _load_lane_plan():
 
 
 @pytest.mark.unit
+def test_watchdog_label_is_short() -> None:
+    """The watchdog log lines add "group '<name>' zone <n>" themselves: the label is the switch name or id only."""
+    import ast
+    import types
+
+    source = (COMPONENT / "groups.py").read_text(encoding="utf-8")
+    node = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == "_watchdog_label")
+    gz = types.SimpleNamespace(CONF_VALVE_SWITCH="valve_switch", CONF_VALVE_SWITCH_ID="valve_switch_id")
+    namespace = {"gz": gz, "CONF_NAME": "name"}
+    exec(compile(ast.Module([node], []), "groups.py", "exec"), namespace)  # the module itself needs esphome
+    groups = types.SimpleNamespace(_watchdog_label=namespace["_watchdog_label"])
+
+    class _Id:
+        id = "board_relay_1"
+
+    named = {gz.CONF_VALVE_SWITCH: {"name": "Bed one"}, gz.CONF_VALVE_SWITCH_ID: _Id()}
+    plain = {gz.CONF_VALVE_SWITCH: "Bed one", gz.CONF_VALVE_SWITCH_ID: _Id()}
+    assert groups._watchdog_label(named) == "Bed one"
+    assert groups._watchdog_label(plain) == "board_relay_1"
+    assert "group '" not in groups._watchdog_label(named) + groups._watchdog_label(plain)
+
+
+@pytest.mark.unit
 def test_lane_plan_is_esphome_free() -> None:
     import ast
     import sys
@@ -1147,6 +1170,9 @@ def test_safety_codegen(safety_generated: Path) -> None:
     # beds / stuck: max_on_time 3 s; lawn pump limits 5 s / 2 s
     assert re.search(r"lawn_watchdog->set_pump\(gz_pump, 5000, 2000\);", main_cpp), "pump limits"
     assert len(re.findall(r"_watchdog->add_zone\([^;]*, 3000\);", main_cpp)) == 7
+    assert "group '" not in "".join(re.findall(r"_watchdog->add_zone\([^;]*;", main_cpp)), "the label is not nested"
+    # a fixed `run_duration: 1s` zone hands its length to gp as the zone maximum
+    assert re.search(r"->set_zone_max_run\(\d+, 1\);", main_cpp)
     # the per-zone override of the "pair" group (group value 3 s) is what the watchdog gets
     assert len(re.findall(r"pair_watchdog->add_zone\([^;]*, 5000\);", main_cpp)) == 1
     count = int(

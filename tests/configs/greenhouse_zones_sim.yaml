@@ -47,7 +47,7 @@ interval:
           now += id(board_relay_1).state ? '1' : '0';
           now += id(board_relay_2).state ? '1' : '0';
           now += id(board_relay_3).state ? '1' : '0';
-          now += id(gh_zones_main_switch).state ? '1' : '0';
+          now += id(gp_greenhouse_main_switch).state ? '1' : '0';
           now += id(gh_zones_auto_advance).state ? '1' : '0';
           now += id(gh_zones_watchdog_problem).state ? '1' : '0';
           if (now != last) {
@@ -87,14 +87,14 @@ script:
       # 2. main switch: a cycle in bed order, one valve at a time; off closes everything
       - logger.log: {level: INFO, tag: GZTEST, format: "step=2"}
       - script.execute: {id: gz_mark, label: s2_a}
-      - switch.turn_on: gh_zones_main_switch
+      - switch.turn_on: gp_greenhouse_main_switch
       - wait_until:
           condition:
             lambda: 'return id(board_relay_1).state;'
           timeout: 10s
       - delay: 2s
       - script.execute: {id: gz_mark, label: s2_b}
-      - switch.turn_off: gh_zones_main_switch
+      - switch.turn_off: gp_greenhouse_main_switch
       - delay: 1500ms
       - script.execute: {id: gz_mark, label: s2_c}
 
@@ -102,7 +102,7 @@ script:
       - logger.log: {level: INFO, tag: GZTEST, format: "step=3"}
       - script.execute: {id: gz_mark, label: s3_a}
       - switch.turn_on: gh_zones_auto_advance
-      - switch.turn_on: gh_zones_main_switch
+      - switch.turn_on: gp_greenhouse_main_switch
       - wait_until:
           condition:
             lambda: 'return id(board_relay_1).state;'

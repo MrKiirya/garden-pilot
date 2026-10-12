@@ -5,11 +5,11 @@
 namespace gp = esphome::gp;
 
 TEST_CASE("deferral_needed_only_for_a_running_non_queue_run") {
-  CHECK(gp::start_must_wait(true, true, true));    // a full cycle (queue_run is set by full_cycle too)
-  CHECK(gp::start_must_wait(true, false, false));  // a manual run or a cycle started outside gp
-  CHECK_FALSE(gp::start_must_wait(true, false, true));   // a queue run picks the new zones up by itself
-  CHECK_FALSE(gp::start_must_wait(false, true, false));  // nothing running: start at once
-  CHECK_FALSE(gp::start_must_wait(false, false, false));
+  CHECK(gp::start_must_wait(true, false, true, true));    // a full cycle (queue_run is set by full_cycle too)
+  CHECK(gp::start_must_wait(true, false, false, false));  // a manual run or a cycle started outside gp
+  CHECK_FALSE(gp::start_must_wait(true, false, false, true));   // a queue run picks the new zones up by itself
+  CHECK_FALSE(gp::start_must_wait(false, false, true, false));  // nothing running: start at once
+  CHECK_FALSE(gp::start_must_wait(false, false, false, false));
 }
 
 TEST_CASE("deferred_start_waits_for_the_end_of_the_run_plus_a_grace_time") {
@@ -38,4 +38,10 @@ TEST_CASE("deferred_start_cancel_and_millis_wrap") {
   d.request(0xFFFFF000u);  // millis() wraps while waiting
   CHECK_FALSE(d.update(false, 0xFFFFF800u));
   CHECK(d.update(false, 0x00001000u));
+}
+
+TEST_CASE("stopping_holds_back_a_start") {
+  CHECK(gp::start_must_wait(false, true, false, false));   // a lane is still stopping: hold the start back
+  CHECK(gp::start_must_wait(false, true, true, true));
+  CHECK_FALSE(gp::start_must_wait(false, false, false, false));
 }

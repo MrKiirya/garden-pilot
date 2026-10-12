@@ -48,7 +48,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/core/diagnostics.yaml` | Internal version / uptime / restart button for the Network page (no new HA entities). |
 | `components/gp/` | The `gp_*` layer (MIT): pure model/alerts/history/format headers + ESPHome glue, `Engine` adapter interface; contract in its README. |
 | `components/gp_zone/` | One `gp_zone:` list item per bed: the HA zone switch (MIT). The `garden_zones` adapter is `components/garden_zones/gp_engine.h`. |
-| `packages/core/gp.yaml`, `gp_api.yaml`, `packages/greenhouse/gp.yaml` | gp hub + alert sensor; generic HA actions; greenhouse group, status/watchdog entities. `packages/greenhouse/gp_lvgl_status.yaml` = pollers for the greenhouse/Home labels. |
+| `packages/core/gp.yaml`, `gp_api.yaml`, `packages/greenhouse/gp.yaml` | gp hub + alert sensor; generic HA actions; greenhouse group, status/watchdog entities and the main switch "Greenhouse irrigation". `packages/greenhouse/gp_lvgl_status.yaml` = pollers for the greenhouse/Home labels. |
 | `components/garden_schedule/` | Device-side schedules (MIT): hub with a pure C++ core (`schedule_core.h`, unit tested with a fake clock), engine-agnostic; fires `on_run(zone_mask, pct, slot)` and takes `garden_schedule.zone_done`. README has the rules. |
 | `components/garden_schedule_slot/` | One `garden_schedule_slot:` list item per slot (schema only; the hub generates the code). |
 | `packages/greenhouse/schedule.yaml`, `schedule_slot.yaml` | Hub `gh_schedule` with master switch, next-run / last-result text sensors, `on_run` -> `gp.enqueue_zones` + `gp.start_queue`; one include per slot (`vars: {slot, start}`, 2 in the entry files, max 8). |
@@ -96,7 +96,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
   local include.
 - **`garden_zones`** (groups form, `components/garden_zones/README.md`): zones come from `garden_zone:` list items, every
   zone has `valve_switch_id` pointing at a real switch (the raw relay, `internal: true`). Home Assistant and automations
-  use the zone switches and the group entities ("Greenhouse irrigation", "Greenhouse auto advance") and actions
+  use the zone switches and the group entity "Greenhouse auto advance" (the "Greenhouse irrigation" main switch is a gp-owned template switch in `packages/greenhouse/gp.yaml`: ON = `gp.full_cycle`, OFF = `gp.stop_all`) and actions
   (`garden_zones.run_zone`, `queue_zone`, `start_group_queue`, `start_group_cycle`, `shutdown_group`,
   `clear_group_queue`) — never the raw GPIO switches.
 - **Adding an LVGL page:** create `packages/lvgl/page_<name>.yaml` with `lvgl: pages: [{id: <page_id>,

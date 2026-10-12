@@ -30,6 +30,9 @@ class Engine {
   /// Longest run the zone accepts (its run-duration maximum), 0 = unknown.
   virtual uint32_t max_run_seconds(size_t zone) const { return 0; }
 
+  /// True while the engine is still shutting down (a start issued now could be lost).
+  virtual bool stopping() const { return false; }
+
   virtual void run_zone(size_t zone, std::optional<uint32_t> seconds) = 0;
   virtual void queue_zone(size_t zone, std::optional<uint32_t> seconds) = 0;
   virtual void remove_queued_zone(size_t zone) = 0;

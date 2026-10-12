@@ -57,8 +57,7 @@ def test_irrigation_shape() -> None:
     group = groups[0]
     assert group["id"] == "gh_zones" and group["name"] == "Greenhouse"
     assert group["max_parallel"] == "${gh_max_parallel}" and group["max_on_time"] == "${gh_max_on_time}"
-    assert group["main_switch"]["name"] == "Greenhouse irrigation"
-    assert group["main_switch"]["id"] == "gh_zones_main_switch"
+    assert "main_switch" not in group, "the main switch is the gp-owned template switch (packages/greenhouse/gp.yaml)"
     assert group["auto_advance_switch"]["name"] == "Greenhouse auto advance"
     assert group["on_watchdog_trip"], "a trip must be logged"
     assert "pump_switch_id" not in group, "gravity-fed greenhouse: no pump"
@@ -189,7 +188,7 @@ def test_greenhouse_zones_codegen(version: str, tmp_path: Path) -> None:
     assert len(re.findall(r"garden_zones::GardenZonesGroup\(", main_cpp)) == 1
     assert len(re.findall(r"garden_zones::GroupWatchdog\(", main_cpp)) == 1
     assert len(re.findall(r"gh_zones_watchdog->add_zone\([^;]*, 3600000\);", main_cpp)) == 3
-    assert main_cpp.count("->set_main_switch(") == 1 and main_cpp.count("->set_auto_advance_switch(") == 1
+    assert main_cpp.count("->set_main_switch(") == 0 and main_cpp.count("->set_auto_advance_switch(") == 1
     assert "sprinkler::Sprinkler" not in main_cpp
 
 
