@@ -234,3 +234,10 @@ duration of `checks` (<= 15 min target 12), the cold-cache runs, `compile`/`sim-
 ## Follow-ups
 - If `checks` is above 12 min on CI: the aggregator split from decision 1 (the schedule/gp/greenhouse scenarios
   are the floor at ~5 min each; their engine durations are untouched on purpose).
+
+## Author decisions (2026-10-12)
+- Parallel `script/test` by default, capped at 4 workers (`GP_PYTEST_WORKERS=auto` for every CPU, `0` = serial).
+- `checks` at ~14 min is acceptable; up to 15 min is fine, above that the job split comes next.
+- Also answered (019/021 open questions, behaviour unchanged): main switch OFF = full STOP, also when idle
+  (settles today's slots); the queue hold-back applies to every manual run; STOP clears the whole queue; showing
+  held-back "+Q" zones as queued is deferred to the stage 9 screens.

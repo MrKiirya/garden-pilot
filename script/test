@@ -4,6 +4,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 # Parallel by default (pytest-xdist): `--dist loadgroup` keeps every host build and its tests on one worker (see
-# HOST_GROUPS in tests/conftest.py). GP_PYTEST_WORKERS=0 runs serially (debugging); a number caps the workers.
+# HOST_GROUPS in tests/conftest.py). Default 4 workers (keeps the machine usable); GP_PYTEST_WORKERS=0 runs
+# serially (debugging), `auto` uses every CPU, a number sets the workers.
 # Extra arguments pass through, e.g. `script/test -m unit` or `script/test --durations=25`.
-uv run --no-sync pytest -n "${GP_PYTEST_WORKERS:-auto}" --dist loadgroup "$@"
+uv run --no-sync pytest -n "${GP_PYTEST_WORKERS:-4}" --dist loadgroup "$@"

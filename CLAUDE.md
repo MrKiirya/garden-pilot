@@ -146,7 +146,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 |---|---|
 | Install / update deps | `script/setup` (= `uv sync`) |
 | Lint (yamllint + `esphome config`) | `script/lint` |
-| All checks | `script/test` (pytest in parallel via xdist, includes `esphome config`; `GP_PYTEST_WORKERS=0` = serial, `N` = cap the workers; extra args pass through) |
+| All checks | `script/test` (pytest in parallel via xdist, 4 workers by default, includes `esphome config`; `GP_PYTEST_WORKERS=0` = serial, `N` or `auto` = other worker counts; extra args pass through) |
 | Fast checks only | `uv run pytest -m unit` |
 | Validate config by hand | `script/config` (uses `secrets.yaml`, or `secrets.example.yaml` if absent). For `garden-pilot-sim.yaml` a real `secrets.yaml` without `sim_api_encryption_key` fails with "Secret not defined": use `GP_SECRETS=example` (same for `script/compile`; `script/sim` always does) |
 | Compile firmware | `script/compile` (real `secrets.yaml`, or `GP_SECRETS=example` to stage example secrets under `.esphome/example-build/`) |

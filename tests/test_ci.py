@@ -487,7 +487,7 @@ def test_xdist_is_a_dev_dependency() -> None:
 def test_script_test_runs_in_parallel() -> None:
     lines = [ln.strip() for ln in (REPO_ROOT / "script" / "test").read_text(encoding="utf-8").splitlines() if ln.strip()]
     command = next(ln for ln in lines if ln.startswith("uv run"))
-    assert '-n "${GP_PYTEST_WORKERS:-auto}"' in command and "--dist loadgroup" in command
+    assert '-n "${GP_PYTEST_WORKERS:-4}"' in command and "--dist loadgroup" in command
     assert command.endswith('"$@"')
 
 
