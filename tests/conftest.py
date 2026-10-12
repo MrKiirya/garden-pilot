@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import glob
 import os
 import shutil
 import subprocess
@@ -52,3 +53,62 @@ def require_sdl_or_skip() -> None:
     if os.environ.get("GP_REQUIRE_SDL") == "1":
         pytest.fail(reason + " (GP_REQUIRE_SDL=1)")
     pytest.skip(reason)
+
+
+# ---------------------------------------------------------------------------------------------------- xdist grouping
+
+# Host-build fixture -> xdist group. Every group is one fixed build directory (incremental rebuilds), and two workers
+# must never build into the same directory at the same time: all tests that use the fixture run on one worker
+# (`script/test` passes `--dist loadgroup`). `{param}` is replaced by the version param of a parametrized fixture.
+# `host_build_pinned` and `host_build[pinned]` share `.esphome/gz-host/<pinned>`, hence the same group name.
+HOST_GROUPS: dict[str, str] = {
+    "host_build": "gz-host-{param}",
+    "host_build_pinned": "gz-host-pinned",
+    "groups_program": "gz-groups",
+    "safety_program": "gz-safety",
+    "overlap_program": "gz-overlap",
+    "pump_program": "gz-pump",
+    "scenario_program": "greenhouse-host",
+    "gp_program": "gp-host",
+    "schedule_program": "schedule-host",
+}
+# Whole modules that share one fixed directory / one TCP port without a fixture (script/sim-ui builds .esphome/sim-build).
+HOST_MODULE_GROUPS: dict[str, str] = {"test_sim_ui": "sim-ui"}
+
+
+def host_group(fixturenames: list[str], params: dict, module: str, is_host: bool) -> str | None:
+    for name, group in HOST_GROUPS.items():
+        if name in fixturenames:
+            return group.format(param=params.get(name, ""))
+    return HOST_MODULE_GROUPS.get(module) if is_host else None
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        is_host = item.get_closest_marker("host") is not None
+        group = host_group(list(item.fixturenames), callspec.params if callspec else {}, item.module.__name__, is_host)
+        if group is not None:
+            item.add_marker(pytest.mark.xdist_group(name=group))
+
+
+# --------------------------------------------------------------------------------------------------------- libfaketime
+
+FAKETIME_GLOBS = ["/usr/lib/*/faketime/libfaketime.so.1", "/usr/lib/faketime/libfaketime.so.1"]
+
+
+def require_faketime_or_none() -> str | None:
+    """Path of libfaketime, or None when it is not installed (the schedule scenario then runs unaligned and slow).
+
+    Fails instead of returning None when GP_REQUIRE_FAKETIME=1 (CI, where the devcontainer image installs it).
+    """
+    override = os.environ.get("GP_FAKETIME_LIB")  # a locally built library, e.g. where the image has none
+    if override and Path(override).is_file():
+        return override
+    for pattern in FAKETIME_GLOBS:
+        found = sorted(glob.glob(pattern))
+        if found:
+            return found[0]
+    if os.environ.get("GP_REQUIRE_FAKETIME") == "1":
+        pytest.fail("libfaketime not found (searched " + ", ".join(FAKETIME_GLOBS) + "); install the `libfaketime` package (GP_REQUIRE_FAKETIME=1)")
+    return None

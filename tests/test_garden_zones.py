@@ -621,9 +621,13 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _GZTEST = re.compile(r"\[GZTEST:\d+\]: (.*)$")
 
 
-def _run_program(program: Path, prefdir: Path, timeout: float = 90.0) -> list[str]:
-    """Run the host program until it logs `done` (or the timeout), return the GZTEST messages."""
-    env = {**os.environ, "ESPHOME_PREFDIR": str(prefdir)}
+def _run_program(
+    program: Path, prefdir: Path, timeout: float = 90.0, env_extra: dict[str, str] | None = None
+) -> list[str]:
+    """Run the host program until it logs `done` (or the timeout), return the GZTEST messages.
+
+    `env_extra` is merged into the child environment (the schedule scenario shifts its clock with libfaketime)."""
+    env = {**os.environ, "ESPHOME_PREFDIR": str(prefdir), **(env_extra or {})}
     proc = subprocess.Popen(
         [str(program)], cwd=prefdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )

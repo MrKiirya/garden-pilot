@@ -471,3 +471,45 @@ def test_sim_ui_job_runs_the_screen_test_and_uploads_shots() -> None:
     upload = uploads[0]
     assert upload.get("if") == "always()"
     assert upload["with"]["path"] == ".esphome/shots/"
+
+
+def _checks_step() -> dict:
+    return devcontainer_steps(load_yaml(CI)["jobs"]["checks"])[0]
+
+
+def test_xdist_is_a_dev_dependency() -> None:
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert any(re.match(r"pytest-xdist\b", dep) for dep in project["dependency-groups"]["dev"])
+    lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
+    assert "pytest-xdist" in {pkg["name"] for pkg in lock["package"]}
+
+
+def test_script_test_runs_in_parallel() -> None:
+    lines = [ln.strip() for ln in (REPO_ROOT / "script" / "test").read_text(encoding="utf-8").splitlines() if ln.strip()]
+    command = next(ln for ln in lines if ln.startswith("uv run"))
+    assert '-n "${GP_PYTEST_WORKERS:-auto}"' in command and "--dist loadgroup" in command
+    assert command.endswith('"$@"')
+
+
+def test_checks_job_settings() -> None:
+    job = load_yaml(CI)["jobs"]["checks"]
+    run_cmd = _checks_step()["with"]["runCmd"]
+    assert "script/lint" in run_cmd and re.search(r"script/test\b[^&]*--durations=\d+", run_cmd)
+    env = env_lines(_checks_step())
+    assert env["GP_REQUIRE_FAKETIME"] == "1" and env["GP_REQUIRE_SDL"] == "1" and env["GP_SKIP_SIM_UI"] == "1"
+    assert job["timeout-minutes"] <= 25
+
+
+def test_checks_cache_key() -> None:
+    jobs = load_yaml(CI)["jobs"]
+    caches = [s for s in steps(jobs["checks"]) if s.get("uses", "").startswith("actions/cache@")]
+    paths = "\n".join(str(s["with"]["path"]) for s in caches)
+    for needle in ("gp-cache/uv", "gp-cache/esphome", "gp-platformio"):
+        assert needle in paths, needle
+    toolchain = [s for s in caches if "gp-platformio" in str(s["with"]["path"])]
+    assert len(toolchain) == 1
+    key = toolchain[0]["with"]["key"]
+    assert key.startswith("gp-checks-v") and "hashFiles(" in key and "pyproject.toml" in key and "uv.lock" in key
+    assert "restore-keys" not in toolchain[0]["with"]
+    compile_keys = [s["with"]["key"] for s in steps(jobs["compile"]) if s.get("uses", "").startswith("actions/cache@")]
+    assert compile_keys and not any(k.startswith("gp-checks-v") for k in compile_keys)
