@@ -218,6 +218,19 @@ Serial and no-faketime fallback: `GP_PYTEST_WORKERS=0 script/test -m "host or co
 resolved by glob in `conftest.py`; verify with `dpkg -L libfaketime` in CI), `GP_REQUIRE_FAKETIME=1` in CI, the CI
 duration of `checks` (<= 15 min target 12), the cold-cache runs, `compile`/`sim-ui` jobs.
 
+**Review round 1 fixes.**
+- Required: the conftest hook is now `@pytest.hookimpl(tryfirst=True)` (xdist reads the `xdist_group` marks in its
+  own hook; added later they were ignored). New `tests/test_harness.py::test_group_marks_reach_xdist` asserts the
+  hookimpl is tryfirst and runs a tiny `-n 2 --dist loadgroup -v` session in a subprocess, checking the `@g1` suffix
+  and one worker. Full `script/test -v` run after the fix: host ids carry `@<group>` and each group stayed on one
+  worker (gp-host gw5, greenhouse-host gw3, gz-groups gw1, gz-host-2026.6.3 gw4, gz-host-2026.9.1 gw0, gz-overlap
+  and sim-ui gw4, gz-pump gw7, gz-safety gw2, schedule-host gw6); 5:04 wall time.
+- Suggestion 2: group keyed by the resolved version (`gz-host-<version>`, read from pyproject like `script/_esphome`).
+- Suggestion 3: phase 5 starts at second 42.
+- Suggestion 1: under `GP_REQUIRE_FAKETIME=1` phases 1 and 4 assert the first valve opens 30-50 s after the start
+  (aligned: ~38 s, unshifted: random 33-93 s; two phases make a silent miss unlikely, not impossible: ~8 %).
+  Measured against `time.monotonic()` since the program's `t` is absolute CLOCK_MONOTONIC. Passed locally (322 s).
+
 ## Follow-ups
 - If `checks` is above 12 min on CI: the aggregator split from decision 1 (the schedule/gp/greenhouse scenarios
   are the floor at ~5 min each; their engine durations are untouched on purpose).
