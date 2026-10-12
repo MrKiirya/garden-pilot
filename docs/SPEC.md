@@ -123,7 +123,7 @@ run-time multiplier (10-200 % of each zone's own run duration). A due slot queue
 and `gp.start_queue`, so the watchdog lockout, disabled zones and service mode apply unchanged. Rules: one run per slot
 per local day (DST safe); a slot missed by a power cut or a late clock still runs when the device is back within the
 catch-up window (60 min by default, 0 = never), later it is logged as missed; the "done" mark is per zone, written to
-flash when the zone's queue run completes, and a restart inside the window runs only the zones that did not complete; a user STOP (or entering service mode) settles
+flash when the zone's queue run completes, and a restart inside the window runs only the zones that did not complete; a user STOP (the STOP button, Home Assistant, turning the "Greenhouse irrigation" main switch off, or entering service mode) settles
 the slots (their pending zones are dropped, "stopped", the queue is cleared, nothing resumes after a restart); a slot
 that fires while a manual full cycle runs waits: the cycle runs to its end, then the slot's zones run;
 master switch "Greenhouse schedules" (default ON), every slot defaults OFF. Entities: [component README](../components/garden_schedule/README.md).

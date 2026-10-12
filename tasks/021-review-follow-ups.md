@@ -1,6 +1,6 @@
 # 021 — Review follow-ups: main switch through gp, start after STOP, cap and inhibit checks
 
-Status: planned
+Status: implemented (CI and review pending)
 Roadmap: maintenance (safety/correctness debt from the reviews of 014, 018 and 019; stage 8 gp layer)
 Spec sections: SPEC §3 (engine limitations), §4 / §4.1 (gp layer, schedules), §9 (roadmap)
 Hardware check: none. No device is available for this task. Everything is verified on the host (cpp, config, host
@@ -230,4 +230,43 @@ Never cut the main switch (Decision 1), the R2-3 pin, or the boot-safety asserti
 
 <!-- Filled in by implementer -->
 ## Implementation notes
+Nothing was run on a real device (host cpp, config, host scenarios and an ESP32 compile only). Hardware check for later
+(breadboard): HA "Greenhouse irrigation" ON runs a cycle, OFF stops it and settles a running slot, the entity id is
+unchanged after OTA, the switch is refused while SETUP > SERVICE is open.
+
+Done (all items, nothing cut): main switch through gp (template switch `gp_greenhouse_main_switch`, `restore_mode:
+DISABLED`, engine `main_switch:` removed); `Engine::stopping()` + `GardenZonesGroup::any_lane_stopping()`; start_queue /
+full_cycle deferred while stopping (`deferred_cycle_` flag); `enqueue_zone` held back like `enqueue_zones`;
+`components/gp/limits.h` (`api_seconds`, `clamp_run`) used by `gp_api.yaml` and `clamp_`; watchdog label
+(`_watchdog_label`); docs (gp README, schedule README, CLAUDE.md, SPEC line on STOP).
+
+Checks: cpp 78 cases (4 new: limits x2, stopping, full-ring blob round trip; the oldest kept entry of 130 pushes is
+epoch 1030, "entry 31" in the spec is 1-based). Unit tests incl. new shape tests. Gp scenario: boot has no `stop_hook`;
+step 8 inhibit (enqueue_zone, enqueue_zones, start_queue, full_cycle, main switch ON all refused, `inhibit_all_refused=1`);
+9d main OFF -> `completed=0` + `stop_hook`; new step 10 a-d. Schedule phase 4 STOP via the main switch.
+
+R2-3 was red before the fix (run with `stopping()` forced to false): after `gp.stop_all` + 300 ms, `enqueue_zone` +
+`start_queue` left `B3:QUEUED(0) q=1` and `start_after_stop=0`; the main OFF then ON 300 ms later gave
+`cycle_after_stop=0`. Cause confirmed (STOPPING lane loses queue / cycle starts). With the fix all of 10a-d are green.
+
+Deviations:
+- `delay_off` keeps its end-state check only: from idle the engine opens the valve ~0.1 s after ON (observed in the
+  log), so "never opened" is false by design there. The never-opened latch is on `quick_off` (ON right after a stop,
+  inside the switching delay) and on the inhibit step.
+- History reload on the host is NOT tested: ESPHome's host preferences store the blob length in one byte, so the ~1.4 KB
+  gp blob cannot round-trip through the host prefs file (it would also garble neighbouring entries). Only the cpp blob
+  round trip covers it. The schedule phase 2/3 `hist=` lines were removed again.
+- The `set_zone_max_run` assertion in `test_gp_codegen` uses 3300 (device config, 55 min), the safety fixture asserts
+  the fixed `run_duration: 1s` (the fixture's value, not 2s).
+- No gp.h reorder of the history save (a schedule mark syncs before gp saves the entry; a power cut loses at most the
+  60 s batch): follow-up.
+
+Measured: ESP32 pinned compile OK (`GP_SECRETS=example`), flash 1251675 bytes (68.2 %), RAM 126515 bytes (37.0 %); no
+baseline was taken before the change, so no delta. Host scenario times (full run): gp layer 280 s, greenhouse 014 247 s,
+schedule 56 s; before-times were not recorded separately. Minimum-ESPHome ESP32 and sim host compiles are left to CI.
+
 ## Follow-ups
+- Main switch shows OFF briefly (~2 s) after ON in HA (no optimistic window); a C++ switch could fix it.
+- Host preferences truncate blobs over 255 bytes (ESPHome `host`): split or shrink the gp blob if a host reload test is wanted.
+- gp history is saved after the done-mark callbacks, so the schedule's `sync()` does not flush it (up to 60 s lost on a power cut).
+- Open questions 1-4 of the spec still stand (author to confirm); implemented as recommended.
