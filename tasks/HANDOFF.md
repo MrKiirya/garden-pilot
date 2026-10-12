@@ -15,7 +15,7 @@ everything below is resolved.
 | 018 `gp_*` layer | `task/018-gp-layer` (on 014) | draft PR #25, review round 2 APPROVE, ESP32 pinned compile OK, CI started |
 | 019 schedules | `task/019-schedules` (on 018) | PR #26 ready, review round 2 APPROVE, CI green (checks timeout raised to 40 min) |
 | 020 timeline flake (test only) | `task/020-timeline-flake` (on 019) | PR #27 ready (base 019), CI green; also carries the schedule-scenario handover fix |
-| 021 review follow-ups | `task/021-review-follow-ups` (on 020) | night 2026-10-12: spec done, implementer running |
+| 021 review follow-ups | `task/021-review-follow-ups` (on 020) | implemented (763 tests, ESP32 pinned OK), pushed; review round 1 running |
 | 022 CI speed-up | `task/022-ci-speed` (on 021) | planned after 021 |
 
 Stacked branches: after #20 is squash-merged, 013 and 014 need to be brought up to date with `master` before their
