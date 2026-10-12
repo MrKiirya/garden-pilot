@@ -174,7 +174,31 @@ def test_zone_switches_replace_engine_switches() -> None:
     stock = (REPO_ROOT / "components" / "garden_zones" / "__init__.py").read_text(encoding="utf-8")
     assert stock.count("entity_category=ENTITY_CATEGORY_CONFIG") >= 3  # enable switch, run duration number, auto advance
     irrigation = _load("packages/greenhouse/irrigation.yaml")
-    assert "entity_category" not in str(irrigation["garden_zones"]["groups"][0]["main_switch"])
+    assert "main_switch" not in irrigation["garden_zones"]["groups"][0]  # the gp-owned switch replaces it (task 021)
+
+
+@pytest.mark.unit
+def test_main_switch_through_gp() -> None:
+    """The HA main switch is a template switch whose only actions are gp.* (task 021)."""
+    config = _load("packages/greenhouse/gp.yaml")
+    switches = [s for s in config["switch"] if s.get("name") == "Greenhouse irrigation"]
+    assert len(switches) == 1
+    sw = switches[0]
+    assert sw["platform"] == "template" and sw["id"] == "gp_greenhouse_main_switch"
+    assert sw["restore_mode"] == "DISABLED", "ALWAYS_OFF would run the OFF action (a STOP) at every boot"
+    assert not sw.get("optimistic", False)
+    assert sw["turn_on_action"] == [{"gp.full_cycle": "gp_greenhouse"}]
+    assert sw["turn_off_action"] == [{"gp.stop_all": "gp_greenhouse"}]
+    assert "gp_greenhouse" in sw["lambda"]
+
+
+@pytest.mark.unit
+def test_api_minutes_use_helper() -> None:
+    api = _load("packages/core/gp_api.yaml")
+    lambdas = [a["then"][0][k]["duration"] for a in api["api"]["actions"] for k in a["then"][0] if "duration" in a["then"][0][k]]
+    assert len(lambdas) == 2
+    for lam in lambdas:
+        assert lam["value"].strip() == "return gp::api_seconds(minutes);"
 
 
 @pytest.mark.unit
@@ -285,6 +309,9 @@ def test_gp_codegen(version: str, tmp_path: Path) -> None:
     for action in API_ACTIONS:
         assert f'"{action}"' in main_cpp, action
     assert "esphome::gp::GpHub" in main_cpp or "gp::GpHub" in main_cpp
+    # the zone maximum reaches gp (the 55 min default of gh_bed_run_max) and the engine has no main switch
+    assert "gh_zones->set_zone_max_run(0, 3300)" in main_cpp
+    assert "->set_main_switch(" not in main_cpp
 
 
 @pytest.mark.config
@@ -361,6 +388,9 @@ def test_gp_layer_host_scenario(gp_program: Path, tmp_path: Path) -> None:
         t.startswith("B1:IDLE B2:IDLE B3:IDLE q=0 a=-") for _, t in lines if _ < marks["s1_a"]
     ), lines[:3]
     assert "absent=1" in messages
+    # the main switch (restore_mode DISABLED) must not run its OFF action, a gp STOP, at boot
+    boot = messages[: next(i for i, m in enumerate(messages) if m.startswith("mark=s1_a "))]
+    assert "stop_hook" not in boot, boot
 
     # 2. enqueue 0 and 2, start the queue: B1 then B3 run, never B2; the last duration of B1 is about 3 s
     queued = between("s2_a", "s2_b")
@@ -405,7 +435,7 @@ def test_gp_layer_host_scenario(gp_program: Path, tmp_path: Path) -> None:
     # HA zone switch (gp_zone): boot state, ON follows the model, OFF stops, refused when locked or inhibited,
     # an immediate / delayed OFF never lets the valve open
     for needle in ("sw_boot_off=1", "locked_switch=1", "sw_on=1", "sw_off=1", "quick_off=1", "delay_off=1",
-                   "inhibit_refused=1", "inhibit_service_ok=1"):
+                   "inhibit_refused=1", "inhibit_service_ok=1", "inhibit_all_refused=1"):
         assert needle in messages, (needle, messages[-25:])
 
     # 9. when a zone counts as "done" (on_zone_finished `completed`, the schedule's per-zone mark)
@@ -420,6 +450,12 @@ def test_gp_layer_host_scenario(gp_program: Path, tmp_path: Path) -> None:
     assert fins("s9_b", "s9_c") == ["fin zone=1 completed=0"], fins("s9_b", "s9_c")
     # a manual run is never a done mark
     assert fins("s9_c", "s9_d") == ["fin zone=2 completed=0"], fins("s9_c", "s9_d")
-    # Home Assistant turning off the engine's main switch gives no stop signal: counts as done. This pins today's
-    # behaviour (README of garden_schedule); flip the expected value here if the author decides otherwise.
-    assert fins("s9_d", "s9_e") == ["fin zone=0 completed=1"], fins("s9_d", "s9_e")
+    # Home Assistant turning off the main switch is a gp STOP (task 021): not a done mark, and the stop hook ran
+    assert fins("s9_d", "s9_e") == ["fin zone=0 completed=0"], fins("s9_d", "s9_e")
+
+    ia = next(i for i, m in enumerate(messages) if m.startswith("mark=s9_d "))
+    ib = next(i for i, m in enumerate(messages) if m.startswith("mark=s9_e "))
+    assert "stop_hook" in messages[ia:ib], "the main switch OFF is a full gp STOP"
+    # 10. the cap on a long run, starts right after a stop, a single enqueue during a manual run
+    for needle in ("clamp_ok=1", "start_after_stop=1", "cycle_after_stop=1", "enq_held=1", "enq_queued=1"):
+        assert needle in messages, (needle, messages[-25:])

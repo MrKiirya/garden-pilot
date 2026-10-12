@@ -215,8 +215,9 @@ script:
             lambda: "return id(board_relay_2).state;"
           timeout: 30s
       - delay: 2s
-      # the user presses STOP in the middle of zone 2 (no clear_queue: the schedule package clears the queue)
-      - gp.stop_all: gp_greenhouse
+      # the user presses STOP in the middle of zone 2 (no clear_queue: the schedule package clears the queue); it comes
+      # from the Home Assistant main switch, whose OFF action is gp.stop_all (task 021)
+      - switch.turn_off: gp_greenhouse_main_switch
       - delay: 3s
       - lambda: |-
           ESP_LOGI("GZTEST", "stopped_idle=%d queue=%d", (int) (!id(board_relay_1).state && !id(board_relay_2).state &&
