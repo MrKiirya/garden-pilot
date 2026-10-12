@@ -6,6 +6,11 @@
 # Always builds with secrets.example.yaml, never the real secrets.yaml: the emulator's API key is a public dummy and
 # no real key may enter it. The sources are staged into the git-ignored .esphome/sim-build/ (fixed dir, so reruns
 # are incremental). Run durations and other preferences are kept in .esphome/sim-prefs/ (unless ESPHOME_PREFDIR is set).
+#
+# GP_SIM_SUBST="key=value key=value" overrides substitutions of the emulator build (`esphome -s key value`), e.g. a short
+# watchdog for the fault-injection scenario:
+#   GP_SIM_SUBST="gh_max_on_time=125s gh_bed_run_max=2 gh_bed_run_initial=1" script/sim
+# Values must not contain spaces. Emulator only; never used for a device build.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -35,4 +40,12 @@ export SDL_RENDER_DRIVER="${SDL_RENDER_DRIVER:-software}"
 
 echo "Works without Home Assistant. Optional HA: add ESPHome device by IP of this PC, port 6053, key"
 echo "sim_api_encryption_key from secrets.example.yaml. Never flash this build."
-exec sh script/_esphome run "$STAGE/$CONFIG"
+SUBST_ARGS=""
+for pair in ${GP_SIM_SUBST:-}; do
+  case "$pair" in
+    *=*) SUBST_ARGS="$SUBST_ARGS -s ${pair%%=*} ${pair#*=}" ;;
+    *) echo "sim: GP_SIM_SUBST entries must be key=value (got: $pair)" >&2; exit 2 ;;
+  esac
+done
+# shellcheck disable=SC2086  # SUBST_ARGS is deliberately word-split
+exec sh script/_esphome $SUBST_ARGS run "$STAGE/$CONFIG"

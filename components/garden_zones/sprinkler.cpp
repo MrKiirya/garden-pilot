@@ -30,6 +30,17 @@ void SprinklerControllerNumber::setup() {
         value = this->traits.get_min_value();
       }
     }
+    // GZ-PATCH-BEGIN(number-clamp)
+    // A restored value outside min..max (saved under an older, larger max) is clamped; it would otherwise run longer
+    // than the watchdog's max_on_time allows.
+    if (!std::isnan(value) && (value > this->traits.get_max_value() || value < this->traits.get_min_value())) {
+      const float clamped = value > this->traits.get_max_value() ? this->traits.get_max_value() : this->traits.get_min_value();
+      ESP_LOGW(TAG, "Restored value %.1f of '%s' is outside %.1f..%.1f, clamped to %.1f", value,
+               this->get_name().c_str(), this->traits.get_min_value(), this->traits.get_max_value(), clamped);
+      value = clamped;
+      this->pref_.save(&value);
+    }
+    // GZ-PATCH-END(number-clamp)
   }
   this->publish_state(value);
 }
@@ -548,6 +559,12 @@ void Sprinkler::set_valve_run_duration(const optional<size_t> valve_number, cons
 }
 
 void Sprinkler::set_auto_advance(const bool auto_advance) {
+  // GZ-PATCH-BEGIN(lanes)
+  if (this->auto_adv_sw_ == nullptr && this->lane_mode_) {
+    this->lane_auto_advance_ = auto_advance;
+    return;
+  }
+  // GZ-PATCH-END(lanes)
   if (this->auto_adv_sw_ == nullptr) {
     return;
   }
@@ -649,6 +666,11 @@ bool Sprinkler::auto_advance() {
   if (this->auto_adv_sw_ != nullptr) {
     return this->auto_adv_sw_->state;
   }
+  // GZ-PATCH-BEGIN(lanes)
+  if (this->lane_mode_) {
+    return this->lane_auto_advance_;
+  }
+  // GZ-PATCH-END(lanes)
   return true;
 }
 
@@ -1354,6 +1376,26 @@ optional<size_t> Sprinkler::next_valve_number_in_cycle_(const optional<size_t> f
   return this->next_valve_number_(first_valve, false, false);
 }
 
+// GZ-PATCH-BEGIN(zone-skip)
+void Sprinkler::skip_cycle_valves_(const optional<size_t> first_valve) {
+  if (!this->valve_skip_check_ || this->manual_run_active_ || this->next_req_.has_request()) {
+    return;
+  }
+  for (size_t checked = 0; checked < this->number_of_valves(); checked++) {
+    auto valve = this->next_valve_number_in_cycle_(first_valve);
+    if (!valve.has_value()) {
+      return;
+    }
+    const char *reason = this->valve_skip_reason_(*valve);
+    if (reason == nullptr) {
+      return;
+    }
+    ESP_LOGI(TAG, "Valve %zu skipped: %s", *valve, reason);
+    this->mark_valve_cycle_complete_(*valve);
+  }
+}
+// GZ-PATCH-END(zone-skip)
+
 void Sprinkler::load_next_valve_run_request_(const optional<size_t> first_valve) {
   if (this->active_req_.has_request()) {
     this->prev_req_ = this->active_req_;
@@ -1364,10 +1406,18 @@ void Sprinkler::load_next_valve_run_request_(const optional<size_t> first_valve)
   // GZ-PATCH-BEGIN(queue-skip-disabled)
   if (!this->next_req_.has_request() && !this->manual_run_active_ && this->queue_enabled()) {
     // drop disabled valves from the head of the queue; the first enabled entry stays queued
-    auto popped = queue_ops::pop_next_enabled(this->queued_valves_,
-                                              [this](size_t valve) { return this->valve_is_enabled_(valve); });
+    // (a valve rejected by the zone-skip check is dropped like a disabled one; the check logs the reason)
+    auto popped = queue_ops::pop_next_enabled(this->queued_valves_, [this](size_t valve) {
+      if (!this->valve_is_enabled_(valve))
+        return false;
+      const char *reason = this->valve_skip_reason_(valve);
+      if (reason != nullptr)
+        ESP_LOGI(TAG, "Valve %zu skipped: %s", valve, reason);
+      return reason == nullptr;
+    });
     for (size_t dropped : popped.dropped) {
-      ESP_LOGI(TAG, "Valve %zu is disabled; dropped from the queue", dropped);
+      if (!this->valve_is_enabled_(dropped))
+        ESP_LOGI(TAG, "Valve %zu is disabled; dropped from the queue", dropped);
     }
     if (popped.item.has_value()) {
       this->queued_valves_.push_back(*popped.item);
@@ -1421,6 +1471,9 @@ void Sprinkler::load_next_valve_run_request_(const optional<size_t> first_valve)
       this->next_req_.reset();
     }
   } else if (this->auto_advance() && this->multiplier()) {
+    // GZ-PATCH-BEGIN(zone-skip)
+    this->skip_cycle_valves_(first_valve);
+    // GZ-PATCH-END(zone-skip)
     if (this->next_valve_number_in_cycle_(first_valve).has_value()) {
       // if there is another valve to run as a part of a cycle, load that
       this->next_req_.set_valve(this->next_valve_number_in_cycle_(first_valve).value_or(0));

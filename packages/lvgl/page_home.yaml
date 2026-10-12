@@ -17,6 +17,16 @@ lvgl:
             text: "GardenPilot"
             text_font: montserrat_10
             text_color: 0x78dc77
+        # Quiet icon: shown only while no Home Assistant client is connected
+        # (set by packages/greenhouse/gp_lvgl_status.yaml).
+        - label:
+            id: home_ha_icon
+            x: 232
+            y: 3
+            hidden: true
+            text: "\uF1EB"
+            text_font: montserrat_12
+            text_color: 0xbecab9
         - label:
             id: home_clock_label
             x: 252

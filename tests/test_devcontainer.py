@@ -243,6 +243,13 @@ def test_dockerfile_has_xvfb_and_xdotool() -> None:
     assert {"xvfb", "xdotool"} <= packages
 
 
+def test_image_has_libfaketime() -> None:
+    """The schedule host scenario shifts its clock with libfaketime (task 022); CI sets GP_REQUIRE_FAKETIME=1."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    block = text.split("apt-get install", 1)[1].split("rm -rf", 1)[0]
+    assert "libfaketime" in set(re.findall(r"^\s*([a-z0-9][a-z0-9.+-]+)(?:\s*\\)?$", block, re.M))
+
+
 def test_sim_ui_script() -> None:
     script = REPO_ROOT / "script" / "sim-ui"
     assert script.is_file() and script.stat().st_mode & 0o111

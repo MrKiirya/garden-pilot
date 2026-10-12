@@ -1,0 +1,169 @@
+# Test harness for the stock handover of components/garden_zones — NOT a device configuration and never flashed.
+# Host (Linux) build with template relays; two stock-style controllers (list form) run the same two-valve queue:
+# `plain` without valve_overlap (the stock handover may keep two valves on together for one main-loop pass, never
+# longer) and `ovl` with `valve_overlap: 1s` (the deliberate overlap of about 1 s must still happen). The valves
+# measure, in their own state callbacks, how long both valves of their controller are on at once, so the check does
+# not depend on a polling interval.
+# Paths are repo-root relative: staged at the repo root by tests/test_garden_zones.py. Logged at INFO (host only).
+
+esphome:
+  name: garden-zones-overlap
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: gz_scenario
+
+packages:
+  hardware: !include hardware/sim.yaml
+
+logger:
+  level: INFO
+
+external_components:
+  - source: components
+    components: [garden_zones]
+
+globals:
+  - id: plain_overlaps
+    type: int
+    initial_value: "0"
+  - id: ovl_overlaps
+    type: int
+    initial_value: "0"
+  - id: plain_max_ms
+    type: unsigned int
+    initial_value: "0"
+  - id: plain_since
+    type: unsigned int
+    initial_value: "0"
+  - id: ovl_max_ms
+    type: unsigned int
+    initial_value: "0"
+  - id: ovl_since
+    type: unsigned int
+    initial_value: "0"
+  - id: plain_starts
+    type: int
+    initial_value: "0"
+  - id: ovl_starts
+    type: int
+    initial_value: "0"
+
+switch:
+  - platform: template
+    id: plain_v1
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: |-
+          if (x) id(plain_starts) += 1;
+          if (id(plain_v1).state && id(plain_v2).state) id(plain_overlaps) += 1;
+          if (id(plain_v1).state && id(plain_v2).state) {
+            if (id(plain_since) == 0) id(plain_since) = millis();
+          } else if (id(plain_since) != 0) {
+            id(plain_max_ms) = std::max(id(plain_max_ms), millis() - id(plain_since));
+            id(plain_since) = 0;
+          }
+  - platform: template
+    id: plain_v2
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: |-
+          if (x) id(plain_starts) += 1;
+          if (id(plain_v1).state && id(plain_v2).state) id(plain_overlaps) += 1;
+          if (id(plain_v1).state && id(plain_v2).state) {
+            if (id(plain_since) == 0) id(plain_since) = millis();
+          } else if (id(plain_since) != 0) {
+            id(plain_max_ms) = std::max(id(plain_max_ms), millis() - id(plain_since));
+            id(plain_since) = 0;
+          }
+  - platform: template
+    id: ovl_v1
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: |-
+          if (x) id(ovl_starts) += 1;
+          if (id(ovl_v1).state && id(ovl_v2).state) id(ovl_overlaps) += 1;
+          if (id(ovl_v1).state && id(ovl_v2).state) {
+            if (id(ovl_since) == 0) id(ovl_since) = millis();
+          } else if (id(ovl_since) != 0) {
+            id(ovl_max_ms) = std::max(id(ovl_max_ms), millis() - id(ovl_since));
+            id(ovl_since) = 0;
+          }
+  - platform: template
+    id: ovl_v2
+    internal: true
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_state:
+      - lambda: |-
+          if (x) id(ovl_starts) += 1;
+          if (id(ovl_v1).state && id(ovl_v2).state) id(ovl_overlaps) += 1;
+          if (id(ovl_v1).state && id(ovl_v2).state) {
+            if (id(ovl_since) == 0) id(ovl_since) = millis();
+          } else if (id(ovl_since) != 0) {
+            id(ovl_max_ms) = std::max(id(ovl_max_ms), millis() - id(ovl_since));
+            id(ovl_since) = 0;
+          }
+
+garden_zones:
+  - id: plain
+    main_switch: "GZ plain main"
+    auto_advance_switch: "GZ plain auto advance"
+    valves:
+      - valve_switch: "GZ plain 1"
+        run_duration: 2s
+        valve_switch_id: plain_v1
+      - valve_switch: "GZ plain 2"
+        run_duration: 2s
+        valve_switch_id: plain_v2
+  - id: ovl
+    main_switch: "GZ ovl main"
+    auto_advance_switch: "GZ ovl auto advance"
+    valve_overlap: 1s
+    valves:
+      - valve_switch: "GZ ovl 1"
+        run_duration: 3s
+        valve_switch_id: ovl_v1
+      - valve_switch: "GZ ovl 2"
+        run_duration: 3s
+        valve_switch_id: ovl_v2
+
+script:
+  - id: gz_scenario
+    then:
+      - delay: 1s
+      - garden_zones.queue_valve: {id: plain, valve_number: 0}
+      - garden_zones.queue_valve: {id: plain, valve_number: 1}
+      - garden_zones.queue_valve: {id: plain, valve_number: 0}
+      - garden_zones.queue_valve: {id: plain, valve_number: 1}
+      - garden_zones.start_from_queue: plain
+      - delay: 1s
+      - wait_until:
+          condition:
+            lambda: 'return !id(plain_v1).state && !id(plain_v2).state && id(plain).queued_valves().empty();'
+          timeout: 20s
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "plain starts=%d overlaps=%d max_ms=%u", id(plain_starts),
+                   id(plain_overlaps), id(plain_max_ms));
+      - garden_zones.queue_valve: {id: ovl, valve_number: 0}
+      - garden_zones.queue_valve: {id: ovl, valve_number: 1}
+      - garden_zones.queue_valve: {id: ovl, valve_number: 0}
+      - garden_zones.queue_valve: {id: ovl, valve_number: 1}
+      - garden_zones.start_from_queue: ovl
+      - delay: 1s
+      - wait_until:
+          condition:
+            lambda: 'return !id(ovl_v1).state && !id(ovl_v2).state && id(ovl).queued_valves().empty();'
+          timeout: 30s
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "ovl starts=%d overlaps=%d max_ms=%u", id(ovl_starts),
+                   id(ovl_overlaps), id(ovl_max_ms));
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}

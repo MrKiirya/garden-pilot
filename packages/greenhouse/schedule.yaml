@@ -1,0 +1,83 @@
+# Greenhouse watering schedules: the hub `gh_schedule` (component garden_schedule), its master switch and the
+# next-run / last-result text sensors. Slots come from packages/greenhouse/schedule_slot.yaml (one include per slot).
+# A due slot goes to the gp_* layer only: gp.enqueue_zones (its zones, run durations x multiplier) + gp.start_queue, so
+# the engine's safety (watchdog lockout, disabled zones, soil skip) applies unchanged. A slot that comes due while
+# service mode is on (`gp.inhibited`, the valve test) is skipped for the day. Needs packages/core/gp.yaml and
+# packages/greenhouse/gp.yaml; the clock is the first `time:` (ha_time: Home Assistant or SNTP, see SPEC 4.1a).
+#
+# Home Assistant entities:
+#   "Greenhouse schedules"      master switch (default ON; slots default OFF, so nothing waters until a slot is on)
+#   "Greenhouse next run"       timestamp (ISO 8601 with offset) of the next run; empty when there is none
+#   "Greenhouse next run text"  "Tue 06:00" / "--:--" for the screens
+#   "Greenhouse last schedule"  "06:00 #1 ran" / "ran (catch-up)" / "missed (90 min late)" / "skipped: service mode"
+#
+# Override in the entry file:
+#   gh_schedule_catch_up_window  how late a slot may still run after a power cut or a late clock (default 60min, 0s =
+#                                never catch up, at most 6h); later runs are logged as missed and not run.
+
+substitutions:
+  gh_schedule_catch_up_window: 60min
+
+# Remote-package users pin a tag here instead of `source: components` (SPEC 4.2).
+external_components:
+  - source: components
+    components: [garden_schedule, garden_schedule_slot]
+
+garden_schedule:
+  - id: gh_schedule
+    time_id: ha_time
+    zone_group: gp_greenhouse
+    catch_up_window: ${gh_schedule_catch_up_window}
+    master_switch_id: gh_schedules_on
+    next_run_id: gh_next_run
+    next_run_text_id: gh_next_run_text
+    last_result_id: gh_last_schedule
+    skip_if:
+      - condition:
+          gp.inhibited: gp_greenhouse
+        reason: "service mode"
+    on_run:
+      - gp.enqueue_zones:
+          id: gp_greenhouse
+          mask: !lambda "return zone_mask;"
+          pct: !lambda "return multiplier_pct;"
+      - gp.start_queue: gp_greenhouse
+
+switch:
+  - platform: template
+    id: gh_schedules_on
+    name: "Greenhouse schedules"
+    icon: mdi:calendar-clock
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+text_sensor:
+  - platform: template
+    id: gh_next_run
+    name: "Greenhouse next run"
+    device_class: timestamp
+    icon: mdi:calendar-arrow-right
+  - platform: template
+    id: gh_next_run_text
+    name: "Greenhouse next run text"
+    entity_category: diagnostic
+    icon: mdi:calendar-arrow-right
+  - platform: template
+    id: gh_last_schedule
+    name: "Greenhouse last schedule"
+    entity_category: diagnostic
+    icon: mdi:calendar-check
+
+# A zone's completed queue run is a done mark for the schedule (hook script of packages/greenhouse/gp.yaml).
+script:
+  - id: !extend gp_gh_zone_done
+    then:
+      - garden_schedule.zone_done:
+          id: gh_schedule
+          zone: !lambda "return zone;"
+  # A user STOP (or entering service mode) settles the schedules: today's pending zones of every slot are dropped
+  # ("stopped", nothing resumes after a reboot) and the engine queue is cleared (hook script of gp.yaml).
+  - id: !extend gp_gh_stopped
+    then:
+      - garden_schedule.cancel_pending: gh_schedule
+      - gp.clear_queue: gp_greenhouse

@@ -68,6 +68,8 @@ BED_FILE = "packages/greenhouse/bed.yaml"
 BED_SOIL_FILE = "packages/greenhouse/bed_soil.yaml"
 SIM_BED_SOIL = REPO_ROOT / "packages" / "sim" / "bed_soil.yaml"
 SIM_BED_SOIL_FILE = "packages/sim/bed_soil.yaml"
+SCHEDULE_SLOT = REPO_ROOT / "packages" / "greenhouse" / "schedule_slot.yaml"
+SCHEDULE_SLOT_FILE = "packages/greenhouse/schedule_slot.yaml"
 _EXAMPLE_START = re.compile(r"^  # ([A-Za-z0-9_]+): !include\s*$")
 _EXAMPLE_CONT = re.compile(r"^  #   ")
 
@@ -117,6 +119,14 @@ def _entry_includes(path_suffix: str, entry: Path = ENTRY) -> list[dict]:
 
 def _template_vars(path: Path) -> set[str]:
     return set(re.findall(r"\$\{(\w+)\}", _strip_comments(path.read_text(encoding="utf-8"))))
+
+
+# bed.yaml reads these global substitutions (defaults in irrigation.yaml); they are not per-include vars
+BED_GLOBAL_SUBSTITUTIONS = {"gh_bed_run_max", "gh_bed_run_initial"}
+
+
+def _bed_vars() -> set[str]:
+    return _template_vars(BED) - BED_GLOBAL_SUBSTITUTIONS
 
 
 def _pin_refs() -> set[str]:
@@ -240,15 +250,15 @@ def test_no_gpio_switch_in_packages() -> None:
 
 def test_bed_includes() -> None:
     beds = _entry_includes(BED_FILE)
-    assert len(beds) >= 2, "at least 2 beds with the stock sprinkler"
+    assert len(beds) >= 1, "at least 1 bed (garden_zones has no minimum)"
     assert all(b["active"] for b in beds), "bed.yaml includes must be active"
-    expected = _template_vars(BED)
+    expected = _bed_vars()
     assert expected == {"bed", "bed_name", "relay"}, expected
     for b in beds:
         assert set(b["vars"]) == expected, f"{b['key']}: vars {sorted(b['vars'])}"
     numbers = [str(b["vars"]["bed"]) for b in beds]
     assert len(set(numbers)) == len(numbers), "bed values must be unique"
-    assert numbers == ["1", "2", "3"], "the greenhouse page uses valve_number 0/1/2 = beds 1, 2, 3 in order"
+    assert numbers == ["1", "2", "3"], "the greenhouse page uses zone_number 0/1/2 = beds 1, 2, 3 in order"
     keys = list(load_esphome_yaml_text(ENTRY.read_text(encoding="utf-8"))["packages"])
     first, last = keys.index("gh_irrigation"), keys.index("gh_lvgl_page")
     for b in beds:
@@ -310,14 +320,29 @@ def test_bed_soil_shape() -> None:
 def test_bed_shape() -> None:
     data = load_esphome_yaml(BED)
     assert isinstance(data, dict)
-    assert set(data) == {"sprinkler"}
+    assert set(data) == {"garden_zone", "gp_zone"}
+    gp_zones = data["gp_zone"]
+    assert isinstance(gp_zones, list) and len(gp_zones) == 1, "gp_zone: must be a list of one item"
+    assert gp_zones[0] == {"group": "gp_greenhouse", "position": "${bed}", "id": "gh_bed${bed}_switch", "name": "${bed_name}"}
+    zones = data["garden_zone"]
+    assert isinstance(zones, list) and len(zones) == 1, "garden_zone: must be a list of one item"
+    zone = zones[0]
+    assert zone["group"] == "gh_zones"
+    # the engine's own zone switch is internal; Home Assistant sees the gp_zone switch with the same name
+    assert zone["valve_switch"] == {"id": "gh_bed${bed}_engine_valve", "name": "${bed_name}", "internal": True}
+    assert zone["enable_switch"] == {"id": "gh_bed${bed}_enable", "name": "${bed_name} enable"}
+    assert zone["valve_switch_id"] == "board_relay_${relay}"
+    number = zone["run_duration_number"]
+    assert number["id"] == "gh_bed${bed}_run_duration"
+    assert number["max_value"] == "${gh_bed_run_max}"
+    assert number["initial_value"] == "${gh_bed_run_initial}"
+    assert number["unit_of_measurement"] == "min"
     text = _strip_comments(BED.read_text(encoding="utf-8"))
-    assert not re.search(r"GPIO\d+|!secret|substitutions:|defaults:|lvgl", text)
-    assert "!extend" in text and "gh_sprinkler" in text
+    assert not re.search(r"GPIO\d+|!secret|substitutions:|defaults:|lvgl|sprinkler|!extend", text)
 
 
 def test_bed_vars_do_not_shadow_globals() -> None:
-    names = _template_vars(BED) | _template_vars(BED_SOIL)
+    names = _bed_vars() | _template_vars(BED_SOIL)
     defined = set(load_esphome_yaml_text(ENTRY.read_text(encoding="utf-8")).get("substitutions") or {})
     for path in _hardware_profiles():
         defined |= _subst_keys(path)
@@ -357,6 +382,7 @@ def test_substitutions_resolve() -> None:
         BED: set().union(*(set(i["vars"]) for i in _entry_includes(BED_FILE))),
         BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(BED_SOIL_FILE))),
         SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
+        SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
     }
     missing = set()
     for path in package_files:
@@ -480,7 +506,7 @@ def test_sim_entry_file() -> None:
     assert files["hardware"] == "hardware/sim.yaml"
     keys = list(files)
     required = ["core_api", "core_time_host", "display_sdl", "lvgl_base", "lvgl_page_boot", "lvgl_page_home", "gh_irrigation",
-                "gh_bed_1", "gh_bed_2", "gh_bed_3", "gh_lvgl_page", "gh_sprinkler_lvgl",
+                "gh_bed_1", "gh_bed_2", "gh_bed_3", "core_gp", "core_gp_api", "gh_gp", "gh_lvgl_page", "gh_gp_lvgl",
                 "core_diagnostics", "lvgl_dialog_confirm", "lvgl_page_setup", "lvgl_page_network", "gh_valve_test"]
     assert set(required) <= set(keys), sorted(set(required) - set(keys))
     first_page = [k for k in keys if k.startswith("lvgl_page_")][0]
@@ -490,7 +516,7 @@ def test_sim_entry_file() -> None:
     assert BED_SOIL_FILE not in files.values()
     sim_keys = [k for k in keys if k.startswith("sim_")]
     assert sim_keys == ["sim_bed_1_soil", "sim_bed_2_soil", "sim_bed_3_soil", "sim_sensors", "sim_drift",
-                        "sim_sensors_lvgl", "sim_page_board"]
+                        "sim_fault", "sim_sensors_lvgl", "sim_page_board"]
     for n in (1, 2, 3):  # each sim bed soil sits right after its bed block, with the bed's vars
         assert keys.index(f"sim_bed_{n}_soil") == keys.index(f"gh_bed_{n}") + 1
         assert _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY)[n - 1]["vars"] == _entry_includes(BED_FILE, SIM_ENTRY)[n - 1]["vars"]
@@ -521,7 +547,7 @@ def test_sim_beds_match_device() -> None:
 # --- task 007: simulated sensors, SIM board page ---------------------------------------------------------------
 
 SIM_DIR = REPO_ROOT / "packages" / "sim"
-SIM_DISPLAY_FREE = ["sensors.yaml", "bed_soil.yaml", "drift.yaml"]
+SIM_DISPLAY_FREE = ["sensors.yaml", "bed_soil.yaml", "drift.yaml", "fault.yaml"]
 
 
 def _sim_pkg(name: str) -> dict:

@@ -208,3 +208,59 @@ def test_sim_ctl_examples_resolve() -> None:
             found += 1
             assert m.group(1).strip('"').lower() in ids, f"{rel}: {m.group(0)}"
     assert found >= 6
+
+
+# ------------------------------------------------------------------------------------- text and time entities (019)
+
+from aioesphomeapi import TextInfo, TextState, TimeInfo, TimeState  # noqa: E402
+
+TEXT = TextInfo(object_id="greenhouse_schedule_1_zones", key=10, name="Greenhouse schedule 1 zones")
+TIME = TimeInfo(object_id="greenhouse_schedule_1_start", key=11, name="Greenhouse schedule 1 start")
+
+
+class TextTimeClient(FakeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.initial = [TextState(key=10, state="all"), TimeState(key=11, hour=6, minute=0, second=0)]
+
+    async def list_entities_services(self):
+        return [TEXT, TIME, NUMBER], []
+
+    def text_command(self, key: int, state: str, device_id: int = 0) -> None:
+        self.calls.append(("text", key, state))
+        self.on_state(TextState(key=key, state=state))
+
+    def time_command(self, key: int, hour: int, minute: int, second: int, device_id: int = 0) -> None:
+        self.calls.append(("time", key, hour, minute, second))
+        self.on_state(TimeState(key=key, hour=hour, minute=minute, second=second))
+
+
+def test_text_and_time_commands() -> None:
+    client = TextTimeClient()
+    code, lines = _run(["text", "Greenhouse schedule 1 zones", "1 3"], client)
+    assert (code, lines) == (0, ["greenhouse_schedule_1_zones = 1 3"])
+    assert ("text", 10, "1 3") in client.calls
+    code, lines = _run(["time", "greenhouse_schedule_1_start", "07:05"], client)
+    assert (code, lines) == (0, ["greenhouse_schedule_1_start = 07:05:00"])
+    assert ("time", 11, 7, 5, 0) in client.calls
+    code, lines = _run(["list"], TextTimeClient())
+    assert any(line.startswith("time") and line.endswith("06:00:00") for line in lines)
+    assert any(line.startswith("text") and line.endswith("all") for line in lines)
+    code, lines = _run(["get", "greenhouse_schedule_1_start"], TextTimeClient())
+    assert (code, lines) == (0, ["greenhouse_schedule_1_start = 06:00:00"])
+
+
+@pytest.mark.parametrize("argv", [["time", "t", "25:00"], ["time", "t", "6"], ["time", "t", "06:61"], ["text", "t"]])
+def test_text_and_time_bad_usage_exits_2(argv: list[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        sim_ctl.parse_args(argv)
+    assert exc.value.code == 2
+
+
+def test_text_and_time_need_the_right_kind() -> None:
+    client = TextTimeClient()
+    with pytest.raises(sim_ctl.UsageError, match="not a text"):
+        _run(["text", "sim_soil_moisture", "x"], client)
+    with pytest.raises(sim_ctl.UsageError, match="not a time"):
+        _run(["time", "greenhouse_schedule_1_zones", "06:00"], client)
+    assert not [c for c in client.calls if c[0] in ("text", "time")]

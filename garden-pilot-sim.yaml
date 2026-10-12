@@ -60,6 +60,8 @@ packages:
   lvgl_page_setup: !include packages/lvgl/page_setup.yaml
   lvgl_page_network: !include packages/lvgl/page_network.yaml
 
+  # garden_zones group gh_zones; override gh_max_parallel / gh_max_on_time / gh_bed_run_max here or per run with
+  # GP_SIM_SUBST (see script/sim). At least 1 bed.
   gh_irrigation: !include packages/greenhouse/irrigation.yaml
   gh_bed_1: !include
     file: packages/greenhouse/bed.yaml
@@ -79,14 +81,30 @@ packages:
   sim_bed_3_soil: !include
     file: packages/sim/bed_soil.yaml
     vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+  core_gp: !include packages/core/gp.yaml
+  core_gp_api: !include packages/core/gp_api.yaml
+  gh_gp: !include packages/greenhouse/gp.yaml
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
-  gh_sprinkler_lvgl: !include packages/greenhouse/sprinkler_lvgl_status.yaml
+  gh_gp_lvgl: !include packages/greenhouse/gp_lvgl_status.yaml
   gh_screensaver_status: !include packages/greenhouse/screensaver_status.yaml
   gh_valve_test: !include packages/greenhouse/lvgl_valve_test.yaml
+
+  # Device-side watering schedules (hub + 2 slots of the greenhouse). Add slots 3..8 with more includes of
+  # schedule_slot.yaml (vars slot, start); remove them all to run without schedules. Override
+  # gh_schedule_catch_up_window (default 60min) in `substitutions:` if needed.
+  gh_schedule: !include packages/greenhouse/schedule.yaml
+  gh_schedule_slot_1: !include
+    file: packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "1", start: "06:00:00"}
+  gh_schedule_slot_2: !include
+    file: packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "2", start: "07:00:00"}
 
   # Simulated sensors (settable numbers; display-free), auto drift, and their on-screen part.
   sim_sensors: !include packages/sim/sensors.yaml
   sim_drift: !include packages/sim/drift.yaml
+  # Fault injection for the watchdog scenario (switch "Sim rogue relay 1"); see the file header.
+  sim_fault: !include packages/sim/fault.yaml
   # Comment out the next two to drop the SIM page and the Home/Greenhouse sensor values.
   sim_sensors_lvgl: !include packages/sim/sensors_lvgl.yaml
   sim_page_board: !include packages/sim/page_board.yaml

@@ -16,14 +16,18 @@ from conftest import REPO_ROOT, require_sdl_or_skip
 pytestmark = pytest.mark.config
 
 CORE = ["hardware", "core_api", "core_ota", "core_network", "core_time"]
-BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2"]
-SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3"]
-SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2"]
+# the gp_* layer: bed.yaml adds gp_zone switches, so every row with beds carries the gp packages (HA actions need core_api)
+GP = ["core_gp", "gh_gp"]
+GP_API = ["core_gp", "core_gp_api", "gh_gp"]
+BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API]
+SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP]
+SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP]
+SCHEDULE = ["gh_schedule", "gh_schedule_slot_1", "gh_schedule_slot_2"]
 SIM = "hardware/sim.yaml"
 SIM_ENTRY = "garden-pilot-sim.yaml"
 SIM_API_ONLY = [
     "hardware", "core_api", "core_time_host", "gh_irrigation", "gh_bed_1", "sim_bed_1_soil", "gh_bed_2",
-    "sim_bed_2_soil", "gh_bed_3", "sim_bed_3_soil", "sim_sensors", "sim_drift",
+    "sim_bed_2_soil", "gh_bed_3", "sim_bed_3_soil", *GP_API, "sim_sensors", "sim_drift",
 ]
 
 
@@ -34,6 +38,9 @@ class Variant:
     hardware: str | None = None  # replacement path of the `hardware` include
     enable: tuple[str, ...] = ()  # commented-out example blocks to uncomment first
     source: str = "garden-pilot.yaml"  # entry file the variant is built from
+    subst: tuple[str, ...] = ()  # `-s KEY VALUE` command-line substitutions (flat: key, value, key, value, ...)
+    edits: tuple[tuple[str, str], ...] = ()  # (old, new) text replacements in the built entry file
+    fails_with: tuple[str, ...] = ()  # expected failure: `esphome config` must fail and print all of these
 
 
 VARIANTS: dict[str, Variant] = {
@@ -47,16 +54,55 @@ VARIANTS: dict[str, Variant] = {
     "beds_2_headless": Variant("keep", BEDS_2),
     "bed_soil_headless": Variant(
         "keep",
-        [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_1_soil", "gh_bed_2", "gh_bed_3"],
+        [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_1_soil", "gh_bed_2", "gh_bed_3", *GP_API],
         enable=("gh_bed_1_soil",),
     ),
+    "beds_1_headless": Variant("keep", [*CORE, "gh_irrigation", "gh_bed_1", *GP_API]),
+    # the gp layer without the Home Assistant actions (no API needed) and the gp error cases
+    "gp_headless": Variant("keep", [*CORE, "gh_irrigation", "gh_bed_1", *GP]),
+    "gp_unknown_engine_group": Variant("keep", [*CORE, *GP_API], fails_with=("gh_zones",)),
+    # bed 4 as the third bed: position 4 does not fit a 3-zone group
+    "gp_zone_position_out_of_range": Variant(
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP_API],
+        edits=(('vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}',
+                'vars: {bed: "4", bed_name: "Greenhouse bed 3", relay: "3"}'),),
+        fails_with=("gp_zone positions", "1..3"),
+    ),
+    # parallel greenhouse: every bed on its own lane (-s overrides the package default substitution)
+    "beds_3_parallel_headless": Variant(
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP_API], subst=("gh_max_parallel", "all")
+    ),
+    # a watchdog limit below the bed run-duration max (55 min) must be rejected at config time
+    "max_on_time_too_short": Variant(
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API], subst=("gh_max_on_time", "30min"),
+        fails_with=("max_value", "max_on_time"),
+    ),
+    # `never` disables the watchdog limit on purpose (human decision): it must stay valid
+    "max_on_time_never": Variant(
+        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API], subst=("gh_max_on_time", "never"),
+    ),
+    # schedules (task 019): headless (no LVGL: the skip condition is gp.inhibited), hub without slots, bad slot number,
+    # catch-up window limits
+    "schedule_headless": Variant("keep", [*BEDS_2, *SCHEDULE]),
+    "schedule_no_slots": Variant("keep", [*BEDS_2, "gh_schedule"]),
+    "schedule_window_zero": Variant("keep", [*BEDS_2, *SCHEDULE], subst=("gh_schedule_catch_up_window", "0s")),
+    "schedule_window_too_long": Variant(
+        "keep", [*BEDS_2, *SCHEDULE], subst=("gh_schedule_catch_up_window", "7h"), fails_with=("6 hours",)
+    ),
+    "schedule_bad_slot": Variant(
+        "keep", [*BEDS_2, *SCHEDULE],
+        edits=(('vars: {slot: "2", start: "07:00:00"}', 'vars: {slot: "9", start: "07:00:00"}'),),
+        fails_with=("slot", "8"),
+    ),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
+    "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1", *GP], hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),
     # PC emulator entry file (host + SDL); the first two need SDL2 dev files, sim_api_only does not.
     "sim_full": Variant("keep", source=SIM_ENTRY),
     "sim_no_touch_debug": Variant("without", ["touch_dot_test"], source=SIM_ENTRY),
     "sim_no_board_page": Variant("without", ["sim_sensors_lvgl", "sim_page_board"], source=SIM_ENTRY),
     "sim_api_only": Variant("keep", SIM_API_ONLY, source=SIM_ENTRY),
+    "sim_schedule_api_only": Variant("keep", [*SIM_API_ONLY, *SCHEDULE], source=SIM_ENTRY),
 }
 
 _KEY = re.compile(r"^  ([A-Za-z0-9_]+):")
@@ -172,6 +218,9 @@ def test_variant_validates(name: str, tmp_path: Path) -> None:
     v = VARIANTS[name]
     source = (REPO_ROOT / v.source).read_text(encoding="utf-8")
     variant = build_variant(source, v.mode, v.keys, v.hardware, v.enable)
+    for old, new in v.edits:
+        assert old in variant, f"variant {name}: {old!r} not found"
+        variant = variant.replace(old, new)
     all_keys = package_keys(uncomment_examples(source, v.enable))
     if v.keys is not None:
         assert set(v.keys) <= set(all_keys), f"unknown package keys in variant {name}: {set(v.keys) - set(all_keys)}"
@@ -190,11 +239,18 @@ def test_variant_validates(name: str, tmp_path: Path) -> None:
         if (REPO_ROOT / folder).exists():
             shutil.copytree(REPO_ROOT / folder, tmp_path / folder)
     shutil.copy(REPO_ROOT / "secrets.example.yaml", tmp_path / "secrets.yaml")
+    args = [a for i in range(0, len(v.subst), 2) for a in ("-s", v.subst[i], v.subst[i + 1])]
     result = subprocess.run(
-        ["sh", str(REPO_ROOT / "script" / "_esphome"), "config", str(tmp_path / v.source)],
+        ["sh", str(REPO_ROOT / "script" / "_esphome"), *args, "config", str(tmp_path / v.source)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         timeout=600,
     )
-    assert result.returncode == 0, (result.stdout + result.stderr)[-4000:]
+    output = result.stdout + result.stderr
+    if v.fails_with:
+        assert result.returncode != 0, f"variant {name} must fail validation"
+        for text in v.fails_with:
+            assert text in output, f"variant {name}: {text!r} not in the error output:\n{output[-3000:]}"
+        return
+    assert result.returncode == 0, output[-4000:]

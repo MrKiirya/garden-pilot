@@ -38,6 +38,9 @@ The project must not depend on one specific board.
 Checked against `esphome/components/sprinkler/` on the `dev` branch, 2026-10-01:
 - **One valve at a time** per controller. A second `valve_op` exists only for overlap during transitions.
   Parallel watering needs several `sprinkler:` blocks, and a valve belongs to exactly one controller.
+  At a run-to-run transition the stock code starts the next valve before it switches the finished one off, so both are
+  on for up to one main-loop pass. Accepted by design (human decision 2026-10-10): the pump must never run against
+  closed valves; a deliberate longer overlap is the stock `valve_overlap` option.
 - **Closed queue.** `queued_valves_` is `protected`. Public API: `queued_valve()` (next), `total_queue_time()`,
   `clear_queued_valves()`. No list, no "is zone N queued", no removal of one zone. Duplicates are allowed.
   The queue does not survive a reboot.
@@ -45,6 +48,8 @@ Checked against `esphome/components/sprinkler/` on the `dev` branch, 2026-10-01:
   The current greenhouse page uses it for its RUN buttons.
 - Queued zones run **even if their enable switch is off**.
 - The `Sprinkler` class is `final` (since July 2026): it cannot be subclassed.
+- The device and the emulator no longer use the stock `sprinkler` (task 014); the limits above are kept for reference
+  (the forked engine works around them, see §4).
 - Forked into `components/garden_zones/` from tag 2026.9.1 (task 008): open persistent queue, manual run that keeps
   the queue, disabled zones skipped; see `components/garden_zones/PATCHES.md`.
 - No functional changes since spring 2026. The `millis()` overflow fix (esphome#14299) shipped in
@@ -71,15 +76,23 @@ Decision: no intermediate MVP on the stock `sprinkler`; we copy `esphome/compone
   garden_zones:
     groups:
       - {id: greenhouse, max_parallel: all}
-      - {id: lawn, max_parallel: 1, pump: lawn_pump}
-    zones:
-      - {name: Bed 1, group: greenhouse, valve: valve_bed1}
+      - {id: lawn, max_parallel: 2, pump_switch_id: lawn_pump}   # lanes by round-robin: zone i -> lane i mod 2
+    zones:                       # inline zones; or one `garden_zone:` list item per package (see §5)
+      - {group: greenhouse, valve_switch: Bed 1, valve_switch_id: valve_bed1, run_duration: 10min}
   ```
-  To verify when planning: how a pump shared by zones in different controllers behaves.
-- **Safety:** a watchdog for maximum valve on-time (principle 4).
-- **Soil moisture (optional per zone):** any ESPHome sensor; if present and the soil is wet, the zone's run is
-  skipped. Today (task 005) a bed can have such a sensor as a reporting-only `sensor` (`packages/greenhouse/
-  bed_soil.yaml`); skipping a run when wet comes with `garden_zones` (stage 7).
+  Verified (task 012): all lanes of a block are registered with each other (stock `add_controller`), so a pump
+  shared by lanes stays on while any lane still needs it; a pump belongs to one group only for now.
+- **Safety (task 013, groups form):** a watchdog per group, on by default (a limit is disabled only explicitly with `never`, with a WARN at boot). It watches the real state of every
+  raw valve switch and the pump switch, independent of the sprinkler state machine: a valve on longer than
+  `max_on_time` (default 60 min, per group or zone, any duration or `never`), a pump on longer than `pump_max_on_time` (default 2 h,
+  a watering session, any duration or `never`) or on with no open valve longer than `pump_idle_timeout` (default 10 s, any duration or `never`) is
+  forced off, logged at ERROR and latched (zone, or the whole group for a pump trip) until
+  `garden_zones.reset_watchdog` or a reboot. Raw actuators must be `ALWAYS_OFF` / `RESTORE_DEFAULT_OFF`; a zone's
+  longest configured run must fit under its limit (validated at config time). The 008 list form has no watchdog.
+- **Soil moisture (optional per zone, task 013):** any ESPHome sensor via `soil_moisture:` (`sensor_id`, `skip_above`,
+  `max_age` 30 min, `when_unavailable: water | skip`, default `water`); checked when the zone's turn comes in a queue
+  or a cycle, skipped when wetter (queue and cycle only; manual runs ignore it). Before `garden_zones` is on the
+  device (014), a bed's sensor is reporting-only (task 005, `packages/greenhouse/bed_soil.yaml`).
 - **History** of runs per zone (wanted; see the backlog in §9).
 
 It takes valves from YAML by id and exposes standard ESPHome entities (switch / number / sensor / text_sensor),
@@ -103,34 +116,43 @@ does not freeze; a greenhouse air sensor can be an extra input. Firmware guards:
 temperature (principle 4). Electrical safety (RCD, contactor vs. relay, hardware over-temperature cut-off) is
 documented as recommendations, the builder decides; the author's own build is documented as an example.
 
-**Schedules** live on the device and run without Home Assistant or Wi-Fi; HA is optional (it can edit and
-trigger them).
+**Schedules** live on the device and run without Home Assistant or Wi-Fi once the clock was set (HA time or SNTP);
+HA is optional (it can edit and trigger them). Task 019 (`components/garden_schedule/`, MIT, engine-agnostic): each
+group has 2 slots by default (max 8). A slot = start time, 7 day switches, a zone list ("all" or bed numbers) and one
+run-time multiplier (10-200 % of each zone's own run duration). A due slot queues its zones through `gp.enqueue_zones`
+and `gp.start_queue`, so the watchdog lockout, disabled zones and service mode apply unchanged. Rules: one run per slot
+per local day (DST safe); a slot missed by a power cut or a late clock still runs when the device is back within the
+catch-up window (60 min by default, 0 = never), later it is logged as missed; the "done" mark is per zone, written to
+flash when the zone's queue run completes, and a restart inside the window runs only the zones that did not complete; a user STOP (the STOP button, Home Assistant, turning the "Greenhouse irrigation" main switch off, or entering service mode) settles
+the slots (their pending zones are dropped, "stopped", the queue is cleared, nothing resumes after a restart); a slot
+that fires while a manual full cycle runs waits: the cycle runs to its end, then the slot's zones run;
+master switch "Greenhouse schedules" (default ON), every slot defaults OFF. Entities: [component README](../components/garden_schedule/README.md).
 
 ### 4.1 The `gp_*` layer
-Screens, schedules and automations never call `sprinkler` / `garden_zones` directly, only `gp_*` scripts and
-entities:
+Screens, schedules, the valve test and Home Assistant never call `garden_zones` directly, only the `gp` contract
+(task 018): a per-zone read model addressed by zone index, a group summary (running, queue, now/next, revision), an
+alert table and a fixed set of `gp.*` actions, implemented by the C++ component `components/gp/` (MIT) over an engine
+adapter (`components/garden_zones/gp_engine.h`, GPLv3). Full contract, names and the polling rule:
+[components/gp/README.md](../components/gp/README.md).
 
-```yaml
-script:
-  - id: gp_run_bed      # param: bed
-  - id: gp_queue_bed    # param: bed
-  - id: gp_stop_all
-  # ...
-# entities: gp_bed1_state, gp_queue_text, ...
-```
-
-So screens and HA do not depend on the engine. The current greenhouse page still calls the stock `sprinkler`
-directly; it moves to `gp_*` when the layer is introduced.
-The full list of `gp_*` actions and entities is a roadmap task.
+- Home Assistant gets ONE generic action set for all groups (`gp_run_zone` etc. with `group` and a 1-based `zone`), one
+  switch per zone from the gp layer ("Greenhouse bed N"; the engine's zone switches are internal), a "Greenhouse status"
+  and an "Alert" text sensor; settings entities have `entity_category: config`.
+- The last watering of each zone and the last 100 runs are persisted to flash after each run; the full history stays
+  in Home Assistant.
+- "Home Assistant disconnected" is a quiet header icon, not an alert.
+- LVGL reads `gp` only from pollers.
+- Not done yet (follow-ups): soil reading in the model and the soil-sensor alert, service-mode inhibit for HA zone
+  switches, air-sensor alerts.
 
 ### 4.2 Loading our own component
 ```yaml
 external_components:
   - source: components            # development and cloned repos
-    components: [garden_zones]
+    components: [garden_zones, garden_zone]
   # users without a clone pin a tag, never a branch:
   # - source: github://MrKiirya/garden-pilot@v1.0
-  #   components: [garden_zones]
+  #   components: [garden_zones, garden_zone]
 ```
 
 ## 5. Modularity
@@ -139,7 +161,8 @@ external_components:
 - A bed is one `packages/greenhouse/bed.yaml` (task 005) included N times through `!include` with `vars` (`bed`, `bed_name`, `relay`; an optional `bed_soil.yaml` adds a soil sensor). Inside:
   valve, sensors, heating thermostat, a `garden_zone:` entry for the component. For this the component uses
   `MULTI_CONF`, with a shared `garden_zones:` hub that owns the queue and groups.
-  **Verify with a first test build** that lists from different packages merge as expected.
+  Verified (task 012): lists from different packages concatenate in package order, so write `garden_zone:` as a list
+  item (`- group: ...`); two dict-form entries merge into one zone.
 - **Screens:** LVGL YAML has no loops. Bed layouts as fixed variants (1 / 2 / 3 / 6 beds, see design drafts
   D03–D05) or generated YAML — **open**.
 - Hardware is a separate package: `hardware/<board>.yaml` with real pins (also `esp32:` and the display/touch
@@ -149,10 +172,13 @@ external_components:
   and adds `core/time_host.yaml` (PC clock, same id `ha_time`) and `packages/display_sdl.yaml` (SDL window + mouse
   touch, same ids as `display_touch.yaml`).
   Task 005 adds (done):
-  - `packages/greenhouse/bed.yaml`, included once per bed with `vars` (`bed`, `bed_name`, `relay`); it adds one
-    valve to the stock `gh_sprinkler` with `!extend` (lists in an extended item are concatenated in package order,
-    so the order of the bed blocks is the valve order). At least 2 beds with the stock sprinkler (it forbids the
-    controller switches and the enable switch with one valve); a 1-bed greenhouse comes with `garden_zones`.
+  - `packages/greenhouse/bed.yaml`, included once per bed with `vars` (`bed`, `bed_name`, `relay`); since task 014 it is
+    one `garden_zone:` list item of the group `gh_zones` declared in `packages/greenhouse/irrigation.yaml` (the order
+    of the bed blocks is the zone order). One bed is enough (headless; the greenhouse page still expects beds 1-3).
+    The group has the substitutions `gh_max_parallel` (default `"1"`: one valve at a time; `"all"` = every bed at once),
+    `gh_max_on_time` (watchdog, default `60min`, `never` disables it), `gh_bed_run_max` (run-duration number max, minutes,
+    default `55`) and `gh_bed_run_initial` (default `5`); `gh_bed_run_max * 60 s + 2 s <= gh_max_on_time` is enforced.
+  - since task 018 each bed also adds a `gp_zone:` list item (the Home Assistant switch of the gp layer); `packages/core/gp.yaml`, `gp_api.yaml` and `packages/greenhouse/gp.yaml` come after the last bed.
   - optional `packages/greenhouse/bed_soil.yaml` per bed (reporting soil moisture sensor; vars `bed`, `bed_name`,
     `adc_pin`, `cal_dry_v`, `cal_wet_v`); one ADC pin serves one probe.
   - the board profile holds the raw relay drivers as internal switches `board_relay_N` (the same ids in every
@@ -188,6 +214,7 @@ tests/
   `canary-failure` issue.
 
 ## 7. Testing without hardware
+Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${GP_PYTEST_WORKERS:-4} --dist loadgroup`, 4 workers by default so the machine stays usable; `GP_PYTEST_WORKERS=0` = serial, `auto` = every CPU). Every host build and its tests form one xdist group (`HOST_GROUPS` in `tests/conftest.py`), so no two workers share a build directory. The schedule host scenario starts its program at a chosen second of the minute through `libfaketime` (shifted wall clock, real monotonic clock, offsets only grow), which removes the random minute-boundary waits; without the library it runs on the real clock, and `GP_REQUIRE_FAKETIME=1` (CI) turns a missing library into a failure.
 1. `esphome config` for every module combination: the matrix in `tests/test_config_matrix.py` (variants built from
    the real entry file) runs in CI job `checks` via `script/test`; 2 beds, a bed with its own soil sensor and the sim board were added by task 005; task 006 adds rows for the emulator entry file `garden-pilot-sim.yaml` (the two SDL rows need `sdl2-config`; `GP_REQUIRE_SDL=1` in CI makes a missing one a failure).
 2. `esphome compile` for ESP32 and for the host emulator build `garden-pilot-sim.yaml` (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary for the device build).
@@ -211,6 +238,10 @@ tests/
    runs. The sim-only `SIM` button (top layer) opens a page with relay indicators, one slider per value and the drift
    switch. `script/sim-ctl` (`aioesphomeapi`, no new dependency) lists, reads and sets entities of the running
    emulator; it is unit-tested with a fake client. The device config is unchanged (normalized `esphome config` diff).
+   **Watchdog fault injection (task 014):** the watchdog never trips in normal use, so the emulator has a sim-only switch
+   "Sim rogue relay 1" (`packages/sim/fault.yaml`) that turns `board_relay_1` on outside the engine, and
+   `GP_SIM_SUBST="key=value ..."` (`script/sim`, `script/sim-ui start` inherits it) overrides substitutions for the run,
+   e.g. `gh_max_on_time=125s gh_bed_run_max=2 gh_bed_run_initial=1` for a short limit.
 5. **`display: platform: sdl`:** LVGL screens in a window, mouse instead of touch (done, `display_sdl.yaml`); headless screenshots and taps
    exist (task 015: `script/sim-ui` on a private Xvfb, X-level grab + xdotool press/move/release, works on every supported
    ESPHome version; CI job `sim-ui`, not required, uploads the PNGs). SDL `headless: true` and `snapshot` (BMP) need
@@ -229,7 +260,7 @@ tests/
   stay closed. It shows Home on Wi-Fi connect (`wifi: on_connect`, device only) or after `boot_offline_timeout`
   (30 s; 3 s in the emulator, which has no Wi-Fi). It never touches an actuator. Home Assistant is not awaited.
 - **Valve test and service mode** (`valve_test_page`, D18; Setup > SERVICE): TEST opens one greenhouse valve (beds 1-3)
-  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the sprinkler opens the valve ~2 s after the tap, so it is open ~8 s and the countdown stops near 2 s); every start
+  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the lane opens the valve ~2 s after the tap (switching delay, unchanged by task 014), so it is open ~8 s and the countdown stops near 2 s; since task 014 TEST runs `garden_zones.run_zone` on the group `gh_zones`, a bed locked by the watchdog is refused and its row stays "closed"); every start
   shuts down the previous valve first. While the page is open `gp_service_mode` is on: the queue is cleared and any
   run not started by the test (Home Assistant, queue) is shut down within 1 s with a WARN log. Service mode ends by
   EXIT SERVICE, by leaving the page, after 10 minutes without a test, or by a reboot (not restored). Blocking Home
@@ -240,7 +271,7 @@ tests/
   "Bed N" with a green dot while a bed runs, "Touch to wake". Any touch hides it and is swallowed by the overlay. It never
   shows on the boot screen, over a confirm dialog or in service mode. No backlight dimming yet (needs a backlight pin
   in the board profile) and no "next run" part (no schedules).
-- **Screens: slots and widgets** (decided 2026-10-10, §10.2; built after stage 8): the bed page is up to 6 slots of
+- **Screens: slots and widgets** (decided 2026-10-10, §10.2; built on the stage 8 `gp_*` layer): the bed page is up to 6 slots of
   one card template (extra slots hidden at boot, data by zone index via `gp_*`; 1-3 beds full cards, 4-6 compact
   in a grid). Home is a stack of widgets (308x172, gap 4, heights 26/40/44/76) filled by priority with a C++
   fit helper; available widgets come from the enabled packages, their order is set in SETUP and stored on the
@@ -252,7 +283,8 @@ tests/
   through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
   only, so UI texts are ASCII (`-`, `...`). Version, uptime, Wi-Fi and the restart button are `internal: true`.
 - Known UI defects: the Home "NEXT" label shows the remaining queue time (hours dropped), not the next scheduled
-  run — there are no schedules yet.
+  run. Task 019 provides the data ("Greenhouse next run" / "next run text" and `next_run()` / `day_runs()` on the
+  schedule hub); the label and the now/next + timeline widget are stage 9 screen tasks.
 - The Home clock updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
   ready (same pattern as the `number.on_value` gotcha in `CLAUDE.md`). Since task 004 this code lives in
   `packages/lvgl/page_home.yaml` (`!extend ha_time`), so `packages/core/` no longer depends on the Home page.
@@ -283,13 +315,17 @@ tests/
    ON soil slowly dries and rises while that bed's relay runs). Both parts implemented (done once the PR merges: CI and the PC check are still open).
 7. **`garden_zones` component** (fork of `sprinkler`, §4): patched open queue, groups with `max_parallel`
    via lanes, watchdog, optional soil-moisture skip. Task 008: fork + open/persistent queue, manual run keeps the
-   queue, disabled zones skipped; groups/lanes 012, watchdog + soil 013, device switch 014.
-8. **`gp_*` layer** on top of `garden_zones`, screens switched to it.
-9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; UI language at build time. After
-   stage 8 (`gp_*`): bed card slots and Home widgets (§8).
+   queue, disabled zones skipped; task 012: `groups:` / `garden_zone:` config with generated lanes, shared pump and
+   group actions (in a host test build only); task 013: watchdog for valves and the pump and the per-zone soil-moisture
+   skip (host test build only); task 014: the device and the emulator run the greenhouse on `garden_zones` (group `gh_zones`,
+   group entities with the old names plus "Greenhouse watchdog" and its reset button, watchdog 60 min by default).
+8. **`gp_*` layer** on top of `garden_zones`, screens switched to it (task 018: read model, alerts, actions, HA surface, persisted last watering and history; soil reading follows).
+9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
+   at build time. On top of the stage 8 `gp_*` layer: bed card slots and Home widgets (§8, decided in §10.2).
 10. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
-11. **Schedules** (WATER tab) with the now/next + day timeline widget, **bed heating** (thermostats + heating
-    screens) with the heating widget, alerts.
+11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the WATER tab editor
+    and the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens)
+    with the heating widget, alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
     scenarios against the host build. Screenshots and taps under Xvfb exist (task 015, `script/sim-ui`, CI job
     `sim-ui`); remaining: reference-image comparison and `aioesphomeapi` scenarios.
@@ -334,7 +370,7 @@ Optional modules; most can be built and tested without the physical sensors (`ha
   helper decides what fits.
 - **Widget choice:** YAML decides which widgets exist (a module package brings its own, e.g. heating); order and
   layout are chosen on the device in SETUP and stored (no reflash).
-- **First widgets:** zones + alert strip, weather from HA, now/next + day timeline (until schedules: "now" + queue),
+- **First widgets:** zones + alert strip, weather from HA, now/next + day timeline (next runs from the task 019 schedules),
   bed heating (with the heating module). Later: climate, water today.
 - **Weather from HA:** the weather entity has no `forecast` attribute since HA 2024.4 (`weather.get_forecasts`
   action), and ESPHome cannot call actions, so the project documents a trigger-based HA template sensor that
@@ -344,6 +380,8 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 ## 11. Sources
 - ESPHome `esphome/components/sprinkler/` (`dev`, 2026-10-01) and its commit history.
 - https://esphome.io/components/sprinkler/
+- https://esphome.io/components/time/#on-time-trigger (cron triggers are compile-time only, so slots use a C++ scheduler)
+- https://esphome.io/components/datetime/ and https://esphome.io/components/text/template/ (the slot entities)
 - https://esphome.io/components/external_components/
 - https://esphome.io/components/host/
 - https://esphome.io/components/display/sdl/

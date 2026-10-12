@@ -11,18 +11,18 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
    API, OTA). **C++ only for stateful irrigation logic** (future `components/garden_zones/`), never large
    logic in lambdas.
 2. **One abstraction layer, `gp_*`.** Screens, schedules and Home Assistant talk to irrigation only through
-   `gp_*` scripts and entities, never to `sprinkler:` / `garden_zones` directly, so the engine can be swapped.
+   `gp.*` actions and `gp_*` entities (`components/gp/README.md`), never to `sprinkler:` / `garden_zones` directly, so the engine can be swapped.
 3. **Modules are packages.** A feature (bed, lawn, heating, …) is a package that can be enabled by uncommenting
    one line in the entry file; hardware pins live in `hardware/<board>.yaml` substitutions, not in feature files.
 4. **Safety first for actuators.** Raw GPIO switches are `internal: true`; valves and heaters default OFF on boot
-   (`restore_mode: RESTORE_DEFAULT_OFF` or `ALWAYS_OFF`); every actuator has a maximum on-time guard.
+   (`restore_mode: RESTORE_DEFAULT_OFF` or `ALWAYS_OFF`); every actuator has a maximum on-time guard, on by default (disable only explicitly with `never`).
 5. **Design tokens are the source of truth for the UI.** Colours, font sizes and geometry in LVGL YAML come from
    `design/tokens.json`; don't invent new colours or font sizes (each font size is baked into flash).
 6. **Secrets only via `!secret`.** Never in tracked YAML; remote packages must not use `!secret`.
 7. **Tests first** where code is testable (Python checks now, C++ core of `garden_zones` later).
 
 These principles apply to **new and changed code**. Existing greenhouse packages predate them (the greenhouse
-page calls `sprinkler.*` directly, valves have no on-time guard beyond `run_duration_number`); they migrate in
+page calls `garden_zones.*` on the group `gh_zones` directly instead of going through `gp_*`); they migrate in
 roadmap stages 7-9. Don't "fix" legacy code outside a
 task's scope, and don't block a review on it — list it as a follow-up.
 
@@ -33,7 +33,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `garden-pilot-sim.yaml` | PC emulator entry point (ESPHome `host` + SDL window), same packages as the device; run with `script/sim`, never flash. |
 | `hardware/<board>.yaml` | Board profile: `esp32:` block, every GPIO pin (relays `relay_N_pin`, analog `adc_N_pin`, ...) plus display/touch orientation and calibration as substitutions, and the raw relay drivers as internal switches `board_relay_N`. |
 | `hardware/sim.yaml` | Emulator profile (`host:` + template relays that log state changes) for irrigation + beds; no Wi-Fi, OTA, display or sensors. |
-| `packages/greenhouse/bed.yaml` | One bed per `!include` with `vars` (`bed`, `bed_name`, `relay`): adds a valve to `gh_sprinkler` via `!extend`. |
+| `packages/greenhouse/bed.yaml` | One bed per `!include` with `vars` (`bed`, `bed_name`, `relay`): adds one `garden_zone:` list item (a zone with its enable switch and run-duration number) to the group `gh_zones`. |
 | `packages/greenhouse/bed_soil.yaml` | Optional per-bed soil moisture sensor (reports only), second include with `vars`. |
 | `packages/core/api.yaml`, `ota.yaml` | `api` (encryption) and `ota`; secrets arrive as substitutions. |
 | `packages/core/network.yaml` | `wifi` (`min_auth_mode`, fallback `ap`), `captive_portal`; device only. |
@@ -46,15 +46,22 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/lvgl/fonts/` | Vendored TTF (Montserrat Bold) + `OFL.txt` for the glyph-limited custom font. |
 | `packages/lvgl/dialog_confirm.yaml` | Confirm dialog on the LVGL top layer + `gp_confirm` script (pattern in its header). |
 | `packages/core/diagnostics.yaml` | Internal version / uptime / restart button for the Network page (no new HA entities). |
-| `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`sprinkler`), LVGL page. |
-| `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
+| `components/gp/` | The `gp_*` layer (MIT): pure model/alerts/history/format headers + ESPHome glue, `Engine` adapter interface; contract in its README. |
+| `components/gp_zone/` | One `gp_zone:` list item per bed: the HA zone switch (MIT). The `garden_zones` adapter is `components/garden_zones/gp_engine.h`. |
+| `packages/core/gp.yaml`, `gp_api.yaml`, `packages/greenhouse/gp.yaml` | gp hub + alert sensor; generic HA actions; greenhouse group, status/watchdog entities and the main switch "Greenhouse irrigation". `packages/greenhouse/gp_lvgl_status.yaml` = pollers for the greenhouse/Home labels. |
+| `components/garden_schedule/` | Device-side schedules (MIT): hub with a pure C++ core (`schedule_core.h`, unit tested with a fake clock), engine-agnostic; fires `on_run(zone_mask, pct, slot)` and takes `garden_schedule.zone_done`. README has the rules. |
+| `components/garden_schedule_slot/` | One `garden_schedule_slot:` list item per slot (schema only; the hub generates the code). |
+| `packages/greenhouse/schedule.yaml`, `schedule_slot.yaml` | Hub `gh_schedule` with master switch, next-run / last-result text sensors, `on_run` -> `gp.enqueue_zones` + `gp.start_queue`; one include per slot (`vars: {slot, start}`, 2 in the entry files, max 8). |
+| `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`irrigation.yaml`: the `garden_zones` group `gh_zones` and its own entities; the watchdog sensor, reset button and status live in `gp.yaml`), LVGL page. Every config that includes `bed.yaml` also needs `core_gp` + `gh_gp` (its `gp_zone:` switch), and `core_gp_api` when `api` is present. |
+| `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), watchdog fault injection "Sim rogue relay 1" (`fault.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
 | `secrets.example.yaml` | Template with obvious dummy values; copy to git-ignored `secrets.yaml`. |
 | `.devcontainer/` | Reference dev environment: shared `Dockerfile`, default config, opt-in `sdl/` config (host display). |
 | `design/` | Snapshot of the design system (rules, tokens, icons); the live design lives in claude.ai artifacts. |
 | `docs/SPEC.md` | Product spec, architecture, roadmap, open questions. |
 | `.github/` | CI (`workflows/ci.yml`, weekly `canary.yml`) and `dependabot.yml`. |
-| `components/garden_zones/` | Fork of the stock `sprinkler`, GPLv3; patches listed in `PATCHES.md`, marked `GZ-PATCH` in the code. Not used by the device yet. |
+| `components/garden_zones/` | Fork of the stock `sprinkler`, GPLv3; patches listed in `PATCHES.md`, marked `GZ-PATCH` in the code. Used by the device and the emulator (group `gh_zones`, task 014). |
+| `components/garden_zone/` | One `garden_zone:` entry of a `garden_zones` group (`MULTI_CONF`, schema only); MIT like the repo. |
 | `tasks/` | Task specs and reviews (see `tasks/README.md`). |
 | `tests/` | pytest repo checks; `script/*` wraps all commands. |
 
@@ -69,9 +76,9 @@ introduced by roadmap tasks, not ad hoc.
    `core_diagnostics` and the home page); then `lvgl_page_home`, other `lvgl_page_*`, `lvgl_dialog_confirm`,
    `lvgl_screensaver`,
    `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`, `lvgl_boot_wifi`.
-5. `gh_irrigation` (before the greenhouse page: its buttons call `gh_sprinkler`) → `gh_bed_N` (+ optional
-   `gh_bed_N_soil` after its bed) in valve order, at least 2 beds → `gh_lvgl_page` → `gh_sensors_air` →
-   `gh_sensors_soil` → `gh_sprinkler_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test).
+5. `gh_irrigation` (the engine group `gh_zones`) → `gh_bed_N` (+ optional
+   `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `core_gp` → `core_gp_api` (needs `core_api`) → `gh_gp` (the gp layer; screens and Home Assistant reach irrigation only through it) → `gh_lvgl_page` → `gh_sensors_air` →
+   `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test) → `gh_schedule` → `gh_schedule_slot_N` (one include per slot, N unique 1..8).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 `garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `core_diagnostics`, `display_sdl` and
@@ -81,16 +88,17 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - **Pins only in `hardware/`, secrets only as entry-file substitutions** (`substitutions: x: !secret x`);
   packages use `${x}`. `tests/test_layout.py` enforces both.
 - **Add a bed** = one `!include` block with `vars` in the entry file; features reference relays as `board_relay_N`
-  and analog inputs as `${adc_N_pin}`, never GPIO numbers. With the stock sprinkler at least 2 beds are needed.
+  and analog inputs as `${adc_N_pin}`, never GPIO numbers. One bed is enough; its run-duration max (`gh_bed_run_max`) must fit under `gh_max_on_time`.
 - **Board:** match the `esp32:` board declared in the `hardware/` profile until a migration task changes it.
 - **Secrets files:** `secrets.yaml` / `secrets.example.yaml` are substitution files only (no `esphome:` block);
   `.vscode/settings.json` maps them to plain YAML so the ESPHome extension doesn't validate them as devices.
 - **Remote packages** must not use `!secret`: expose `substitutions` and assign secrets from the entry file or a
   local include.
-- **`sprinkler`** ([docs](https://esphome.io/components/sprinkler/)): every valve has `valve_switch_id`
-  pointing at a real switch; with more than one valve `main_switch` and `auto_advance_switch` are required. Home
-  Assistant and automations use the controller's zone switches and actions (`sprinkler.start_full_cycle`,
-  `start_single_valve`, `shutdown`, queue actions) — never the raw GPIO switches, which stay `internal: true`.
+- **`garden_zones`** (groups form, `components/garden_zones/README.md`): zones come from `garden_zone:` list items, every
+  zone has `valve_switch_id` pointing at a real switch (the raw relay, `internal: true`). Home Assistant and automations
+  use the zone switches and the group entity "Greenhouse auto advance" (the "Greenhouse irrigation" main switch is a gp-owned template switch in `packages/greenhouse/gp.yaml`: ON = `gp.full_cycle`, OFF = `gp.stop_all`) and actions
+  (`garden_zones.run_zone`, `queue_zone`, `start_group_queue`, `start_group_cycle`, `shutdown_group`,
+  `clear_group_queue`) — never the raw GPIO switches.
 - **Adding an LVGL page:** create `packages/lvgl/page_<name>.yaml` with `lvgl: pages: [{id: <page_id>,
   widgets: …}]`, add it to `packages:` after `lvgl_base` (order matters only for the boot page), navigate with
   `lvgl.page.show: <page_id>`.
@@ -108,17 +116,22 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - Actions extended into a `script` run outside the `on_touch` trigger: don't use the trigger-only `touch`
   variable there; use `id(touch)->get_touch()`.
 - Don't call `lvgl.*` from a `number`'s `on_value` that can fire on restore/HA before LVGL is ready; poll from
-  an `interval` instead (see `packages/greenhouse/sprinkler_lvgl_status.yaml`).
+  an `interval` instead (see `packages/greenhouse/gp_lvgl_status.yaml`).
 - Package merge: substitutions in the entry file win; dicts merge by key; component lists merge by `id`.
   Prefer small includes over deep `!extend` / `!remove` chains.
 - The sim entry file needs `sdl2-config` (SDL2 dev files) even for `esphome config`; `web_server` is not available on
   the `host` platform, and `on_time_sync` does not fire on `host` (poll the clock from an `interval`).
 - `xdotool click` is too short for LVGL to register a touch: use press, move, release with pauses (`script/sim-ui tap`). SDL `headless: true` disables the SDL touchscreen, so screenshots are X-level grabs under Xvfb instead.
+- A template entity must not reuse the generated id `<group>_watchdog` (the group's watchdog component) or `<group>_lane_<n>`.
+- LVGL reads `gp` only from `interval:` pollers (guard with `changed_since`), never from a gp trigger, `on_value` or API action; label texts come from `gp::fmt::*` so lambdas stay one line. The hub id is `gp_hub` (an id may not equal an integration name).
 - Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
-  (`tests/test_service.py`); it is enforced by `run_duration` and by the separate `gp_valve_test_guard` script. Service
-  mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the sprinkler opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
-- `sprinkler` limitations (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
+  (`tests/test_service.py`); it is enforced by the `duration` of `gp.run_zone` and by the separate `gp_valve_test_guard` script. Service
+  mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the lane opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
+- A `garden_zones` group's watchdog is on by default (`max_on_time` 60 min, `pump_max_on_time` 2 h, `pump_idle_timeout` 10 s); only `never` disables a limit (WARN at boot). A zone's `run_duration_number` `max_value` (stock default 86400 s) must fit under its `max_on_time` or config fails (skipped for `never`).
+- `garden_zone:` is always a list item (`- group: ...`): two dict-form entries from different packages merge into one zone.
+- **Schedules:** one run per slot per local day (the mark blocks a repeated DST hour); no `time: on_time` cron triggers for watering (compile-time only). A slot missed while the device was off still runs inside `gh_schedule_catch_up_window` (60min default), else it is logged as missed; the done mark is per zone (`garden_schedule.zone_done` from `gp` `on_zone_finished`), written to flash at once, and a restart runs only the zones that did not complete; a user STOP (or service mode) settles the slots (nothing resumes), a slot firing during a manual cycle runs after it (`gp` holds the enqueue back). Entities of a slot are `entity_category: config`; the skip condition is `gp.inhibited` (service mode). Rules: `components/garden_schedule/README.md`.
+- Stock `sprinkler` limitations the fork works around (one valve at a time, closed queue, `start_single_valve` disables auto-advance and the
   queue, queued zones run even when disabled): SPEC §3.
 
 ## Environment
@@ -133,13 +146,13 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 |---|---|
 | Install / update deps | `script/setup` (= `uv sync`) |
 | Lint (yamllint + `esphome config`) | `script/lint` |
-| All checks | `script/test` (pytest, includes `esphome config`) |
+| All checks | `script/test` (pytest in parallel via xdist, 4 workers by default, includes `esphome config`; `GP_PYTEST_WORKERS=0` = serial, `N` or `auto` = other worker counts; extra args pass through) |
 | Fast checks only | `uv run pytest -m unit` |
 | Validate config by hand | `script/config` (uses `secrets.yaml`, or `secrets.example.yaml` if absent). For `garden-pilot-sim.yaml` a real `secrets.yaml` without `sim_api_encryption_key` fails with "Secret not defined": use `GP_SECRETS=example` (same for `script/compile`; `script/sim` always does) |
 | Compile firmware | `script/compile` (real `secrets.yaml`, or `GP_SECRETS=example` to stage example secrets under `.esphome/example-build/`) |
 | Other ESPHome version | `GP_ESPHOME=pinned\|minimum\|latest\|YYYY.M.P` with `script/config` / `script/compile` |
 | PC emulator (host + SDL window) | `script/sim` (needs a display; always builds with `secrets.example.yaml`; Ctrl+C stops) |
-| Control the running emulator | `script/sim-ctl list \| get NAME \| set NAME VALUE \| switch NAME on\|off` (native API, `127.0.0.1:6053`, key from `secrets.example.yaml`; exit 1 = unreachable, 2 = usage) |
+| Control the running emulator | `script/sim-ctl list \| get NAME \| set NAME VALUE \| switch NAME on\|off \| text NAME VALUE \| time NAME HH:MM` (native API, `127.0.0.1:6053`, key from `secrets.example.yaml`; exit 1 = unreachable, 2 = usage) |
 | Headless emulator screenshots / taps | `script/sim-ui start \| shot [NAME] \| tap X Y \| status \| stop` (private Xvfb, PNGs in `.esphome/shots/`; needs Xvfb + xdotool, in the devcontainer image; exit 3 = already running / port 6053 busy) |
 | SDL window smoke check | `script/sdl-smoke` (needs a display: SDL devcontainer config or a desktop host) |
 | Devcontainer from CLI | `devcontainer up --workspace-folder .` then `devcontainer exec --workspace-folder . script/test` (add `--docker-path podman` and `PODMAN_USERNS=keep-id` for Podman; `--config .devcontainer/sdl/devcontainer.json` for SDL) |
@@ -156,6 +169,7 @@ Always pass the config path explicitly; run from the repo root.
 - Sim entry order after the beds: `sim_bed_N_soil` right after `gh_bed_N`, then `sim_sensors`, `sim_drift`, `sim_sensors_lvgl`, `sim_page_board` (the last two are optional and LVGL-only; `sim_*` ids stay out of device files).
 - The emulator entry file is checked by `esphome config` rows (need `sdl2-config`; skipped without it unless `GP_REQUIRE_SDL=1`, set in CI) and compiled in the CI `compile` jobs.
 - The `host` level also has the emulator screen test (`test_sim_ui.py`: Xvfb + `script/sim-ui` shot, tap, shot). CI runs it in the separate, non-required job `sim-ui` (`GP_REQUIRE_SIM_UI=1`, screenshots uploaded as an artifact); `checks` sets `GP_SKIP_SIM_UI=1`. Elsewhere it skips without Xvfb/xdotool.
+- Parallel runs: each host build + its tests is one xdist group (`HOST_GROUPS` in `tests/conftest.py`, `--dist loadgroup`); a new module fixture that builds a host program must be added there (`tests/test_harness.py` checks). The schedule scenario shifts its clock with `libfaketime` (installed in the image; `GP_REQUIRE_FAKETIME=1` in CI; without the library, e.g. an older local container, it still passes but waits for real minute boundaries; `GP_FAKETIME_LIB=<path>` points at a local build).
 - `cpp` (minimal header-only harness, `script/test-cpp`) and `host` (host compile + scenario of `tests/configs/`) exist for `garden_zones`; both skip when no C++ compiler is installed.
 - Later (roadmap): reference-image comparison of the `script/sim-ui` screenshots, `aioesphomeapi` integration scenarios.
 

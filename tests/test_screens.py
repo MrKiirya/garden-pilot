@@ -201,7 +201,7 @@ def _assert_guarded_confirm(click: list, action_key: str, action_val: str) -> di
 
 
 def test_stop_asks_for_confirmation() -> None:
-    call = _assert_guarded_confirm(_stop_click(), "sprinkler.shutdown", "gh_sprinkler")
+    call = _assert_guarded_confirm(_stop_click(), "gp.stop_all", "gp_greenhouse")
     assert call["danger"] is True
 
 
