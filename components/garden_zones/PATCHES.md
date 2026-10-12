@@ -10,10 +10,11 @@ against the `sprinkler` sources of the installed ESPHome package and fails on an
 `GZ-PATCH-BEGIN(<id>)` ... `GZ-PATCH-END(<id>)` (blank lines are ignored). Regions do not nest.
 
 ## includes
-- Purpose: pull the new helper and the preferences API into `sprinkler.h`.
+- Purpose: pull the new helpers and the preferences API into `sprinkler.h`.
 - Files: `sprinkler.h` (include block).
 - Behaviour change: none.
-- Re-port notes: re-add the two `#include` lines after upstream's include block.
+- Re-port notes: re-add the three `#include` lines (`preferences.h`, `queue_ops.h`, `<functional>`) after upstream's
+  include block.
 
 ## queue-api
 - Purpose: open queue API.
@@ -36,11 +37,12 @@ against the `sprinkler` sources of the installed ESPHome package and fails on an
 - Re-port notes: re-add `save_queue_()` after every place upstream mutates `queued_valves_`.
 
 ## queue-skip-disabled
-- Purpose: disabled zones are skipped when the queue reaches them.
+- Purpose: disabled zones (and zones rejected by the `zone-skip` check) are skipped when the queue reaches them.
 - Files: `sprinkler.cpp` (start of `load_next_valve_run_request_`).
-- Behaviour change: disabled valves at the head of the queue are dropped (INFO log) before the queue is read; the
-  first enabled entry stays queued and is then taken by the unchanged upstream branch. If nothing is left, the
-  upstream cycle branch runs as for an empty queue. Queuing a disabled zone is still accepted.
+- Behaviour change: disabled valves, and valves for which the `zone-skip` check returns a reason, at the head of the
+  queue are dropped (INFO log) before the queue is read; the first remaining entry stays queued and is then taken by
+  the unchanged upstream branch. If nothing is left, the upstream cycle branch runs as for an empty queue. Queuing a
+  disabled zone is still accepted.
 - Re-port notes: keep the block before the `next_req_.has_request()` check.
 
 ## manual-run
@@ -56,3 +58,46 @@ against the `sprinkler` sources of the installed ESPHome package and fails on an
   `next_valve` / `previous_valve` do not clear the flags (they only select a valve with a delay).
 - Re-port notes: the extra branch sits between the `next_req_` branch and the queue branch of
   `load_next_valve_run_request_`.
+
+## groups
+- Purpose: the groups form of `garden_zones:` (task 012); the stock list form is untouched.
+- Files: `__init__.py` (two small regions: `CONFIG_SCHEMA` dispatch plus `FINAL_VALIDATE_SCHEMA` after the stock
+  schema, and a dispatch at the top of `to_code`). All new logic is in the non-forked files `groups.py` (schemas,
+  actions, lane code generation), `lane_plan.py` (pure lane assignment), `lanes.h` (pure routing helper) and
+  `group.h` (`GardenZonesGroup` and its actions); `components/garden_zone/` (MIT) holds the `garden_zone:` entry.
+- Behaviour change: a dict with `groups:` / `zones:` selects the groups schema and code generation; anything else
+  takes the stock path unchanged.
+- Re-port notes: re-add the dispatch lines; the rest does not depend on upstream code except the valve schema
+  (`SPRINKLER_VALVE_SCHEMA`) and the constants that `groups.py` imports.
+
+## lanes
+- Purpose: a controller without an auto-advance switch (every lane of a group) must not start a full cycle when its
+  queue drains.
+- Files: `sprinkler.h` (`set_lane_mode()`, two members), `sprinkler.cpp` (`set_auto_advance()`, `auto_advance()`).
+- Behaviour change: only with `set_lane_mode(true)` (called by the groups code generation for every lane): without an
+  auto-advance switch `set_auto_advance(x)` stores `x` in a member and `auto_advance()` returns it (default
+  `false`). Stock configs behave exactly as upstream.
+- Note for 013/014: after `start_group_cycle` a lane's stored auto-advance stays `true` while idle (the stock switch
+  would also stay on); `start_from_queue()` / `start_single_valve()` reset it. A group auto-advance switch must set
+  it explicitly.
+- Re-port notes: re-add the early return in `set_auto_advance()` and the branch before `return true` in
+  `auto_advance()`.
+
+## zone-skip
+- Purpose: let the owner of a controller veto a valve when its turn comes (watchdog lockout, soil moisture; task 013).
+- Files: `sprinkler.h` (`set_valve_skip_check()`, member, `valve_skip_reason_()`, `skip_cycle_valves_()` declaration),
+  `sprinkler.cpp` (`skip_cycle_valves_()` and its call in the cycle branch of `load_next_valve_run_request_`; the queue
+  side lives in the adjusted `queue-skip-disabled` region), `__init__.py` (`AUTO_LOAD` gets `sensor`, because
+  `group.h` includes `sensor/sensor.h`).
+- Behaviour change: only with a check set (the groups code generation sets one per lane): a valve whose check returns
+  a reason is dropped from the queue head, or marked cycle-complete before the cycle picks it (INFO log
+  `Valve N skipped: <reason>`). Manual runs and pending requests never reach those branches. The check is not used
+  for cycle repeats (`repeat_count_`); lanes have no repeat entity. Without a check behaviour is unchanged.
+- Re-port notes: re-add `skip_cycle_valves_(first_valve)` at the top of the `auto_advance() && multiplier()` branch.
+
+## number-clamp
+- Purpose: a restored run duration above the number's `max_value` must not run longer than the watchdog allows (task 014).
+- Files: `sprinkler.cpp` (`SprinklerControllerNumber::setup()`).
+- Behaviour change: a value restored from flash that is outside `min_value..max_value` is clamped to the nearest bound,
+  saved again and logged at WARN. Stock publishes a restored value unclamped. Initial values are not touched.
+- Re-port notes: keep the block after the `pref_.load()` branch, before `publish_state(value)`.

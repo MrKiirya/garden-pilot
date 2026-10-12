@@ -1,0 +1,106 @@
+# Greenhouse group of the gp_* layer: group gp_greenhouse (key "greenhouse") on top of the garden_zones group gh_zones.
+# Everything that reads or drives greenhouse irrigation (screens, valve test, screensaver, Home Assistant) goes
+# through gp_greenhouse; this is the only file besides irrigation.yaml / bed.yaml that names the engine group.
+# Needs packages/core/gp.yaml (hub) and one packages/greenhouse/bed.yaml include per bed (the gp_zone switches).
+# Home Assistant entities: "Greenhouse status" (Idle / Watering B1 B3 / Locked), "Greenhouse watchdog" (problem) and
+# "Greenhouse watchdog reset" (config), the main switch "Greenhouse irrigation" (ON = gp.full_cycle, OFF =
+# gp.stop_all, so service mode refuses it and OFF is a full STOP) and the "Greenhouse bed N"
+# zone switches from the bed packages.
+
+gp:
+  groups:
+    - id: gp_greenhouse
+      name: "Greenhouse"
+      key: greenhouse
+      garden_zones_id: gh_zones
+      # A queue run that ended normally (not stopped) is reported to the hook script below; the schedule package
+      # extends it (a done mark per zone).
+      on_zone_finished:
+        - script.execute:
+            id: gp_gh_zone_finished
+            zone: !lambda "return zone;"
+            completed: !lambda "return completed;"
+        - if:
+            condition:
+              lambda: "return completed;"
+            then:
+              - script.execute:
+                  id: gp_gh_zone_done
+                  zone: !lambda "return zone;"
+      # A stop_all (STOP button, Home Assistant, valve test) or entering service mode: hook script below; the
+      # schedule package extends it (the stop settles today's slots and clears the queue).
+      on_stop:
+        - script.execute: gp_gh_stopped
+
+# Watchdog state for Home Assistant: on while any bed (or the group) is locked by the watchdog.
+binary_sensor:
+  - platform: template
+    id: gh_zones_watchdog_problem
+    name: "Greenhouse watchdog"
+    device_class: problem
+    condition:
+      gp.watchdog_tripped: gp_greenhouse
+
+# Main switch of the greenhouse: owned by gp (the engine group has none). restore_mode DISABLED is required: the
+# template switch default (ALWAYS_OFF) would run the OFF action, a gp STOP, at every boot. The state follows "any zone
+# running"; an ON that gp refuses (service mode, watchdog) falls back to OFF within a second.
+switch:
+  - platform: template
+    id: gp_greenhouse_main_switch
+    name: "Greenhouse irrigation"
+    icon: mdi:water-pump
+    restore_mode: DISABLED
+    optimistic: false
+    lambda: "return id(gp_greenhouse)->summary().running;"
+    turn_on_action:
+      - gp.full_cycle: gp_greenhouse
+    turn_off_action:
+      - gp.stop_all: gp_greenhouse
+
+button:
+  - platform: template
+    id: gh_zones_watchdog_reset
+    name: "Greenhouse watchdog reset"
+    entity_category: config
+    on_press:
+      - gp.reset_watchdog: gp_greenhouse
+
+text_sensor:
+  - platform: template
+    id: gp_greenhouse_status
+    name: "Greenhouse status"
+    icon: mdi:water-outline
+    update_interval: 1s
+    lambda: "return id(gp_greenhouse)->status_text_changed();"
+
+# Hook for "a zone's queue run completed" (0-based zone): extended by packages/greenhouse/schedule.yaml.
+script:
+  # Every ended zone run (zone 0-based, completed = a queue run that was not stopped): a hook for tests / packages.
+  - id: gp_gh_zone_finished
+    mode: parallel
+    parameters:
+      zone: int
+      completed: bool
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp
+          format: "zone %d finished (completed=%d)"
+          args: ['zone', '(int) completed']
+  # Hook for "the user stopped everything" (stop_all or service mode): extended by packages/greenhouse/schedule.yaml.
+  - id: gp_gh_stopped
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp
+          format: "stopped"
+  - id: gp_gh_zone_done
+    mode: parallel
+    parameters:
+      zone: int
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp
+          format: "zone %d completed (queue run)"
+          args: ['zone + 1']

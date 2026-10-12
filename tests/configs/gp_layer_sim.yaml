@@ -1,0 +1,392 @@
+# Test harness over the REAL greenhouse + gp packages (irrigation.yaml, 3x bed.yaml, core/gp.yaml, greenhouse/gp.yaml on
+# hardware/sim.yaml) - NOT a device configuration and never flashed. Host build with simulated relays; a scripted
+# scenario drives the gp_* actions and logs machine-readable lines that tests/test_gp_layer.py asserts. The lines
+# use the tag GZTEST so the helper of the garden_zones host tests (tests/test_garden_zones.py::_run_program) reads them.
+# Paths are repo-root relative: the file is only used staged at the repo root. No LVGL, no API (so no Home Assistant
+# actions: packages/core/gp_api.yaml is left out on purpose). Short limits by substitution: watchdog 125 s, bed run
+# duration number max 2 min / initial 1 min (120 s + 2 s fits 125 s; max 1 would not validate: min_value is 1).
+
+substitutions:
+  gh_max_on_time: 125s
+  gh_bed_run_max: "2"
+  gh_bed_run_initial: "1"
+
+esphome:
+  name: gp-layer
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: gp_scenario
+
+packages:
+  hardware: !include hardware/sim.yaml
+  gh_irrigation: !include packages/greenhouse/irrigation.yaml
+  gh_bed_1: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+  gh_bed_2: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "2", bed_name: "Greenhouse bed 2", relay: "2"}
+  gh_bed_3: !include
+    file: packages/greenhouse/bed.yaml
+    vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+  core_gp: !include packages/core/gp.yaml
+  gh_gp: !include packages/greenhouse/gp.yaml
+
+logger:
+  level: INFO
+
+globals:
+  - id: gpt_seen
+    type: uint32_t
+    initial_value: "0"
+  - id: gpt_alert_seen
+    type: uint32_t
+    initial_value: "0"
+  # Task 021: latches "relay 3 was on at any time" (sampled every 50 ms) so quick_off and the inhibit step assert that
+  # the valve never opened, not only the end state.
+  - id: gpt_r3_seen
+    type: bool
+    initial_value: "false"
+
+# Logs "t=<millis> <debug_line>" whenever the read model's or the alert table's revision changes.
+interval:
+  - interval: 50ms
+    then:
+      - if:
+          condition:
+            lambda: "return id(board_relay_3).state;"
+          then:
+            - lambda: "id(gpt_r3_seen) = true;"
+  - interval: 200ms
+    then:
+      - if:
+          condition:
+            lambda: |-
+              bool model = id(gp_greenhouse)->changed_since(id(gpt_seen));
+              bool alerts = id(gp_hub)->alerts_changed_since(id(gpt_alert_seen));
+              return model || alerts;
+          then:
+            - lambda: 'ESP_LOGI("GZTEST", "t=%u %s", millis(), id(gp_greenhouse)->debug_line().c_str());'
+
+script:
+  # Task 019: logs every on_zone_finished (zone, completed) so the test can pin when a zone counts as "done".
+  - id: !extend gp_gh_zone_finished
+    then:
+      - lambda: 'ESP_LOGI("GZTEST", "fin zone=%u completed=%d", (unsigned) zone, (int) completed);'
+
+  # Task 021: the group's stop hook (every stop_all / service mode entry) is visible to the test.
+  - id: !extend gp_gh_stopped
+    then:
+      - lambda: 'ESP_LOGI("GZTEST", "stop_hook");'
+
+  - id: gp_mark
+    parameters:
+      label: string
+    then:
+      - lambda: 'ESP_LOGI("GZTEST", "mark=%s t=%u", label.c_str(), millis());'
+
+  - id: gp_scenario
+    then:
+      - delay: 3s
+      # all zone switches report OFF after boot (nothing opens at boot)
+      - lambda: |-
+          ESP_LOGI("GZTEST", "sw_boot_off=%d",
+                   (int) (!id(gh_bed1_switch).state && !id(gh_bed2_switch).state && !id(gh_bed3_switch).state));
+      # the enable switches start off on a fresh device: enable the beds (a disabled bed is skipped by the queue)
+      - switch.turn_on: gh_bed1_enable
+      - switch.turn_on: gh_bed2_enable
+      - switch.turn_on: gh_bed3_enable
+      - delay: 2s
+      - script.execute: {id: gp_mark, label: s1_a}
+      # 1. all idle, no alert; zone 4 and zone 255 are absent
+      - lambda: |-
+          auto *g = id(gp_greenhouse);
+          ESP_LOGI("GZTEST", "absent=%d", (int) (!g->zone(3).present && !g->zone(255).present));
+
+      # 2. enqueue zones 0 and 2, start the queue: B1 then B3, never B2
+      - script.execute: {id: gp_mark, label: s2_a}
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 0, duration: 3s}
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 2, duration: 3s}
+      - delay: 1s
+      - lambda: 'ESP_LOGI("GZTEST", "next=%d", id(gp_greenhouse)->summary().next_zone);'
+      - script.execute: {id: gp_mark, label: s2_b}
+      - gp.start_queue: gp_greenhouse
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 2}
+          timeout: 20s
+      - wait_until:
+          condition:
+            not:
+              gp.any_running: gp_greenhouse
+          timeout: 20s
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "last_duration_b1=%u", (unsigned) id(gp_greenhouse)->zone(0).last_duration.value_or(999));
+      - script.execute: {id: gp_mark, label: s2_c}
+
+      # 3. a manual run interrupts a queue run: B1 paused, B2 runs, B1 resumes (008 semantics)
+      - script.execute: {id: gp_mark, label: s3_a}
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 0, duration: 6s}
+      - gp.start_queue: gp_greenhouse
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 0}
+          timeout: 10s
+      - delay: 1s
+      - gp.run_zone: {id: gp_greenhouse, zone: 1, duration: 2s}
+      - delay: 14s
+      - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
+      - delay: 1s
+      - script.execute: {id: gp_mark, label: s3_b}
+
+      # 4. a disabled bed shows OFF, also while queued
+      - script.execute: {id: gp_mark, label: s4_a}
+      - switch.turn_off: gh_bed2_enable
+      - delay: 1s
+      - script.execute: {id: gp_mark, label: s4_b}
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 1}
+      - delay: 1s
+      - gp.dequeue_zone: {id: gp_greenhouse, zone: 1}
+      - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
+      - switch.turn_on: gh_bed2_enable
+      # the lane must be completely shut down (valve switching delay) before step 5 turns a raw relay on: a late
+      # shutdown would switch that relay off again and the watchdog would never see it
+      - wait_until:
+          condition:
+            lambda: 'return !id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state;'
+          timeout: 10s
+      - delay: 5s
+      - script.execute: {id: gp_mark, label: s4_c}
+
+      # 5. watchdog: a raw relay turn-on (fault) is cut after 125 s; B2 locked, the alert on top, a run refused, reset
+      - script.execute: {id: gp_mark, label: s5_a}
+      - switch.turn_on: board_relay_2
+      - wait_until:
+          condition:
+            gp.watchdog_tripped: gp_greenhouse
+          timeout: 200s
+      - delay: 2s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "top_alert=%s", id(gp_hub)->top_alert_text().c_str());
+      - script.execute: {id: gp_mark, label: s5_b}
+      - gp.run_zone: {id: gp_greenhouse, zone: 1, duration: 2s}
+      - delay: 4s
+      # the HA zone switch is refused while the watchdog is tripped: it falls back to OFF, the relay stays off
+      - switch.turn_on: gh_bed2_switch
+      - delay: 3s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "locked_switch=%d", (int) (!id(gh_bed2_switch).state && !id(board_relay_2).state));
+      - script.execute: {id: gp_mark, label: s5_c}
+      - gp.reset_watchdog: gp_greenhouse
+      - delay: 3s
+      - script.execute: {id: gp_mark, label: s5_d}
+      - lambda: |-
+          ESP_LOGI("GZTEST", "relay2_off=%d", (int) !id(board_relay_2).state);
+
+      # 6. alerts: one entry per key; a severity or text change updates it; clear removes it
+      - script.execute: {id: gp_mark, label: s6_a}
+      - gp.alert_raise: {id: gp_hub, key: test, severity: info, text: "info text"}
+      - lambda: |-
+          ESP_LOGI("GZTEST", "alert_count=%u", (unsigned) id(gp_hub)->alerts().count());
+      - gp.alert_raise: {id: gp_hub, key: test, severity: warn, text: "warn text"}
+      - lambda: |-
+          ESP_LOGI("GZTEST", "alert_count_after_update=%u", (unsigned) id(gp_hub)->alerts().count());
+          ESP_LOGI("GZTEST", "top_after_warn=%s", id(gp_hub)->top_alert_text().c_str());
+      - gp.alert_raise: {id: gp_hub, key: test, severity: info, text: "info text"}
+      - lambda: |-
+          ESP_LOGI("GZTEST", "top_after_info=%s", id(gp_hub)->top_alert_text().c_str());
+      - gp.alert_clear: {id: gp_hub, key: test}
+      - lambda: |-
+          ESP_LOGI("GZTEST", "alert_count_cleared=%u", (unsigned) id(gp_hub)->alerts().count());
+
+      # 7. stop_all with clear_queue during a run: idle within 1.5 s, queue empty; the history has the finished runs
+      - script.execute: {id: gp_mark, label: s7_a}
+      - gp.run_zone: {id: gp_greenhouse, zone: 0, duration: 30s}
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 0}
+          timeout: 10s
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 2}
+      - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
+      - delay: 1500ms
+      - lambda: |-
+          auto *g = id(gp_greenhouse);
+          ESP_LOGI("GZTEST", "stop_idle=%d stop_queue=%u", (int) !g->summary().running,
+                   (unsigned) g->summary().queue_length);
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "history_ok=%d", (int) (id(gp_greenhouse)->history().size() >= 3));
+      # 8. the HA zone switch (gp_zone): ON runs the zone and follows the model, OFF stops within 1 s
+      - script.execute: {id: gp_mark, label: s8_a}
+      - switch.turn_on: gh_bed2_switch
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_2).state;"
+          timeout: 10s
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "sw_on=%d", (int) (id(gh_bed2_switch).state && id(board_relay_2).state &&
+                                               id(gp_greenhouse)->zone_running(1)));
+      - switch.turn_off: gh_bed2_switch
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "sw_off=%d", (int) (!id(gh_bed2_switch).state && !id(board_relay_2).state &&
+                                                !id(gp_greenhouse)->summary().running));
+      # OFF right after ON, and OFF during the engine's switching delay: the valve must never open
+      - lambda: "id(gpt_r3_seen) = false;"
+      - switch.turn_on: gh_bed3_switch
+      - switch.turn_off: gh_bed3_switch
+      - delay: 5s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "quick_off=%d", (int) (!id(gpt_r3_seen) && !id(board_relay_3).state &&
+                                                    !id(gp_greenhouse)->summary().running));
+      # (from idle the engine opens the valve at once, so only the end state is asserted here)
+      - switch.turn_on: gh_bed3_switch
+      - delay: 1s
+      - switch.turn_off: gh_bed3_switch
+      - delay: 5s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "delay_off=%d", (int) (!id(board_relay_3).state && !id(gp_greenhouse)->summary().running));
+      # service mode (inhibit): the switch is refused, a service run is accepted
+      - gp.inhibit: {id: gp_greenhouse, state: true}
+      - switch.turn_on: gh_bed1_switch
+      - delay: 3s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "inhibit_refused=%d", (int) (!id(gh_bed1_switch).state && !id(board_relay_1).state));
+      # task 021: every other start path is refused too and opens nothing (relay 3 is watched by the latch)
+      - lambda: "id(gpt_r3_seen) = false;"
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 2, duration: 3s}
+      - gp.enqueue_zones: {id: gp_greenhouse, mask: 7}
+      - gp.start_queue: gp_greenhouse
+      - gp.full_cycle: gp_greenhouse
+      - switch.turn_on: gp_greenhouse_main_switch
+      - delay: 4s
+      - lambda: |-
+          auto *g = id(gp_greenhouse);
+          ESP_LOGI("GZTEST", "inhibit_all_refused=%d",
+                   (int) (!id(gpt_r3_seen) && !id(board_relay_1).state && !id(board_relay_2).state &&
+                          !id(board_relay_3).state && !g->summary().running && g->summary().queue_length == 0 &&
+                          !id(gp_greenhouse_main_switch).state));
+      - gp.run_zone: {id: gp_greenhouse, zone: 0, duration: 4s, source: service}
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_1).state;"
+          timeout: 10s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "inhibit_service_ok=%d", (int) id(board_relay_1).state);
+      - gp.stop_all: gp_greenhouse
+      - gp.inhibit: {id: gp_greenhouse, state: false}
+      - delay: 2s
+      - script.execute: {id: gp_mark, label: s8_b}
+
+      # 9. when a zone counts as "done" (on_zone_finished completed): the schedule's per-zone mark depends on it
+      # (a manual / service start remembers its intent for 15 s: let the one of step 8 expire first)
+      - delay: 16s
+      - script.execute: {id: gp_mark, label: s9_a}
+      # 9a. a queue run that ends by itself: completed=1
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 0, duration: 3s}
+      - gp.start_queue: gp_greenhouse
+      - delay: 8s
+      - script.execute: {id: gp_mark, label: s9_b}
+      # 9b. a queue run ended by stop_all (also with clear_queue): completed=0 (the schedule package settles the slots
+      # on the group's on_stop instead of leaving the zone pending; see tests/configs/schedule_sim.yaml)
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 1, duration: 30s}
+      - gp.start_queue: gp_greenhouse
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 1}
+          timeout: 10s
+      - delay: 1s
+      - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
+      - delay: 4s
+      - script.execute: {id: gp_mark, label: s9_c}
+      # 9c. a manual run that ends by itself: completed=0 (only queue runs count)
+      - gp.run_zone: {id: gp_greenhouse, zone: 2, duration: 2s}
+      - delay: 7s
+      - script.execute: {id: gp_mark, label: s9_d}
+      # 9d. Home Assistant turning off the main "Greenhouse irrigation" switch of a queue run is a gp STOP (task 021):
+      # completed=0 and the group's stop hook ran
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 0, duration: 30s}
+      - gp.start_queue: gp_greenhouse
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 0}
+          timeout: 10s
+      - delay: 1s
+      - switch.turn_off: gp_greenhouse_main_switch
+      - delay: 4s
+      - script.execute: {id: gp_mark, label: s9_e}
+
+      # 10. task 021
+      - script.execute: {id: gp_mark, label: s10_a}
+      # 10a. a run longer than the zone maximum (120 s here) is cut to it
+      - gp.run_zone: {id: gp_greenhouse, zone: 0, duration: 600s}
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 0}
+          timeout: 10s
+      - delay: 1s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "clamp_ok=%d", (int) (id(gp_greenhouse)->zone(0).time_left.value_or(9999) <= 120));
+      # 10b. a queue start 300 ms after a stop is held back until the lane is idle, not dropped
+      - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
+      - delay: 300ms
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 2, duration: 3s}
+      - gp.start_queue: gp_greenhouse
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_3).state;"
+          timeout: 15s
+      - lambda: 'ESP_LOGI("GZTEST", "start_after_stop=%d", (int) id(board_relay_3).state);'
+      - wait_until:
+          condition:
+            lambda: "return !id(board_relay_3).state;"
+          timeout: 15s
+      - delay: 6s
+      # 10c. the main switch OFF, then ON 300 ms later: the cycle starts once the lane is idle
+      - gp.run_zone: {id: gp_greenhouse, zone: 0, duration: 30s}
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_1).state;"
+          timeout: 10s
+      - switch.turn_off: gp_greenhouse_main_switch
+      - delay: 300ms
+      - switch.turn_on: gp_greenhouse_main_switch
+      - wait_until:
+          condition:
+            lambda: "return !id(board_relay_1).state;"
+          timeout: 10s
+      - wait_until:
+          condition:
+            lambda: "return id(board_relay_1).state;"
+          timeout: 15s
+      - lambda: 'ESP_LOGI("GZTEST", "cycle_after_stop=%d", (int) id(board_relay_1).state);'
+      - switch.turn_off: gp_greenhouse_main_switch
+      - wait_until:
+          condition:
+            lambda: "return !id(board_relay_1).state;"
+          timeout: 10s
+      - delay: 6s
+      # 10d. a single enqueue during a manual run is held back like gp.enqueue_zones and queued after the run
+      - gp.run_zone: {id: gp_greenhouse, zone: 1, duration: 3s}
+      - wait_until:
+          condition:
+            gp.zone_running: {id: gp_greenhouse, zone: 1}
+          timeout: 10s
+      - gp.enqueue_zone: {id: gp_greenhouse, zone: 2, duration: 3s}
+      - lambda: |-
+          ESP_LOGI("GZTEST", "enq_held=%d", (int) (id(gp_greenhouse)->deferred_enqueues() == 1 &&
+                                                   id(gp_greenhouse)->summary().queue_length == 0));
+      - wait_until:
+          condition:
+            not:
+              gp.any_running: gp_greenhouse
+          timeout: 20s
+      - delay: 8s
+      - lambda: |-
+          ESP_LOGI("GZTEST", "enq_queued=%d", (int) (id(gp_greenhouse)->deferred_enqueues() == 0 &&
+                                                     id(gp_greenhouse)->summary().queue_length == 1));
+      - gp.clear_queue: gp_greenhouse
+      - logger.log: {level: INFO, tag: GZTEST, format: "done"}

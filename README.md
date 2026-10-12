@@ -9,7 +9,7 @@ sensors, a 320×240 touch screen (LVGL) and full Home Assistant integration thro
 Built to be repeated: features are packages you switch on by uncommenting a line.
 
 > **Status:** work in progress, not ready for use yet. Today: a prototype on an ESP32-S3 with an ILI9341 touch
-> display, three greenhouse bed valves on the ESPHome `sprinkler` controller, soil moisture and air sensors.
+> display, three greenhouse bed valves on our own `garden_zones` irrigation component (a fork of the ESPHome `sprinkler`), soil moisture and air sensors.
 > Plans and open questions: [docs/SPEC.md](docs/SPEC.md).
 
 ## Quick start (development)
@@ -135,13 +135,15 @@ Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/comp
 
 ## Repository
 - `garden-pilot.yaml` — device entry file: a list of packages. `garden-pilot-sim.yaml` — the same packages for the PC emulator.
-- `hardware/` — board profile (pins, relay drivers) and `sim.yaml` (PC emulator and config checks without a board); `packages/` — core (API, OTA, network, time), display and touch (device or SDL window), LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; at least 2 beds until the own irrigation engine (roadmap stage 7).
+- `hardware/` — board profile (pins, relay drivers) and `sim.yaml` (PC emulator and config checks without a board); `packages/` — core (API, OTA, network, time), display and touch (device or SDL window), LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; one bed is enough (the greenhouse page still shows beds 1-3).
+- Irrigation is reached only through the `gp_*` layer (`components/gp/README.md`): the greenhouse page, valve test and Home Assistant use the same actions; Home Assistant gets one generic action set (`gp_run_zone`, `gp_enqueue_zone`, `gp_start_queue`, `gp_full_cycle`, `gp_stop_all`, `gp_reset_watchdog`, with `group` and a 1-based `zone`).
+- Watering schedules run on the device (`components/garden_schedule/README.md`): 2 slots by default (max 8), each with a start time, 7 day switches, a zone list and a run-time multiplier, edited in Home Assistant; they keep working without Home Assistant once the clock was set, catch up a run missed by a power cut within 60 minutes, and never repeat a zone that already completed.
 - `design/` — design system: rules, colour/type tokens, icons.
 - `docs/SPEC.md` — specification, architecture, roadmap.
 - `CLAUDE.md`, `.claude/`, `tasks/` — how the project is developed with Claude Code agents.
 
 ## License
 [MIT](LICENSE), except `components/garden_zones/`: a modified copy of ESPHome code under GPLv3 (see its
-`LICENSE` and `README.md`). That component is in development and not used by the device yet.
+`LICENSE` and `README.md`). `components/gp/` and `components/gp_zone/` are MIT.
 
 The Montserrat Bold font in `packages/lvgl/fonts/` is third-party, under the SIL Open Font License 1.1 (see `packages/lvgl/fonts/OFL.txt`).

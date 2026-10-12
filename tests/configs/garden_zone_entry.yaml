@@ -1,0 +1,11 @@
+# Test fixture for garden_zones_groups_sim.yaml: one zone of the group `beds`, included once per zone with vars
+# (mirrors the future per-bed package). `garden_zone:` is always a list item: dict-form entries from two
+# packages would be merged into one zone.
+#   zone_name  entity name of the zone switch
+#   relay      board relay number (`board_relay_<relay>`)
+
+garden_zone:
+  - group: beds
+    valve_switch: "${zone_name}"
+    valve_switch_id: board_relay_${relay}
+    run_duration: 2s

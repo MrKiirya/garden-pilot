@@ -1,0 +1,30 @@
+# The gp_* layer, hub part (components/gp/README.md): the read model of zones, the alert table and the generic actions
+# that screens, schedules and Home Assistant use instead of talking to an irrigation engine. The hub exists once per
+# device; each irrigation module adds its group (packages/greenhouse/gp.yaml). The clock for "last watering" is the
+# first `time:` of the configuration (ha_time on the device and in the emulator).
+# Entity: text sensor "Alert" = the text of the most important active alert (empty when there is none).
+#
+# LVGL must never be updated from a gp trigger (it can fire before LVGL is ready): pollers read the model instead.
+
+# Remote-package users pin a tag here instead of `source: components` (SPEC §4.2).
+external_components:
+  - source: components
+    components: [gp, gp_zone]
+
+gp:
+  id: gp_hub
+  on_alert_change:
+    - logger.log:
+        level: INFO
+        tag: gp
+        format: "top alert: '%s'"
+        args: ['id(gp_hub)->top_alert_text().c_str()']
+
+text_sensor:
+  - platform: template
+    id: gp_alert_text
+    name: "Alert"
+    entity_category: diagnostic
+    icon: mdi:alert-outline
+    update_interval: 1s
+    lambda: "return id(gp_hub)->alert_text_changed();"
