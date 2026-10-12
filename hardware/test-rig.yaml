@@ -1,0 +1,142 @@
+# Board profile: breadboard build.
+# ESP32-S3 DevKitC-1 N16R8 + ILI9341 320x240 SPI display + XPT2046 touch + 3-channel relay module,
+# DHT11 and a resistive soil probe module.
+#
+# This is the ONLY place with GPIO numbers and with settings that depend on the exact screen and how it is
+# mounted (orientation, touch calibration). Packages refer to them as ${...} substitutions.
+# Pin names describe the board function (relay_1_pin, adc_1_pin, ...); which relay a bed uses is decided
+# in the feature module, not here. The raw relay drivers live here too, as internal switches board_relay_1..N:
+# every board profile defines the same board_relay_N ids (features refer to them, never to pins). Analog
+# inputs are adc_N_pin, ADC1 pins only while Wi-Fi is active (ESP32-S3: GPIO1..GPIO10).
+#
+# To add a board: copy this file, keep every *_pin key and every board_relay_N switch (a test checks that each
+# profile defines all pins the packages use and the same relays), change the values and the esp32: block, and
+# !include the new file as the `hardware` package in garden-pilot.yaml. Pick exactly one profile.
+#
+# TEST BRANCH test/display-on-header: the display module plugs straight into the S pins of the left header (J1),
+# reversed: display pin 14 on J1 pin 4 (GPIO4), display pin 1 on J1 pin 17 (GPIO11).
+#   display pin : 14 T_IRQ 13 T_DO 12 T_DIN 11 T_CS 10 T_CLK 9 MISO 8 LED 7 SCK 6 MOSI 5 DC 4 RESET 3 CS 2 GND 1 VCC
+#   J1 pin      : 4        5       6        7       8        9      10    11    12     13   14      15   16    17
+#   GPIO        : 4        5       6        7       15       16     17    18    8      3    46      9    10    11
+# Display power comes from GPIOs: GPIO11 driven HIGH (VCC), GPIO10 driven LOW (GND), max drive strength, set up
+# before the SPI buses. A GPIO is only good for ~20-40 mA, fine for the controller, not for a backlight on VCC.
+# Display and touch are on two SPI buses (display: SCK 18, MOSI 8, MISO 16; touch: CLK 15, DIN 6, DO 5).
+# GPIO3 / GPIO46 are strapping pins; here they are outputs of the ESP (DC, RESET), which is safe for boot.
+# Backlight (LED) on GPIO17, switched on at boot. Sensors: DHT GPIO1, soil AO GPIO2, soil DO GPIO14.
+# Relays: LilyGo T-Relay-S3 6-relay extension board, driven through its 74HC595 shift register (INPUT header:
+# DAT GPIO21, SHT GPIO47, LAT GPIO48, +5V and GND from the external 5 V supply). board_relay_1/2 = CH1/CH2;
+# board_relay_3 = a plain relay module on GPIO38.
+
+esp32:
+  board: esp32-s3-devkitc1-n16r8
+  framework:
+    type: esp-idf
+
+# 74HC595 on the relay extension board. No OE line on its header (output enable is wired on the board).
+sn74hc595:
+  - id: board_relay_sr
+    data_pin: ${relay_sr_data_pin}
+    clock_pin: ${relay_sr_clock_pin}
+    latch_pin: ${relay_sr_latch_pin}
+    sr_count: 1
+
+# Raw relay drivers: internal, OFF on boot.
+switch:
+  # Display power from GPIOs (test wiring): VCC = HIGH, GND = LOW.
+  - platform: gpio
+    id: board_display_vcc
+    internal: true
+    setup_priority: 1100
+    pin:
+      number: ${display_vcc_pin}
+      drive_strength: 40mA
+    restore_mode: ALWAYS_ON
+
+  - platform: gpio
+    id: board_display_gnd
+    internal: true
+    setup_priority: 1100
+    pin:
+      number: ${display_gnd_pin}
+      drive_strength: 40mA
+    restore_mode: ALWAYS_OFF
+
+  # Display backlight (test wiring: LED pin on a GPIO), always on.
+  - platform: gpio
+    id: board_backlight
+    internal: true
+    pin: ${display_backlight_pin}
+    restore_mode: ALWAYS_ON
+
+  - platform: gpio
+    id: board_relay_1
+    internal: true
+    pin:
+      sn74hc595: board_relay_sr
+      number: 0
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_2
+    internal: true
+    pin:
+      sn74hc595: board_relay_sr
+      number: 1
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_3
+    internal: true
+    pin:
+      number: ${relay_3_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+substitutions:
+  # Shared SPI bus (display + touch).
+  spi_clk_pin: GPIO18
+  spi_mosi_pin: GPIO8
+  spi_miso_pin: GPIO16
+
+  # Display (ILI9341).
+  display_cs_pin: GPIO9
+  display_dc_pin: GPIO3
+  display_reset_pin: GPIO46
+  display_backlight_pin: GPIO17
+  display_vcc_pin: GPIO11
+  display_gnd_pin: GPIO10
+  # Orientation of the picture for this module and mounting.
+  display_swap_xy: "true"
+  display_mirror_x: "false"
+  display_mirror_y: "false"
+
+  # Touch controller (XPT2046).
+  touch_cs_pin: GPIO7
+  touch_irq_pin: GPIO4
+  # Touch has its own SPI bus on this test wiring.
+  touch_clk_pin: GPIO15
+  touch_mosi_pin: GPIO6
+  touch_miso_pin: GPIO5
+  # Touch calibration and orientation for this screen module and mounting.
+  touch_cal_x_min: "201"
+  touch_cal_x_max: "3792"
+  touch_cal_y_min: "371"
+  touch_cal_y_max: "3789"
+  touch_swap_xy: "true"
+  touch_mirror_x: "true"
+  touch_mirror_y: "true"
+
+  # Relay outputs (valves): 74HC595 on the relay extension board.
+  relay_sr_data_pin: GPIO21
+  relay_sr_clock_pin: GPIO47
+  relay_sr_latch_pin: GPIO48
+  # Plain relay module.
+  relay_3_pin: GPIO38
+
+  # Air sensor, interim single-wire DHT11 (replace with an I2C sensor later).
+  air_dht_pin: GPIO1
+
+  # Soil moisture module: AO = analog (ADC1), DO = comparator output.
+  adc_1_pin: GPIO2
+  soil_do_pin: GPIO14

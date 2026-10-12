@@ -6,6 +6,11 @@ spi:
     clk_pin: ${spi_clk_pin}
     mosi_pin: ${spi_mosi_pin}
     miso_pin: ${spi_miso_pin}
+  # TEST BRANCH: touch on its own bus (display plugged straight into the header).
+  - id: touch_spi
+    clk_pin: ${touch_clk_pin}
+    mosi_pin: ${touch_mosi_pin}
+    miso_pin: ${touch_miso_pin}
 
 display:
   - platform: mipi_spi
@@ -28,7 +33,7 @@ display:
 touchscreen:
   - platform: xpt2046
     id: touch
-    spi_id: tft_spi
+    spi_id: touch_spi
     cs_pin: ${touch_cs_pin}
     interrupt_pin: ${touch_irq_pin}
     calibration:

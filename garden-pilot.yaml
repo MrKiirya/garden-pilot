@@ -26,7 +26,7 @@ logger:
 packages:
   # Board profile: pins, display/touch orientation and calibration, esp32:. Pick exactly one.
   # (hardware/sim.yaml validates irrigation + beds only, see its header.)
-  hardware: !include hardware/esp32-s3-devkitc1-breadboard.yaml
+  hardware: !include hardware/test-rig.yaml  # TEST BRANCH: rig wiring
 
   # Core: connectivity and clock. Need nothing else (no display, no LVGL).
   core_api: !include packages/core/api.yaml
