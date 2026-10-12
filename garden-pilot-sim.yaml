@@ -81,8 +81,11 @@ packages:
   sim_bed_3_soil: !include
     file: packages/sim/bed_soil.yaml
     vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+  core_gp: !include packages/core/gp.yaml
+  core_gp_api: !include packages/core/gp_api.yaml
+  gh_gp: !include packages/greenhouse/gp.yaml
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
-  gh_sprinkler_lvgl: !include packages/greenhouse/sprinkler_lvgl_status.yaml
+  gh_gp_lvgl: !include packages/greenhouse/gp_lvgl_status.yaml
   gh_screensaver_status: !include packages/greenhouse/screensaver_status.yaml
   gh_valve_test: !include packages/greenhouse/lvgl_valve_test.yaml
 

@@ -30,6 +30,9 @@ packages:
   gh_bed_3: !include
     file: packages/greenhouse/bed.yaml
     vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+  # bed.yaml adds gp_zone switches: the gp layer (hub + greenhouse group, no API actions here) must be present
+  core_gp: !include packages/core/gp.yaml
+  gh_gp: !include packages/greenhouse/gp.yaml
 
 logger:
   level: INFO
@@ -114,7 +117,12 @@ script:
       - delay: 6s
       - script.execute: {id: gz_mark, label: s3_c}
       - garden_zones.shutdown_group: gh_zones
-      - delay: 1s
+      # let the lane finish its shutdown (valve switching delay) before the next step starts something
+      - wait_until:
+          condition:
+            lambda: 'return !id(board_relay_1).state && !id(board_relay_2).state && !id(board_relay_3).state;'
+          timeout: 10s
+      - delay: 3s
 
       # 4. queue + manual run
       - logger.log: {level: INFO, tag: GZTEST, format: "step=4"}

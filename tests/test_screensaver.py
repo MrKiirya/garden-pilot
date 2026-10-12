@@ -84,7 +84,7 @@ def test_idle_guards() -> None:
         _by_id(data["lvgl"], wid)
     assert _by_id(data["lvgl"], "gp_screensaver_clock")["text_font"] == "gp_font_clock"
     text = _strip_comments((REPO_ROOT / SAVER).read_text(encoding="utf-8"))
-    assert not re.search(r"lvgl\.page\.show|garden_zones\.|sprinkler\.|switch\.|board_relay|valve", text.replace("valve test", ""))
+    assert not re.search(r"lvgl\.page\.show|garden_zones\.|sprinkler\.|gp\.|switch\.|board_relay|valve", text.replace("valve test", ""))
 
 
 def test_status_package() -> None:
@@ -92,8 +92,8 @@ def test_status_package() -> None:
     assert set(data) <= {"interval"}
     text = _strip_comments((REPO_ROOT / STATUS).read_text(encoding="utf-8"))
     assert "gp_screensaver_status" in text and "gh_air_temperature" in text and "gh_soil_moisture_pct" in text
-    assert not re.search(r"(sprinkler|garden_zones)\.(?!\s*$)\w+:|switch\.", text), "reads only, never acts"
-    assert "id(gh_zones)" in text and "gh_sprinkler" not in text
+    assert not re.search(r"(sprinkler|garden_zones|gp)\.(?!\s*$)\w+:|switch\.", text), "reads only, never acts"
+    assert "id(gp_greenhouse)" in text and "gh_zones" not in text and "gh_sprinkler" not in text
 
 
 @pytest.mark.parametrize("entry", ENTRIES)
@@ -104,7 +104,7 @@ def test_entry_files(entry: str) -> None:
     files = _package_files(data)
     assert files["lvgl_screensaver"] == SAVER and files["gh_screensaver_status"] == STATUS
     assert keys.index("lvgl_dialog_confirm") < keys.index("lvgl_screensaver")
-    assert keys.index("gh_sprinkler_lvgl") < keys.index("gh_screensaver_status")
+    assert keys.index("gh_gp_lvgl") < keys.index("gh_screensaver_status")
     subs = data["substitutions"]
     if entry == "garden-pilot.yaml":
         assert "screensaver_timeout" not in subs

@@ -214,3 +214,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## gp adapter
+`gp_engine.h` (GPLv3, new file, not a fork patch) implements `gp::Engine` of the MIT `components/gp/` over a group, so the
+`gp_*` layer (screens, schedules, Home Assistant) never names `garden_zones`. It is compiled only when the `gp` component
+is part of the build (`__has_include`). `group.h` has the thin read accessors it needs (`zone_name`, `zone_enabled`,
+`zone_run_duration`, `zone_paused`) and a last-skip record per zone (`last_skip()`, filled when the soil rule skips a
+zone; watchdog locks are not recorded as skips).

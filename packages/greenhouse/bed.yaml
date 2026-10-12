@@ -1,4 +1,6 @@
-# One greenhouse bed: a `garden_zone:` list item of the group gh_zones with its enable switch and run-duration number.
+# One greenhouse bed: a `garden_zone:` list item of the group gh_zones (engine side: enable switch, run-duration number,
+# the raw-relay valve switch kept internal) and a `gp_zone:` list item of the gp group gp_greenhouse (the Home Assistant
+# switch "${bed_name}": on = run the bed, off = stop). Needs packages/core/gp.yaml and packages/greenhouse/gp.yaml.
 # Include it once per bed from the entry file (vars are all required, literal strings):
 #
 #   gh_bed_1: !include
@@ -10,7 +12,8 @@
 #   relay      board relay number; the bed drives `board_relay_<relay>` from the hardware profile.
 #
 # Requirements and rules:
-# - Include packages/greenhouse/irrigation.yaml (gh_irrigation) BEFORE the beds: it declares the group gh_zones.
+# - Include packages/greenhouse/irrigation.yaml (gh_irrigation) BEFORE the beds: it declares the group gh_zones. The gp
+#   packages (core_gp, gh_gp) come after the last bed.
 # - The order of the bed blocks in the entry file is the zone order (zone_number 0, 1, 2, ... used by the greenhouse
 #   page).
 # - One bed is enough (headless; the greenhouse page still expects beds 1-3 until roadmap stage 9).
@@ -21,8 +24,14 @@
 
 garden_zone:
   - group: gh_zones
-    valve_switch: "${bed_name}"
-    enable_switch: "${bed_name} enable"
+    # The engine's own zone switch is internal: Home Assistant sees the gp_zone switch below with the same name.
+    valve_switch:
+      id: gh_bed${bed}_engine_valve
+      name: "${bed_name}"
+      internal: true
+    enable_switch:
+      id: gh_bed${bed}_enable
+      name: "${bed_name} enable"
     run_duration_number:
       id: gh_bed${bed}_run_duration
       name: "${bed_name} run duration"
@@ -35,3 +44,9 @@ garden_zone:
       icon: mdi:timer-outline
       mode: BOX
     valve_switch_id: board_relay_${relay}
+
+gp_zone:
+  - group: gp_greenhouse
+    position: ${bed}
+    id: gh_bed${bed}_switch
+    name: "${bed_name}"

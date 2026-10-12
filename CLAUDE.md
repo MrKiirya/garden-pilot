@@ -11,7 +11,7 @@ Design rules and tokens: [design/README.md](design/README.md), [design/tokens.js
    API, OTA). **C++ only for stateful irrigation logic** (future `components/garden_zones/`), never large
    logic in lambdas.
 2. **One abstraction layer, `gp_*`.** Screens, schedules and Home Assistant talk to irrigation only through
-   `gp_*` scripts and entities, never to `sprinkler:` / `garden_zones` directly, so the engine can be swapped.
+   `gp.*` actions and `gp_*` entities (`components/gp/README.md`), never to `sprinkler:` / `garden_zones` directly, so the engine can be swapped.
 3. **Modules are packages.** A feature (bed, lawn, heating, …) is a package that can be enabled by uncommenting
    one line in the entry file; hardware pins live in `hardware/<board>.yaml` substitutions, not in feature files.
 4. **Safety first for actuators.** Raw GPIO switches are `internal: true`; valves and heaters default OFF on boot
@@ -46,7 +46,10 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/lvgl/fonts/` | Vendored TTF (Montserrat Bold) + `OFL.txt` for the glyph-limited custom font. |
 | `packages/lvgl/dialog_confirm.yaml` | Confirm dialog on the LVGL top layer + `gp_confirm` script (pattern in its header). |
 | `packages/core/diagnostics.yaml` | Internal version / uptime / restart button for the Network page (no new HA entities). |
-| `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`irrigation.yaml`: the `garden_zones` group `gh_zones`, its entities, watchdog sensor and reset button), LVGL page. |
+| `components/gp/` | The `gp_*` layer (MIT): pure model/alerts/history/format headers + ESPHome glue, `Engine` adapter interface; contract in its README. |
+| `components/gp_zone/` | One `gp_zone:` list item per bed: the HA zone switch (MIT). The `garden_zones` adapter is `components/garden_zones/gp_engine.h`. |
+| `packages/core/gp.yaml`, `gp_api.yaml`, `packages/greenhouse/gp.yaml` | gp hub + alert sensor; generic HA actions; greenhouse group, status/watchdog entities. `packages/greenhouse/gp_lvgl_status.yaml` = pollers for the greenhouse/Home labels. |
+| `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`irrigation.yaml`: the `garden_zones` group `gh_zones` and its own entities; the watchdog sensor, reset button and status live in `gp.yaml`), LVGL page. Every config that includes `bed.yaml` also needs `core_gp` + `gh_gp` (its `gp_zone:` switch), and `core_gp_api` when `api` is present. |
 | `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), watchdog fault injection "Sim rogue relay 1" (`fault.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
 | `secrets.example.yaml` | Template with obvious dummy values; copy to git-ignored `secrets.yaml`. |
@@ -70,9 +73,9 @@ introduced by roadmap tasks, not ad hoc.
    `core_diagnostics` and the home page); then `lvgl_page_home`, other `lvgl_page_*`, `lvgl_dialog_confirm`,
    `lvgl_screensaver`,
    `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`, `lvgl_boot_wifi`.
-5. `gh_irrigation` (before the greenhouse page: its buttons call the group `gh_zones`) → `gh_bed_N` (+ optional
-   `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `gh_lvgl_page` → `gh_sensors_air` →
-   `gh_sensors_soil` → `gh_sprinkler_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test).
+5. `gh_irrigation` (the engine group `gh_zones`) → `gh_bed_N` (+ optional
+   `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `core_gp` → `core_gp_api` (needs `core_api`) → `gh_gp` (the gp layer; screens and Home Assistant reach irrigation only through it) → `gh_lvgl_page` → `gh_sensors_air` →
+   `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 `garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `core_diagnostics`, `display_sdl` and
@@ -110,16 +113,17 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - Actions extended into a `script` run outside the `on_touch` trigger: don't use the trigger-only `touch`
   variable there; use `id(touch)->get_touch()`.
 - Don't call `lvgl.*` from a `number`'s `on_value` that can fire on restore/HA before LVGL is ready; poll from
-  an `interval` instead (see `packages/greenhouse/sprinkler_lvgl_status.yaml`, name kept from the stock-sprinkler days).
+  an `interval` instead (see `packages/greenhouse/gp_lvgl_status.yaml`).
 - Package merge: substitutions in the entry file win; dicts merge by key; component lists merge by `id`.
   Prefer small includes over deep `!extend` / `!remove` chains.
 - The sim entry file needs `sdl2-config` (SDL2 dev files) even for `esphome config`; `web_server` is not available on
   the `host` platform, and `on_time_sync` does not fire on `host` (poll the clock from an `interval`).
 - `xdotool click` is too short for LVGL to register a touch: use press, move, release with pauses (`script/sim-ui tap`). SDL `headless: true` disables the SDL touchscreen, so screenshots are X-level grabs under Xvfb instead.
 - A template entity must not reuse the generated id `<group>_watchdog` (the group's watchdog component) or `<group>_lane_<n>`.
+- LVGL reads `gp` only from `interval:` pollers (guard with `changed_since`), never from a gp trigger, `on_value` or API action; label texts come from `gp::fmt::*` so lambdas stay one line. The hub id is `gp_hub` (an id may not equal an integration name).
 - Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
-  (`tests/test_service.py`); it is enforced by `run_duration` and by the separate `gp_valve_test_guard` script. Service
+  (`tests/test_service.py`); it is enforced by the `duration` of `gp.run_zone` and by the separate `gp_valve_test_guard` script. Service
   mode (`gp_service_mode`, never restored) stops other watering within 1 s. The limit counts from the tap and the lane opens the valve ~2 s later, so a valve is open ~8 s. Raising the limit is the human's call.
 - A `garden_zones` group's watchdog is on by default (`max_on_time` 60 min, `pump_max_on_time` 2 h, `pump_idle_timeout` 10 s); only `never` disables a limit (WARN at boot). A zone's `run_duration_number` `max_value` (stock default 86400 s) must fit under its `max_on_time` or config fails (skipped for `never`).
 - `garden_zone:` is always a list item (`- group: ...`): two dict-form entries from different packages merge into one zone.

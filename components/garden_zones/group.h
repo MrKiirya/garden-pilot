@@ -120,6 +120,80 @@ class GardenZonesGroup : public Component {
 
   /// The lanes' skip check: nullptr = run, otherwise the reason text (valid until the next call).
   const char *skip_reason(size_t lane, size_t valve) {
+    const char *reason = this->skip_reason_(lane, valve);
+    auto zone = this->map_.zone_of(lane, valve);
+    // a watchdog lock is not recorded as a skip (the zone shows as locked, and the record would outlive the lock)
+    if (reason != nullptr && zone.has_value() && !this->zone_locked(*zone))
+      this->record_skip_(*zone, reason);
+    return reason;
+  }
+
+  /// The last skip of the zone by the soil rule (read by the gp adapter): millis() stamp and reason text.
+  bool last_skip(size_t zone, uint32_t &stamp, const char *&text) const {
+    if (zone >= this->skips_.size() || !this->skips_[zone].valid)
+      return false;
+    stamp = this->skips_[zone].stamp;
+    text = this->skips_[zone].text;
+    return true;
+  }
+
+  /// Read accessors for the gp adapter.
+  const char *zone_name(size_t zone) {
+    auto ref = this->map_.route(zone);
+    if (!ref.has_value() || ref->lane >= this->lanes_.size())
+      return "";
+    const char *name = this->lanes_[ref->lane]->valve_name(ref->valve);
+    return name != nullptr ? name : "";
+  }
+
+  bool zone_enabled(size_t zone) {
+    auto ref = this->map_.route(zone);
+    if (!ref.has_value() || ref->lane >= this->lanes_.size())
+      return false;
+    SprinklerControllerSwitch *enable = this->lanes_[ref->lane]->enable_switch(ref->valve);
+    return enable == nullptr || enable->state;
+  }
+
+  uint32_t zone_run_duration(size_t zone) {
+    auto ref = this->map_.route(zone);
+    if (!ref.has_value() || ref->lane >= this->lanes_.size())
+      return 0;
+    return this->lanes_[ref->lane]->valve_run_duration(ref->valve);
+  }
+
+  /// Longest configured run of the zone in seconds (the run-duration number max / the fixed duration), 0 = unknown.
+  void set_zone_max_run(size_t zone, uint32_t seconds) {
+    if (this->max_run_.size() <= zone)
+      this->max_run_.resize(zone + 1, 0);
+    this->max_run_[zone] = seconds;
+  }
+  uint32_t zone_max_run(size_t zone) const { return zone < this->max_run_.size() ? this->max_run_[zone] : 0; }
+
+  bool zone_paused(size_t zone) const {
+    auto ref = this->map_.route(zone);
+    if (!ref.has_value() || ref->lane >= this->lanes_.size())
+      return false;
+    auto paused = this->lanes_[ref->lane]->paused_valve();
+    return paused.has_value() && paused.value() == ref->valve;
+  }
+
+ protected:
+  struct SkipRecord {
+    bool valid{false};
+    uint32_t stamp{0};
+    char text[48]{};
+  };
+
+  void record_skip_(size_t zone, const char *reason) {
+    if (this->skips_.size() <= zone)
+      this->skips_.resize(zone + 1);
+    SkipRecord &record = this->skips_[zone];
+    record.valid = true;
+    record.stamp = millis();
+    snprintf(record.text, sizeof(record.text), "%s", reason);
+  }
+
+  const char *skip_reason_(size_t lane, size_t valve) {
     auto zone = this->map_.zone_of(lane, valve);
     if (!zone.has_value())
       return nullptr;
@@ -155,6 +229,7 @@ class GardenZonesGroup : public Component {
     return nullptr;
   }
 
+ public:
   /// Adds the zone to its lane's queue; never starts anything.
   void queue_zone(optional<size_t> zone, optional<uint32_t> run_duration) {
     auto ref = this->route_(zone, "queue_zone");
@@ -331,6 +406,8 @@ class GardenZonesGroup : public Component {
   std::unique_ptr<Automation<>> main_on_, main_off_, aa_on_, aa_off_;
   std::unique_ptr<CallAction> main_on_action_, main_off_action_, aa_on_action_, aa_off_action_;
   std::vector<ZoneSoil> soil_;
+  std::vector<SkipRecord> skips_;
+  std::vector<uint32_t> max_run_;
   std::string reason_;
   std::vector<Sprinkler *> lanes_;
   std::vector<lanes::ZoneRef> table_;

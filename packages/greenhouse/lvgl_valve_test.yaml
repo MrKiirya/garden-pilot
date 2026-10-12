@@ -1,24 +1,27 @@
 # Valve test and service mode (draft D18; task 010). ACTUATOR-FACING: a TEST button opens one real valve.
-# Opened from Setup > SERVICE. Greenhouse-specific (it uses gh_zones); rows for beds 1-3 only, like the
-# greenhouse page, until stage 8 moves this to the gp_* layer (principle 2: the direct garden_zones.* calls here are
-# legacy on purpose).
+# Opened from Setup > SERVICE. Greenhouse-specific (group gp_greenhouse); rows for beds 1-3 only, like the greenhouse
+# page, until stage 9. Everything goes through the gp_* layer (gp.run_zone / gp.stop_all and the read model); the
+# engine behind it is not named here.
 #
 # SAFETY (human's call to change):
 # - `valve_test_max_time` is the longest a test valve stays open. It MUST NOT exceed 10 s (tests/test_service.py).
-#   It is enforced twice: `run_duration` of garden_zones.run_zone and the independent
-#   `gp_valve_test_guard` script that shuts everything down after the same time (holds even if run_duration were
-#   ignored).
+#   It is enforced twice: `duration` of gp.run_zone and the independent `gp_valve_test_guard` script that stops
+#   everything after the same time (holds even if the duration were ignored).
 # - Timing: the guard counts from the tap, but the lane opens the valve about 2 s later (switching delay after
 #   the shutdown; measured again in the emulator for task 014), so a test valve is really open about 8 s and the
 #   "OPEN - N s" countdown stops near 2 s.
-# - One valve at a time: every start shuts the group down first.
+# - One valve at a time: every start stops the group first.
 # - Service mode (`gp_service_mode`, not restored: a reboot always leaves it) is on while the page is open. On entry
-#   everything is stopped and the queue cleared. A 1 s poller shuts down any run that was not started by the test
+#   everything is stopped and the queue cleared. A 1 s poller stops any run that was not started by the test
 #   (Home Assistant, queue) with a WARN log. Service mode ends by EXIT SERVICE, by leaving the page, after 10 min of
-#   no test (`gp_service_session`) or by a reboot; each end shuts the group down.
-# - Only garden_zones.run_zone / shutdown_group / clear_group_queue on gh_zones; never a raw relay or a
-#   zone switch. A bed locked by the watchdog is refused by run_zone (its row stays "closed").
-# Needs gh_irrigation, the beds 1-3 and lvgl_page_setup (the SERVICE tile). Tokens only; ASCII only.
+#   no test (`gp_service_session`) or by a reboot; each end stops the group.
+# - While service mode is on `gp.inhibit` makes the gp layer refuse every start except the test's own (source: service),
+#   so Home Assistant zone switches and gp actions cannot open a valve. Exception: the "Greenhouse irrigation" main
+#   switch still starts the engine's full cycle directly; the 1 s poller stops it (as in 014). Follow-up: route it
+#   through gp.
+# - Only gp.run_zone (source: service, so the history can tell tests from waterings) / gp.stop_all on gp_greenhouse;
+#   never a raw relay or a zone switch. A bed locked by the watchdog is refused by gp.run_zone (its row shows "locked").
+# Needs gh_gp, the beds 1-3 and lvgl_page_setup (the SERVICE tile). Tokens only; ASCII only.
 
 substitutions:
   valve_test_max_time: 10s
@@ -28,13 +31,19 @@ globals:
     type: bool
     initial_value: "false"
     restore_value: false
+  # revision of the gp read model at the last row update
+  - id: gp_vt_seen
+    type: uint32_t
+    initial_value: "0"
+    restore_value: false
 
 script:
   - id: gp_service_enter
     mode: restart
     then:
-      - garden_zones.shutdown_group: gh_zones
-      - garden_zones.clear_group_queue: gh_zones
+      - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
+      # gp starts other than the test's own (source: service) are refused from here on (main switch: see header)
+      - gp.inhibit: {id: gp_greenhouse, state: true}
       - globals.set:
           id: gp_service_mode
           value: "true"
@@ -50,13 +59,14 @@ script:
           condition:
             lambda: "return id(gp_service_mode);"
           then:
-            - garden_zones.shutdown_group: gh_zones
+            - gp.stop_all: gp_greenhouse
             # The guard starts before the valve opens, so the open time can only be shorter than the limit.
             - script.execute: gp_valve_test_guard
-            - garden_zones.run_zone:
-                id: gh_zones
-                zone_number: !lambda "return valve;"
-                run_duration: ${valve_test_max_time}
+            - gp.run_zone:
+                id: gp_greenhouse
+                zone: !lambda "return valve;"
+                duration: ${valve_test_max_time}
+                source: service
             - script.execute: gp_service_session
 
   # Second, independent enforcement of the limit.
@@ -64,13 +74,13 @@ script:
     mode: restart
     then:
       - delay: ${valve_test_max_time}
-      - garden_zones.shutdown_group: gh_zones
+      - gp.stop_all: gp_greenhouse
 
   - id: gp_valve_test_stop
     mode: restart
     then:
       - script.stop: gp_valve_test_guard
-      - garden_zones.shutdown_group: gh_zones
+      - gp.stop_all: gp_greenhouse
 
   - id: gp_service_session
     mode: restart
@@ -83,7 +93,8 @@ script:
     then:
       - script.stop: gp_valve_test_guard
       - script.stop: gp_service_session
-      - garden_zones.shutdown_group: gh_zones
+      - gp.stop_all: gp_greenhouse
+      - gp.inhibit: {id: gp_greenhouse, state: false}
       - globals.set:
           id: gp_service_mode
           value: "false"
@@ -95,7 +106,8 @@ script:
     then:
       - script.stop: gp_valve_test_guard
       - script.stop: gp_service_session
-      - garden_zones.shutdown_group: gh_zones
+      - gp.stop_all: gp_greenhouse
+      - gp.inhibit: {id: gp_greenhouse, state: false}
       - globals.set:
           id: gp_service_mode
           value: "false"
@@ -108,8 +120,7 @@ interval:
           condition:
             and:
               - lambda: "return id(gp_service_mode);"
-              - lambda: |-
-                  return !id(gh_zones)->active_zones().empty() || !id(gh_zones)->queued_zones().empty();
+              - lambda: "return id(gp_greenhouse)->summary().running || id(gp_greenhouse)->summary().queue_length > 0;"
               - not:
                   script.is_running: gp_valve_test_guard
           then:
@@ -117,65 +128,23 @@ interval:
                 level: WARN
                 tag: gp_service
                 format: "service mode: external start blocked"
-            - garden_zones.shutdown_group: gh_zones
-            - garden_zones.clear_group_queue: gh_zones
+            - gp.stop_all: {id: gp_greenhouse, clear_queue: true}
       - if:
           condition:
-            lambda: |-
-              auto az = id(gh_zones)->active_zones();
-              return std::find(az.begin(), az.end(), (size_t) 0) != az.end();
+            lambda: "return id(gp_greenhouse)->changed_since(id(gp_vt_seen));"
           then:
             - lvgl.label.update:
                 id: valve_test_bed1_status
-                text: !lambda |-
-                  char buf[20];
-                  auto tr = id(gh_zones)->time_remaining_zone((size_t) 0);
-                  snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
-                  return std::string(buf);
-                text_color: 0x78dc77
-          else:
-            - lvgl.label.update:
-                id: valve_test_bed1_status
-                text: "closed"
-                text_color: 0xbecab9
-      - if:
-          condition:
-            lambda: |-
-              auto az = id(gh_zones)->active_zones();
-              return std::find(az.begin(), az.end(), (size_t) 1) != az.end();
-          then:
+                text: !lambda "return gp::fmt::valve_test_row(id(gp_greenhouse)->zone(0));"
+                text_color: !lambda "return lv_color_hex(gp::fmt::valve_test_color(id(gp_greenhouse)->zone(0)));"
             - lvgl.label.update:
                 id: valve_test_bed2_status
-                text: !lambda |-
-                  char buf[20];
-                  auto tr = id(gh_zones)->time_remaining_zone((size_t) 1);
-                  snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
-                  return std::string(buf);
-                text_color: 0x78dc77
-          else:
-            - lvgl.label.update:
-                id: valve_test_bed2_status
-                text: "closed"
-                text_color: 0xbecab9
-      - if:
-          condition:
-            lambda: |-
-              auto az = id(gh_zones)->active_zones();
-              return std::find(az.begin(), az.end(), (size_t) 2) != az.end();
-          then:
+                text: !lambda "return gp::fmt::valve_test_row(id(gp_greenhouse)->zone(1));"
+                text_color: !lambda "return lv_color_hex(gp::fmt::valve_test_color(id(gp_greenhouse)->zone(1)));"
             - lvgl.label.update:
                 id: valve_test_bed3_status
-                text: !lambda |-
-                  char buf[20];
-                  auto tr = id(gh_zones)->time_remaining_zone((size_t) 2);
-                  snprintf(buf, sizeof(buf), "OPEN - %u s", (unsigned) (tr.has_value() ? tr.value() : 0));
-                  return std::string(buf);
-                text_color: 0x78dc77
-          else:
-            - lvgl.label.update:
-                id: valve_test_bed3_status
-                text: "closed"
-                text_color: 0xbecab9
+                text: !lambda "return gp::fmt::valve_test_row(id(gp_greenhouse)->zone(2));"
+                text_color: !lambda "return lv_color_hex(gp::fmt::valve_test_color(id(gp_greenhouse)->zone(2)));"
 
 lvgl:
   pages:

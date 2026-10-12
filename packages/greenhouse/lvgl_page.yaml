@@ -1,5 +1,6 @@
 # Full-screen greenhouse page (beds + air + soil + irrigation).
-# Run durations are shown as text from number entities (HA); do not sync LVGL spinboxes — wrong ranges overwrite HA.
+# Run durations are shown as text from the gp_* read model; do not sync LVGL spinboxes — wrong ranges overwrite HA.
+# Buttons use only gp.* actions on gp_greenhouse (packages/greenhouse/gp.yaml); labels: gp_lvgl_status.yaml.
 
 lvgl:
   pages:
@@ -61,9 +62,9 @@ lvgl:
             width: 92
             height: 30
             on_click:
-              - garden_zones.run_zone:
-                  id: gh_zones
-                  zone_number: 0
+              - gp.run_zone:
+                  id: gp_greenhouse
+                  zone: 0
             widgets:
               - label:
                   align: CENTER
@@ -75,9 +76,9 @@ lvgl:
             width: 92
             height: 30
             on_click:
-              - garden_zones.run_zone:
-                  id: gh_zones
-                  zone_number: 1
+              - gp.run_zone:
+                  id: gp_greenhouse
+                  zone: 1
             widgets:
               - label:
                   align: CENTER
@@ -89,9 +90,9 @@ lvgl:
             width: 92
             height: 30
             on_click:
-              - garden_zones.run_zone:
-                  id: gh_zones
-                  zone_number: 2
+              - gp.run_zone:
+                  id: gp_greenhouse
+                  zone: 2
             widgets:
               - label:
                   align: CENTER
@@ -103,9 +104,9 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - garden_zones.queue_zone:
-                  id: gh_zones
-                  zone_number: 0
+              - gp.enqueue_zone:
+                  id: gp_greenhouse
+                  zone: 0
             widgets:
               - label:
                   align: CENTER
@@ -117,9 +118,9 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - garden_zones.queue_zone:
-                  id: gh_zones
-                  zone_number: 1
+              - gp.enqueue_zone:
+                  id: gp_greenhouse
+                  zone: 1
             widgets:
               - label:
                   align: CENTER
@@ -131,9 +132,9 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - garden_zones.queue_zone:
-                  id: gh_zones
-                  zone_number: 2
+              - gp.enqueue_zone:
+                  id: gp_greenhouse
+                  zone: 2
             widgets:
               - label:
                   align: CENTER
@@ -145,7 +146,7 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              # Asks first (packages/lvgl/dialog_confirm.yaml); the legacy direct garden_zones call stays until stage 8.
+              # Asks first (packages/lvgl/dialog_confirm.yaml), then stops through the gp_* layer.
               - if:
                   condition:
                     not:
@@ -162,7 +163,7 @@ lvgl:
                         condition:
                           lambda: "return id(gp_confirm_result);"
                         then:
-                          - garden_zones.shutdown_group: gh_zones
+                          - gp.stop_all: gp_greenhouse
             widgets:
               - label:
                   align: CENTER
@@ -174,8 +175,7 @@ lvgl:
             width: 92
             height: 28
             on_click:
-              - garden_zones.start_group_queue:
-                  id: gh_zones
+              - gp.start_queue: gp_greenhouse
             widgets:
               - label:
                   align: CENTER

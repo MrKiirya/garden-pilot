@@ -1,0 +1,38 @@
+# Greenhouse group of the gp_* layer: group gp_greenhouse (key "greenhouse") on top of the garden_zones group gh_zones.
+# Everything that reads or drives greenhouse irrigation (screens, valve test, screensaver, Home Assistant) goes
+# through gp_greenhouse; this is the only file besides irrigation.yaml / bed.yaml that names the engine group.
+# Needs packages/core/gp.yaml (hub) and one packages/greenhouse/bed.yaml include per bed (the gp_zone switches).
+# Home Assistant entities: "Greenhouse status" (Idle / Watering B1 B3 / Locked), "Greenhouse watchdog" (problem) and
+# "Greenhouse watchdog reset" (config), plus the "Greenhouse bed N" zone switches from the bed packages.
+
+gp:
+  groups:
+    - id: gp_greenhouse
+      name: "Greenhouse"
+      key: greenhouse
+      garden_zones_id: gh_zones
+
+# Watchdog state for Home Assistant: on while any bed (or the group) is locked by the watchdog.
+binary_sensor:
+  - platform: template
+    id: gh_zones_watchdog_problem
+    name: "Greenhouse watchdog"
+    device_class: problem
+    condition:
+      gp.watchdog_tripped: gp_greenhouse
+
+button:
+  - platform: template
+    id: gh_zones_watchdog_reset
+    name: "Greenhouse watchdog reset"
+    entity_category: config
+    on_press:
+      - gp.reset_watchdog: gp_greenhouse
+
+text_sensor:
+  - platform: template
+    id: gp_greenhouse_status
+    name: "Greenhouse status"
+    icon: mdi:water-outline
+    update_interval: 1s
+    lambda: "return id(gp_greenhouse)->status_text_changed();"
