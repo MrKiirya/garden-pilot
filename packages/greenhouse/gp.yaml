@@ -3,7 +3,9 @@
 # through gp_greenhouse; this is the only file besides irrigation.yaml / bed.yaml that names the engine group.
 # Needs packages/core/gp.yaml (hub) and one packages/greenhouse/bed.yaml include per bed (the gp_zone switches).
 # Home Assistant entities: "Greenhouse status" (Idle / Watering B1 B3 / Locked), "Greenhouse watchdog" (problem) and
-# "Greenhouse watchdog reset" (config), plus the "Greenhouse bed N" zone switches from the bed packages.
+# "Greenhouse watchdog reset" (config), the main switch "Greenhouse irrigation" (ON = gp.full_cycle, OFF =
+# gp.stop_all, so service mode refuses it and OFF is a full STOP) and the "Greenhouse bed N"
+# zone switches from the bed packages.
 
 gp:
   groups:
@@ -38,6 +40,22 @@ binary_sensor:
     device_class: problem
     condition:
       gp.watchdog_tripped: gp_greenhouse
+
+# Main switch of the greenhouse: owned by gp (the engine group has none). restore_mode DISABLED is required: the
+# template switch default (ALWAYS_OFF) would run the OFF action, a gp STOP, at every boot. The state follows "any zone
+# running"; an ON that gp refuses (service mode, watchdog) falls back to OFF within a second.
+switch:
+  - platform: template
+    id: gp_greenhouse_main_switch
+    name: "Greenhouse irrigation"
+    icon: mdi:water-pump
+    restore_mode: DISABLED
+    optimistic: false
+    lambda: "return id(gp_greenhouse)->summary().running;"
+    turn_on_action:
+      - gp.full_cycle: gp_greenhouse
+    turn_off_action:
+      - gp.stop_all: gp_greenhouse
 
 button:
   - platform: template
