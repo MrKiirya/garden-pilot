@@ -374,7 +374,8 @@ def test_schedule_host_scenario(schedule_program: Path, tmp_path: Path) -> None:
     assert after == expect_tomorrow, "after the run the next run is tomorrow's"
     assert "mid_zone2=1" in one, "zone 1 completed (relay off) before zone 2 started"
     # zone 1 ran once for about the 10 % duration, then zone 2 (cut by the kill)
-    zone1_on = [row for row in rel if row[2] == 1]
+    # (count rising edges: during the stock valve handover relay 1 is still on in the row where relay 2 opens)
+    zone1_on = [cur for prev, cur in zip([(0, 0, 0, 0, 0)] + rel, rel) if prev[2] == 0 and cur[2] == 1]
     assert len(zone1_on) == 1
 
     # phase 2: restart inside the catch-up window: only the interrupted zone 2 runs again
