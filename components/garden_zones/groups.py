@@ -274,6 +274,13 @@ def _zone_label(name, number, zone):
     return f"group '{name}' zone {number} ('{label or zone[gz.CONF_VALVE_SWITCH_ID].id}')"
 
 
+def _watchdog_label(zone):
+    """The short label of a zone for the watchdog log lines, which add the group and the zone number themselves."""
+    switch_conf = zone.get(gz.CONF_VALVE_SWITCH)
+    label = switch_conf.get(CONF_NAME) if isinstance(switch_conf, dict) else None
+    return label or zone[gz.CONF_VALVE_SWITCH_ID].id
+
+
 def zone_max_on(group, zone):
     """The zone's validated limit (its own override, else the group's): a TimePeriod or "never"."""
     return zone.get(CONF_MAX_ON_TIME, group[CONF_MAX_ON_TIME])
@@ -666,7 +673,7 @@ async def to_code_groups(config):
                 watchdog.add_zone(
                     raw,
                     lane_vars[lane_index],
-                    _zone_label(name, zone_number, zone),
+                    _watchdog_label(zone),
                     _limit_code(zone_max_on(group, zone)),
                 )
             )

@@ -2,7 +2,7 @@
 #   group    the group key (the greenhouse is "greenhouse", see packages/greenhouse/gp.yaml)
 #   zone     1-based, as on the screen and in the entity names ("Greenhouse bed 2" = zone 2)
 #   minutes  0 = the zone's configured run duration; more than the zone's maximum (its run-duration number max) is
-#            cut to the maximum with a WARN (and anything above 24 h to 24 h)
+#            cut to the maximum with a WARN (and anything above 24 h to 24 h, gp::api_seconds)
 # Each body is one gp.* action. Needs core_api and core_gp. Home Assistant calls them as `esphome.<node>_gp_run_zone`,
 # so automations that start watering use these instead of the zone switches.
 
@@ -18,7 +18,7 @@ api:
             hub: gp_hub
             group: !lambda "return group;"
             zone: !lambda "return zone - 1;"
-            duration: !lambda "return minutes > 1440 ? 86400 : (minutes > 0 ? minutes * 60 : 0);"
+            duration: !lambda "return gp::api_seconds(minutes);"
     - action: gp_enqueue_zone
       variables:
         group: string
@@ -29,7 +29,7 @@ api:
             hub: gp_hub
             group: !lambda "return group;"
             zone: !lambda "return zone - 1;"
-            duration: !lambda "return minutes > 1440 ? 86400 : (minutes > 0 ? minutes * 60 : 0);"
+            duration: !lambda "return gp::api_seconds(minutes);"
     - action: gp_start_queue
       variables:
         group: string

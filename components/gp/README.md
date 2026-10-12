@@ -67,10 +67,10 @@ Every action logs at INFO with tag `gp`. Group actions take `id: <group id>` or 
 | Action | Arguments | Engine call |
 |---|---|---|
 | `gp.run_zone` | `zone` (0-based), `duration` (optional; default the zone's), `source` (`manual`, `service`) | manual run; refused + WARN when LOCKED or out of range |
-| `gp.enqueue_zone` | `zone`, `duration` | adds to the queue (never starts) |
+| `gp.enqueue_zone` | `zone`, `duration` | adds to the queue (never starts); cut to the zone's maximum (WARN). Held back like `gp.enqueue_zones` while a full cycle or another non-queue run is running: a zone added then ("+Q", Home Assistant) is not shown as queued until 5 s after that run has ended |
 | `gp.enqueue_zones` | `mask` (bit n = zone n, 0-based), `pct` (percent of each zone's run duration; schedules use it) | queues every zone of the mask in zone order for run duration x pct, cut to the zone's maximum (WARN when cut); a zone already queued or running is not queued again (INFO); bits beyond the group are ignored (WARN); refused while inhibited; never starts. **While a full cycle (or another non-queue run) is running the request is held back in gp** (the engine would pick queued zones in the middle of the cycle) and queued after that run has ended (INFO log) |
 | `gp.dequeue_zone` | `zone` | removes from the queue |
-| `gp.start_queue` / `gp.full_cycle` | - | start the queue / a full cycle; both refused while inhibited. `start_queue` while a full cycle (or another non-queue run) is running is **deferred**: the cycle runs to its end, then (after 5 s without a running zone) the held-back `enqueue_zones` requests are queued and the queue starts (INFO logs). Never cuts a cycle short |
+| `gp.start_queue` / `gp.full_cycle` | - | start the queue / a full cycle; both refused while inhibited. `start_queue` while a full cycle (or another non-queue run) is running is **deferred**: the cycle runs to its end, then (after 5 s without a running zone) the held-back `enqueue_zones` requests are queued and the queue starts (INFO logs). Never cuts a cycle short. **Also held back while the engine is still stopping** (a `gp.stop_all` shuts the lane down for about 2 s and the engine loses a queue / cycle start issued meanwhile): the start runs once the lane is idle (INFO log "deferred"); a later `stop_all` / inhibit / `clear_queue` cancels it |
 | `gp.clear_queue` | - | drops every queued zone and any held-back enqueue / start (a running zone keeps running) |
 | `gp.stop_all` | `clear_queue` (default false) | shut the group down; also drops any held-back enqueue / start and fires the group's `on_stop` |
 | `gp.reset_watchdog` | - | reset the watchdog lock |
@@ -82,15 +82,15 @@ Triggers: `gp: on_alert_change` (logging / HA only); group `on_stop` fires on ev
 entered (`gp.inhibit: true`); the greenhouse package hooks the schedule to it (a STOP settles the slots, see
 `components/garden_schedule/README.md`); group `on_zone_finished (zone, completed)` fires when a zone's run
 ends (zone 0-based). `completed` is true only for a run that came from the queue (a queue start, a scheduled run) and was
-not ended by `gp.stop_all` within 3 s before it ended. It is false for manual / service runs and for stopped runs. A run
-ended by Home Assistant turning off the group's main switch has no stop signal and counts as completed (tested). A run
+not ended by `gp.stop_all` within 3 s before it ended. It is false for manual / service runs and for stopped runs. The
+Home Assistant main switch "Greenhouse irrigation" (a template switch of `packages/greenhouse/gp.yaml`: ON = `gp.full_cycle`, OFF = `gp.stop_all`) is a normal STOP: `completed` false, `on_stop` fires (tested). A run
 ended by the engine watchdog also has no stop signal, so a queue run cut by it counts as completed too (a faulty valve
 is not repeated by a schedule); not covered by a test, because scheduled durations are clamped below the watchdog limit. Schedules use it as the per-zone "done" mark.
 
 ## Home Assistant
 One generic action set for every group (`packages/core/gp_api.yaml`): `gp_run_zone`, `gp_enqueue_zone` (`group`, `zone`
 1-based, `minutes`, 0 = the configured duration), `gp_start_queue`, `gp_full_cycle`, `gp_stop_all`, `gp_reset_watchdog`
-(`group`). Entities: the "Greenhouse bed N" zone switches (gp_zone), "Greenhouse status" (Idle / Watering B1 B3 /
+(`group`). Entities: the "Greenhouse irrigation" main switch (ON = full cycle, refused while service mode is on; OFF = full STOP, also while idle), the "Greenhouse bed N" zone switches (gp_zone), "Greenhouse status" (Idle / Watering B1 B3 /
 Locked), "Alert", "Greenhouse watchdog" (problem), "Greenhouse watchdog reset". Settings entities (run durations, enable
 switches, auto advance, reset button) have `entity_category: config`.
 

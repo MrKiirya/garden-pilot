@@ -82,6 +82,16 @@ class GardenZonesGroup : public Component {
   size_t zone_count() const { return this->map_.zone_count(); }
   size_t lane_count() const { return this->lanes_.size(); }
 
+  /// True while any lane is still shutting down (STOPPING): a queue start / cycle start issued now is lost by the
+  /// lane's state machine (gp holds such starts back, see components/gp/gp.h).
+  bool any_lane_stopping() const {
+    for (Sprinkler *lane : this->lanes_) {
+      if (lane->controller_state() == SprinklerState::STOPPING)
+        return true;
+    }
+    return false;
+  }
+
   void set_watchdog(GroupWatchdog *watchdog) { this->watchdog_ = watchdog; }
   bool zone_locked(size_t zone) const { return this->watchdog_ != nullptr && this->watchdog_->zone_locked(zone); }
   bool watchdog_tripped() const { return this->watchdog_ != nullptr && this->watchdog_->tripped(); }
