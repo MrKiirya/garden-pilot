@@ -1189,18 +1189,26 @@ class _Timeline:
     def __init__(self, messages: list[str]) -> None:
         self.messages = messages
         self.marks = {m.group(1): int(m.group(2)) for m in map(_MARK.match, messages) if m}
-        self.trips = [(m.group(1), int(m.group(2)), m.group(3), int(m.group(4))) for m in map(_TRIP.match, messages) if m]
+        # windows are cut by log order, not by time: several lines share one millisecond
+        self.mark_pos = {m.group(1): i for i, m in enumerate(map(_MARK.match, messages)) if m}
+        self.trips = []
+        self.trip_pos = []
         self.states = []
-        for m in map(_SAFETY_STATE.match, messages):
-            if m:
+        self.state_pos = []
+        for i, message in enumerate(messages):
+            if m := _TRIP.match(message):
+                self.trips.append((m.group(1), int(m.group(2)), m.group(3), int(m.group(4))))
+                self.trip_pos.append(i)
+            elif m := _SAFETY_STATE.match(message):
                 self.states.append((int(m.group(1)), m.group(2) + m.group(3)))
+                self.state_pos.append(i)
 
     def intervals(self, actuator: int, start: str, end: str) -> list[tuple[int, int]]:
         """(on, off) times of an actuator inside the window of two marks; an open interval ends at the window end."""
-        low, high = self.marks[start], self.marks[end]
+        low, high = self.mark_pos[start], self.mark_pos[end]
         found, begin, previous = [], None, "0"
-        for t, state in self.states:
-            if t < low or t > high:
+        for pos, (t, state) in zip(self.state_pos, self.states):
+            if not low < pos < high:
                 continue
             now = state[actuator]
             if now == "1" and previous != "1":
@@ -1210,11 +1218,12 @@ class _Timeline:
                 begin = None
             previous = now
         if begin is not None:
-            found.append((begin, high))
+            found.append((begin, self.marks[end]))
         return found
 
     def trips_between(self, start: str, end: str) -> list[tuple[str, int, str, int]]:
-        return [trip for trip in self.trips if self.marks[start] <= trip[3] <= self.marks[end]]
+        low, high = self.mark_pos[start], self.mark_pos[end]
+        return [trip for pos, trip in zip(self.trip_pos, self.trips) if low < pos < high]
 
     def after(self, text: str, start: str) -> list[str]:
         """Messages that start with `text`, from the position of the mark `start` on."""
@@ -1501,3 +1510,26 @@ def test_safety_never_codegen(tmp_path: Path) -> None:
     assert main_cpp.count("::esphome::garden_zones::watchdog::DISABLED") == 4, main_cpp.count("watchdog::DISABLED")
     assert re.search(r"h_watchdog->add_zone\([^;]*, 21600000\);", main_cpp), "the 6 h group limit reaches the watchdog"
     assert re.search(r"g_watchdog->set_pump\(gz_pump, [^;]*DISABLED, [^;]*DISABLED\);", main_cpp)
+
+
+@pytest.mark.unit
+def test_safety_timeline_cuts_windows_by_log_order() -> None:
+    """Lines logged in the same millisecond as a mark belong to the window by their position, not their time."""
+    messages = [
+        "t=100 state=000000 pump=0",
+        "mark=a t=200",
+        "t=200 state=000100 pump=0",  # same ms as the start mark, logged after it: inside
+        "t=300 state=000000 pump=0",
+        "trip group=g zone=1 reason=max_on t=300",
+        "mark=b t=300",
+        "t=300 state=000100 pump=0",  # same ms as the end mark, logged after it: outside
+        "trip group=g zone=1 reason=max_on t=300",
+        "mark=c t=400",
+    ]
+    line = _Timeline(messages)
+    assert line.intervals(_V4, "a", "b") == [(200, 300)]
+    assert line.intervals(_V4, "b", "c") == [(300, 400)]
+    assert line.intervals(_V4, "c", "c") == []
+    assert len(line.trips_between("a", "b")) == 1 and len(line.trips_between("b", "c")) == 1
+    before = _Timeline(["t=500 state=000100 pump=0", "mark=x t=500", "mark=y t=600"])
+    assert before.intervals(_V4, "x", "y") == []

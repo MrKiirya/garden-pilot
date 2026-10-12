@@ -266,14 +266,17 @@ class _Timeline:
     def __init__(self, messages: list[str]) -> None:
         self.messages = messages
         self.marks = {m.group(1): int(m.group(2)) for m in map(_MARK.match, messages) if m}
+        # windows are cut by log order, not by time: several lines share one millisecond
+        self.mark_pos = {m.group(1): i for i, m in enumerate(map(_MARK.match, messages)) if m}
+        self.state_pos = [i for i, m in enumerate(map(_STATE.match, messages)) if m]
         self.states = [(int(m.group(1)), m.group(2)) for m in map(_STATE.match, messages) if m]
 
     def window(self, start: str, end: str) -> list[tuple[int, str]]:
         """The state entries inside two marks, preceded by the state at the start (a state holds until the next entry)."""
-        low, high = self.marks[start], self.marks[end]
-        before = [s for s in self.states if s[0] <= low]
-        first = [(low, before[-1][1])] if before else []
-        return first + [s for s in self.states if low < s[0] <= high]
+        low, high = self.mark_pos[start], self.mark_pos[end]
+        before = [s for pos, s in zip(self.state_pos, self.states) if pos < low]
+        first = [(self.marks[start], before[-1][1])] if before else []
+        return first + [s for pos, s in zip(self.state_pos, self.states) if low < pos < high]
 
     def spans(self, bit: int, start: str, end: str) -> list[tuple[int, int]]:
         found, begin = [], None
@@ -366,3 +369,20 @@ def test_greenhouse_zones_host_scenario(scenario_program: Path, tmp_path: Path) 
         for begin, end in line.spans(bit, "s2_a", "s6_b"):
             assert end - begin <= 126_300, (bit, begin, end)
     assert first < last_mark
+
+
+@pytest.mark.unit
+def test_greenhouse_timeline_window_cuts_by_log_order() -> None:
+    messages = [
+        "t=100 state=000000",
+        "t=200 state=100000",  # same ms as the start mark, logged before it: the state at the start
+        "mark=a t=200",
+        "t=250 state=010000",
+        "mark=b t=300",
+        "t=300 state=001000",  # same ms as the end mark, logged after it: outside
+        "mark=c t=400",
+    ]
+    line = _Timeline(messages)
+    assert line.window("a", "b") == [(200, "100000"), (250, "010000")]
+    assert line.spans(_R3, "a", "b") == []
+    assert line.window("b", "c") == [(300, "010000"), (300, "001000")]
