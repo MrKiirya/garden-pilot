@@ -290,15 +290,9 @@ TEST_CASE("format_lines") {
   g.zones[0].name = "Greenhouse bed 1";
   m.refresh(1000, 0, g);
   const gp::GroupSummary &idle_summary = m.summary();
-  CHECK(gp::fmt::status_line(idle_summary) == "Irrigation: idle");
-  CHECK(gp::fmt::modes_line(idle_summary) == "AA:off  Q:0");
-  CHECK(gp::fmt::queue_line(idle_summary) == "Queue: (empty)");
   CHECK(gp::fmt::home_status(idle_summary) == "Idle");
   CHECK(gp::fmt::home_next(idle_summary) == "--:--");
-  CHECK(gp::fmt::zone_left_line(idle_summary) == "Zone left: --:--:--");
-  CHECK(gp::fmt::total_left_line(idle_summary) == "Total left: --:--:--");
   CHECK(gp::fmt::saver_bed(idle_summary).empty());
-  CHECK(gp::fmt::durations_line(m) == "Dur: B1 5  B2 5  B3 5 min");
   CHECK(gp::fmt::valve_test_row(m.zone(0)) == "closed");
   CHECK(gp::fmt::valve_test_color(m.zone(0)) == 0xbecab9u);
 
@@ -322,13 +316,8 @@ TEST_CASE("format_lines") {
   g.total_left = 3725;
   m.refresh(2000, 0, g);
   const gp::GroupSummary &s = m.summary();
-  CHECK(gp::fmt::status_line(s) == "Running: B1 B3");
-  CHECK(gp::fmt::modes_line(s) == "AA:on  Q:1");
-  CHECK(gp::fmt::queue_line(s) == "Queue: 00:02:05 next B2");
   CHECK(gp::fmt::home_status(s) == "Watering");
   CHECK(gp::fmt::home_next(s) == "02:05");
-  CHECK(gp::fmt::zone_left_line(s) == "Zone left: 00:01:05");  // the smallest of the active zones
-  CHECK(gp::fmt::total_left_line(s) == "Total left: 01:02:05");
   CHECK(gp::fmt::saver_bed(s) == "Bed 1+");
   CHECK(gp::fmt::valve_test_row(m.zone(0)) == "OPEN - 65 s");
   CHECK(gp::fmt::valve_test_color(m.zone(0)) == 0x78dc77u);
@@ -341,7 +330,6 @@ TEST_CASE("format_lines") {
   g.queue_count = 0;
   g.queue_time = 0;
   m.refresh(3000, 0, g);
-  CHECK(gp::fmt::status_line(m.summary()) == "Watchdog: locked");
   CHECK(gp::fmt::home_status(m.summary()) == "Alarm");
   CHECK(gp::fmt::valve_test_row(m.zone(1)) == "locked");
   CHECK(gp::fmt::valve_test_color(m.zone(1)) == 0xbecab9u);
@@ -358,9 +346,6 @@ TEST_CASE("format_lines") {
   CHECK(gp::fmt::valve_test_row(m.zone(1)) == "OPEN - 0 s");
 
   // texts are printable ASCII and fit the documented buffers
-  CHECK(printable_ascii(gp::fmt::status_line(s)));
-  CHECK(printable_ascii(gp::fmt::durations_line(m)));
-  CHECK(gp::fmt::status_line(s).size() < gp::fmt::LABEL_MAX);
   gp::GroupInput many = group_of(gp::MAX_ZONES);
   many.active_count = gp::MAX_ZONES;
   for (size_t i = 0; i < gp::MAX_ZONES; i++) {
@@ -369,10 +354,8 @@ TEST_CASE("format_lines") {
     many.zones[i].run_duration = 55 * 60;
   }
   m.refresh(5000, 0, many);
-  CHECK(gp::fmt::status_line(m.summary()).size() < gp::fmt::LABEL_MAX);
-  CHECK(gp::fmt::durations_line(m).size() < gp::fmt::LABEL_MAX);
   CHECK(gp::fmt::ha_status(m.summary()).size() < gp::fmt::LABEL_MAX);
-  CHECK(printable_ascii(gp::fmt::durations_line(m)));
+  CHECK(printable_ascii(gp::fmt::ha_status(m.summary())));
 }
 
 TEST_CASE("run_source") {

@@ -62,6 +62,8 @@ struct ZoneInput {
   bool has_skip{false};
   uint32_t skip_stamp{0};  ///< millis() of the engine's last skip of this zone
   const char *skip_text{""};
+  bool has_soil{false};
+  float soil{0};  ///< soil moisture in percent, valid when has_soil
   const char *name{""};
 };
 
@@ -91,6 +93,7 @@ struct ZoneView {
   std::optional<uint32_t> time_left;
   uint32_t run_duration{0};
   std::optional<uint8_t> queue_position;
+  uint32_t run_total{0};  ///< seconds left at the first sample of the current run (progress bar), 0 = not running / unknown
   std::optional<float> soil;
   std::optional<uint32_t> last_start_epoch;
   std::optional<uint32_t> last_start_uptime;
@@ -142,6 +145,7 @@ class ZoneTracker {
       this->run_open_ = true;
       this->open_ms_ = 0;
       this->seg_open_ = false;
+      this->run_total_ = 0;
       this->run_epoch_ = now_epoch;
       this->run_source_ = start_source;
       // a service run (valve test) is in the history but is not the "last watering" of the zone
@@ -153,6 +157,8 @@ class ZoneTracker {
       }
     }
     if (this->run_open_) {
+      if (in.running && this->run_total_ == 0 && in.has_time_left)
+        this->run_total_ = in.time_left;
       if (in.running && !this->seg_open_) {
         this->seg_open_ = true;
         this->seg_start_ = now_ms;
@@ -162,6 +168,7 @@ class ZoneTracker {
       }
       if (!in_run) {
         this->run_open_ = false;
+        this->run_total_ = 0;
         const uint32_t seconds = (this->open_ms_ + 500U) / 1000U;
         if (this->run_source_ != Source::SERVICE) {
           this->last_duration_ = seconds;
@@ -184,6 +191,10 @@ class ZoneTracker {
     if (in.has_time_left && (in.running || in.paused))
       out.time_left = in.time_left;
     out.run_duration = in.run_duration;
+    out.run_total = this->run_open_ ? this->run_total_ : 0;
+    out.soil.reset();
+    if (in.has_soil)
+      out.soil = in.soil;
     out.queue_position.reset();
     if (in.queued && in.queue_pos >= 0)
       out.queue_position = static_cast<uint8_t>(in.queue_pos);
@@ -208,6 +219,7 @@ class ZoneTracker {
 
  protected:
   bool skip_seen_{false}, skip_active_{false};
+  uint32_t run_total_{0};
   uint32_t skip_stamp_{0}, skip_since_{0};
   char skip_text_[SKIP_TEXT_LEN]{};
   bool run_open_{false}, seg_open_{false}, done_{false};
@@ -335,6 +347,9 @@ class GroupModel {
     }
   }
 
+  /// The whole percent a soil value is shown as, so the revision moves only when the text would change.
+  static uint32_t soil_percent_(float soil) { return soil <= 0.0f ? 0U : soil >= 100.0f ? 100U : static_cast<uint32_t>(soil + 0.5f); }
+
   uint32_t hash_(size_t count) const {
     uint32_t h = 2166136261U;
     const GroupSummary &s = this->summary_;
@@ -345,6 +360,7 @@ class GroupModel {
       mix_(h, v.time_left.has_value() ? *v.time_left + 1U : 0U);
       mix_(h, v.queue_position.has_value() ? *v.queue_position + 1U : 0U);
       mix_(h, v.run_duration);
+      mix_(h, v.soil.has_value() ? soil_percent_(*v.soil) + 1U : 0U);
       mix_(h, v.last_start_epoch.value_or(0));
       mix_(h, v.last_start_uptime.has_value() ? *v.last_start_uptime + 1U : 0U);
       mix_(h, v.last_duration.has_value() ? *v.last_duration + 1U : 0U);
