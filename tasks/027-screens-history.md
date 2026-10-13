@@ -327,6 +327,45 @@ This is about 3x the usual task size (see Open questions 1); the parts are order
 
 <!-- Filled in by implementer -->
 ## Implementation notes
+Scope: Part C only (see the header) plus the gp history `result` byte and skip entries. Parts A / B were not touched.
+
+**Decided (default, author to confirm):**
+- Date format `13 Oct 06:00` (open question 5); History rows: 6 per page (9); no scrolling, PREV / NEXT clamp at the ends.
+- A skip row has no duration: `B2  13 Oct 06:00  skipped wet`. A valve-test run reads `test`. Old entries (zero byte) read `-`.
+- A watchdog-ended run counts as `done` (like `completed` today); `stopped` = ended inside the 3 s window after `stop_all`.
+- `skip_wet` is decided in the adapter (`gp_engine.h`) from the engine's reason text prefix `soil moisture`; the
+  other engine skip (`soil sensor unavailable`) is a plain `skipped`.
+
+**Deviations / choices:**
+- Test file is `tests/cpp/test_gp_history.cpp` (not `test_gp_screens.cpp`, which Part A owns) and the Python checks are in
+  `tests/test_history_page.py`. Formatters are in a new `components/gp/format_history.h` (included from `gp.h`), so
+  `format.h` is unchanged and `fmt::home_next` etc. stay for Part A/B.
+- The HISTORY header button (`gh_btn_history`, 72x20 at x=240 y=1) is added to the existing `greenhouse_page` with
+  `lvgl: pages: [{id: !extend greenhouse_page, widgets: [...]}]` from `lvgl_history.yaml`, so `lvgl_page.yaml` is not
+  edited. Verified: `esphome config` (pinned) merges it, and `on_load` of a page triggers `gh_hist_open` (page reset to 0).
+  Part A, which rewrites `lvgl_page.yaml` with its own `gh_btn_history`, must drop the `!extend` block from
+  `lvgl_history.yaml` when merging (a duplicate id fails `esphome config` loudly).
+- `gh_lvgl_history` is optional (without it there is no button and no page) and sits right after `gh_lvgl_page` in both
+  entry files and the 4 examples (one line each; `examples/my-garden.yaml` is not touched).
+- Existing tests edited only by list additions, plus `test_screens.py` (`_page_ids`, `test_page_ids_unique`): an
+  `!extend` page id loads as a dict, so ids that are not strings are skipped there. Parts A/B will hit the same lines.
+- `HistoryEntry{.., result, reserved}` needed a 6th initialiser at `History::at` and in one line of
+  `test_gp_model.cpp` (`-Wmissing-field-initializers` with `-Werror`); no check weakened.
+- `static_assert(sizeof(PersistBlob) == 1336)` and `sizeof(HistoryEntry) == 12` in `history.h`: 4 + (100*12 + 2 + 2) + 16*8,
+  computed from the old layout (no compiler on this host to measure on `master`; the host layout is the same 4-byte-aligned
+  struct on ESP32). `old_blob_still_loads` copies old-layout entries into a `PersistBlob` and reads them back as `-`.
+- The poller (`history_changed_since`) only; opening the page and PREV / NEXT render through the script
+  `gh_hist_render`, so no separate page-change flag is needed.
+- Checks were written together with the code in one pass (no separate red run); the C++ suite was compiled and run with
+  `zig c++` (clang, `-Wall -Wextra -Werror`, 85 test cases pass) because the host has no g++.
+- `docs`: `components/gp/README.md` (result byte, skips, history glue), SPEC §8 built list and §9.1 history item,
+  `design/README.md` (History page), `CLAUDE.md` (layout row + package order).
+
+**Not run here:** ESP32 / host firmware compile (the `gp.h` glue was only reviewed, CI compiles it), `esphome config`
+of `garden-pilot-sim.yaml` (needs `sdl2-config`), the `sim-ui` screenshot scenario (Xvfb; `test_sim_ui.py` was extended:
+ZONES -> HISTORY -> BACK with pixel probes), `tests/test_gp_layer.py` host scenario, `script/test-cpp` itself (no g++).
+Not verified on hardware: the HISTORY button hit area (72x20) and the page rendering on the ILI9341.
+
 ## Follow-ups
 - Schedule -> gp "missed" history entries; time editor on the WATER tab; lawn card/history reuse (`p: lw`,
   `group: gp_lawn`).
