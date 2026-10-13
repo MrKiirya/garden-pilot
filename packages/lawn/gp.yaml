@@ -1,0 +1,104 @@
+# Lawn group of the gp_* layer: group gp_lawn (key "lawn") on top of the garden_zones group lawn_zones.
+# Everything that reads or drives the lawn (screens, schedules, Home Assistant) goes through gp_lawn; this is the only
+# file besides irrigation.yaml / zone.yaml that names the engine group.
+# Needs packages/core/gp.yaml (hub) and one packages/lawn/zone.yaml include per zone (the gp_zone switches).
+# Home Assistant entities: "<lawn_name> status" (Idle / Watering B1 B2 / Locked; zone names read "B<n>" for now),
+# "<lawn_name> watchdog" (problem) and "<lawn_name> watchdog reset" (config), the main switch "<lawn_name> irrigation"
+# (ON = gp.full_cycle, OFF = gp.stop_all) and the zone switches from the zone packages. Generic Home Assistant actions
+# address the group with `group: lawn`.
+
+gp:
+  groups:
+    - id: gp_lawn
+      name: "${lawn_name}"
+      key: lawn
+      garden_zones_id: lawn_zones
+      # A queue run that ended normally (not stopped) is reported to the hook scripts below; a lawn schedule (later)
+      # extends them.
+      on_zone_finished:
+        - script.execute:
+            id: gp_lawn_zone_finished
+            zone: !lambda "return zone;"
+            completed: !lambda "return completed;"
+        - if:
+            condition:
+              lambda: "return completed;"
+            then:
+              - script.execute:
+                  id: gp_lawn_zone_done
+                  zone: !lambda "return zone;"
+      # A stop_all (STOP button, Home Assistant) or entering service mode.
+      on_stop:
+        - script.execute: gp_lawn_stopped
+
+# Watchdog state for Home Assistant: on while any zone (or the group) is locked by the watchdog.
+binary_sensor:
+  - platform: template
+    id: lawn_zones_watchdog_problem
+    name: "${lawn_name} watchdog"
+    device_class: problem
+    condition:
+      gp.watchdog_tripped: gp_lawn
+
+# Main switch of the lawn: owned by gp (the engine group has none). restore_mode DISABLED is required: the template
+# switch default (ALWAYS_OFF) would run the OFF action, a gp STOP, at every boot. The state follows "any zone running".
+switch:
+  - platform: template
+    id: gp_lawn_main_switch
+    name: "${lawn_name} irrigation"
+    icon: mdi:flower
+    restore_mode: DISABLED
+    optimistic: false
+    lambda: "return id(gp_lawn)->summary().running;"
+    turn_on_action:
+      - gp.full_cycle: gp_lawn
+    turn_off_action:
+      - gp.stop_all: gp_lawn
+
+button:
+  - platform: template
+    id: lawn_zones_watchdog_reset
+    name: "${lawn_name} watchdog reset"
+    entity_category: config
+    on_press:
+      - gp.reset_watchdog: gp_lawn
+
+text_sensor:
+  - platform: template
+    id: gp_lawn_status
+    name: "${lawn_name} status"
+    icon: mdi:water-outline
+    update_interval: 1s
+    lambda: "return id(gp_lawn)->status_text_changed();"
+
+# Hooks (logger only); a lawn schedule extends them later, like the greenhouse one.
+script:
+  # Every ended zone run (zone 0-based, completed = a queue run that was not stopped).
+  - id: gp_lawn_zone_finished
+    mode: parallel
+    parameters:
+      zone: int
+      completed: bool
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp_lawn
+          format: "zone %d finished (completed=%d)"
+          args: ['zone', '(int) completed']
+  # The user stopped everything (stop_all or service mode).
+  - id: gp_lawn_stopped
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp_lawn
+          format: "stopped"
+  - id: gp_lawn_zone_done
+    mode: parallel
+    parameters:
+      zone: int
+    then:
+      - logger.log:
+          level: DEBUG
+          tag: gp_lawn
+          format: "zone %d completed (queue run)"
+          args: ['zone + 1']

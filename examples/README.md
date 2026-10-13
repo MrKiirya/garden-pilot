@@ -1,7 +1,7 @@
 # Examples
 
-Four complete device configs. Each is an entry file like `garden-pilot.yaml`: ESP32 + ILI9341 display + XPT2046
-touch, the LVGL pages and the greenhouse page, Home Assistant API, one watering schedule slot. They use the shared
+Five complete device configs. Each is an entry file like `garden-pilot.yaml`: ESP32 + ILI9341 display + XPT2046
+touch, the LVGL pages and the greenhouse page, Home Assistant API, one or two watering schedule slots. They use the shared
 `packages/`, `hardware/` and `components/` of this repository through relative paths.
 
 | File | What it is |
@@ -10,8 +10,10 @@ touch, the LVGL pages and the greenhouse page, Home Assistant API, one watering 
 | [`beds-with-pump.yaml`](beds-with-pump.yaml) | Three beds one at a time (relays 1-3) and a shared pump on relay 4. |
 | [`soil-sensors.yaml`](soil-sensors.yaml) | Three beds with a soil moisture probe each; a bed is skipped when its soil is wetter than 60 %. |
 | [`relay-module-8ch.yaml`](relay-module-8ch.yaml) | A generic 8-channel relay module: eight beds one at a time. |
+| [`my-garden.yaml`](my-garden.yaml) | The author's setup on the LilyGO T-Relay-S3: three greenhouse beds on a gravity barrel watered all at once (limits raised on purpose for a ~3 h run: watchdog 210min, run maximum 200 min; the public defaults are unchanged), plus a lawn and a flower zone on a pump (`packages/lawn/`, relays 5-6, pump relay 4). Not run on a real board yet. |
 
-All of them use the breadboard board profile (`hardware/esp32-s3-devkitc1-breadboard.yaml`, up to 12 relay outputs).
+All of them except `my-garden.yaml` use the breadboard board profile (`hardware/esp32-s3-devkitc1-breadboard.yaml`, up
+to 12 relay outputs); `my-garden.yaml` uses `hardware/lilygo-t-relay-s3.yaml` (its six main-board relays only).
 
 ## Use one
 
