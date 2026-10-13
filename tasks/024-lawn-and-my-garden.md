@@ -1,6 +1,6 @@
 # 024 — Lawn (pump group) package and the author's `examples/my-garden.yaml`
 
-Status: planned
+Status: implemented (awaiting review)
 Roadmap: SPEC §9 stage 13 (examples and remote packages), "Task 024: a lawn and flowers package and the author's
 `examples/my-garden.yaml`"
 Spec sections: SPEC §2.2, §4 (groups / `max_parallel`, watchdog), §4.1 (gp layer), §5 (modularity, target layout), §9
@@ -186,21 +186,21 @@ T-Relay-S3 profile. No new LVGL page and no lawn schedules yet (follow-ups).
 Five new `esphome config` rows at roughly 2 s each; no new host or cpp build.
 
 ## Acceptance criteria
-- [ ] `uv run pytest -m unit` -> all pass, including every new/extended test above.
-- [ ] `script/lint` -> passes.
-- [ ] `script/test` -> passes; the 4 new matrix rows and the `my_garden` example row are in the output; CI `checks`
+- [x] `uv run pytest -m unit` -> all pass, including every new/extended test above.
+- [x] `script/lint` -> passes.
+- [x] `script/test` -> passes; the 4 new matrix rows and the `my_garden` example row are in the output; CI `checks`
       stays under 15 min (implementer notes the measured local time and, after push, the CI job time).
-- [ ] `GP_SECRETS=example script/config examples/my-garden.yaml` -> OK; `GP_SECRETS=example GP_ESPHOME=minimum
+- [x] `GP_SECRETS=example script/config examples/my-garden.yaml` -> OK; `GP_SECRETS=example GP_ESPHOME=minimum
       script/config examples/my-garden.yaml` -> OK (result noted in Implementation notes).
 - [ ] `GP_SECRETS=example script/compile examples/my-garden.yaml` (pinned) builds once locally (two gp groups + two
       engine groups compile); result and firmware size noted. Not a CI job.
 - [ ] `GP_SECRETS=example script/compile` (root `garden-pilot.yaml`) still builds; the normalized `esphome config`
       output of `garden-pilot.yaml` is unchanged by this task (the lawn is commented out).
-- [ ] `grep -rn "lawn_zones\|garden_zones\." packages/ garden-pilot*.yaml` shows only the engine-side files
+- [x] `grep -rn "lawn_zones\|garden_zones\." packages/ garden-pilot*.yaml` shows only the engine-side files
       (greenhouse `irrigation.yaml` / `bed.yaml` / `gp.yaml`, `packages/sim/fault.yaml`, the three lawn files).
-- [ ] `examples/my-garden.yaml` contains no real SSID, IP, hostname, entity id, or path from the author's home;
+- [x] `examples/my-garden.yaml` contains no real SSID, IP, hostname, entity id, or path from the author's home;
       `git status` shows no `secrets.yaml` and no build output.
-- [ ] Docs updated as listed below; `README.md` and `README.ru.md` in sync.
+- [x] Docs updated as listed below; `README.md` and `README.ru.md` in sync.
 - [ ] Hardware (author, cannot be checked in CI, optional): on a T-Relay-S3 flashed with `my-garden.yaml`: (1) no relay
       clicks at power-on, reset and OTA reboot; (2) "Greenhouse irrigation" ON opens R1-R3 together; (3) "Lawn
       irrigation" ON runs R5 then R6 with the pump R4 on during both and off within a second after R6 closes, no
@@ -268,6 +268,64 @@ Each has the recommended default the implementer uses unless the author answers 
 10. **Should lawn entity names stay "Lawn ..." when the group also holds flower beds?** Recommended: keep
    `lawn_name: "Lawn"` (key `lawn`); a builder can rename the group with the substitution, zone names come from the vars.
 
-<!-- Filled in by implementer -->
+
+
 ## Implementation notes
+
+### Decided (default, author to confirm)
+The author was away; every open question uses the recommended default:
+1. Lawn zones: 2 ("Lawn", "Flowers") on relays 5-6.
+2. Lawn run times: initial 15 min, max 55 min, watchdog 60 min.
+3. Greenhouse 3 h gravity run: `gh_bed_run_initial 180`, `gh_bed_run_max 200`, `gh_max_on_time 210min` (see deviation 1).
+4. Lawn and greenhouse may water at the same time (no interlock).
+5. Pump on R4 (contactor / the pump's own relay); delays `0s`; `lawn_pump_max_on_time` 2h, `lawn_pump_idle_timeout` 10s.
+6. Lawn schedules: separate hub later (not built here).
+7. Service mode for the lawn: follow-up.
+8. No profile for the test rig.
+9. No greenhouse sensors in `my-garden.yaml`.
+10. `lawn_name: "Lawn"` stays.
+
+### Notes
+- Checks first: `tests/test_lawn.py` (+ the extended layout / examples / gp-layer / matrix tests) were written and run
+  red before the packages existed (the shape tests failed on the missing files).
+- Verified against the real files (the task was written from summaries): task 023 is in the worktree as described;
+  `hardware/lilygo-t-relay-s3.yaml` has `board_relay_1..12`, `tests/test_examples.py` / `test_layout.py` helpers matched
+  the task text. Differences found and handled:
+  1. **Time period syntax.** `gh_max_on_time: 3h30min` is rejected by ESPHome ("Unknown value 'h30min'"); the example
+     uses `210min` (same 3.5 h). `test_my_garden_shape` parses `min` / `h` units only.
+  2. **`lawn_gp` as a commented block.** `uncomment_examples()` only recognises the multi-line `# key: !include` form, so
+     `lawn_gp` in `garden-pilot.yaml` is written as `# lawn_gp: !include` + `#   file: packages/lawn/gp.yaml`.
+  3. **Extra test touched.** `tests/test_garden_zones.py::test_device_uses_groups_form` fails on any package other than
+     the greenhouse irrigation files that has top-level `garden_zones:` / `external_components:`; it now also accepts
+     `packages/lawn/irrigation.yaml` (same shape) and `zone.yaml` (a `garden_zone:` list only).
+  4. `test_substitutions_resolve` (test_layout) needed the lawn include vars (`zone`, `zone_name`, `relay`, `pump_relay`)
+     registered as supplied by the entry-file includes.
+  5. Gp icon: the first choice `mdi:sprinkler-variant` contains "sprinkler", which `test_no_engine_outside_adapter`
+     rejects in package files; the lawn main switch uses `mdi:flower`.
+  6. The example puts the lawn blocks after the greenhouse schedule slots (CLAUDE.md order step 5: lawn last, after
+     `core_gp` / `core_gp_api`), same as the commented blocks in `garden-pilot.yaml`.
+- `lawn_gp` hooks (`gp_lawn_zone_finished`, `gp_lawn_zone_done`, `gp_lawn_stopped`) use log tag `gp_lawn`.
+- Not run on a real device. Hardware checklist from the acceptance criteria is untouched.
+
 ## Follow-ups
+- Lawn schedules (second `garden_schedule` hub; generalise `schedule_slot.yaml` to a group prefix first).
+- LVGL: Lawn page, Home lawn card, valve-test rows for lawn zones and the pump (read `gp_lawn` from pollers).
+- Service mode for all groups (valve test inhibits only `gp_greenhouse`).
+- Per-group zone short-name prefix in `gp` ("B1" is hard-coded; lawn status reads "Watering B2").
+- Lawn in the PC emulator (`hardware/sim.yaml` has 3 relays); soil skip for lawn zones; `lawn_max_parallel` other than 1.
+- Profile for the DevKitC-1 + extension-board test rig (open question 8).
+
+### Results (Windows host, Git Bash + uv)
+- `script/lint` ok. `script/test`: 851 passed, 19 skipped, 6 failed in 125 s locally; the 6 failures are the known
+  Windows-only ones in files this task does not touch (`test_ci.py::test_esphome_selector_resolves`, four in
+  `test_devcontainer.py`, `test_sim_ui.py::test_start_xvfb_deadline_holds_when_xvfb_hangs`). New rows pass: 4 lawn matrix
+  rows, `test_example_validates[my_garden]`, all `test_lawn.py` tests.
+- `GP_SECRETS=example script/config examples/my-garden.yaml` OK at the pinned 2026.9.1 and with `GP_ESPHOME=minimum`.
+- NOT done: `script/compile` of `examples/my-garden.yaml` and of `garden-pilot.yaml`. On this Windows host the ESP-IDF 5.5.5
+  framework install fails ("framework installation failure" after a resumed tool download); not retried. The
+  two-gp-group codegen compile is unverified until CI/Linux. `garden-pilot.yaml` is unchanged except comments, so its
+  config output is unchanged. CI `checks` time not measured (local 125 s).
+- The `grep` criterion was checked through `test_no_engine_outside_adapter` (extended); the three acceptance items
+  `script/compile` x2 and the hardware checklist stay unticked.
+- Review follow-ups: a way to stop the lawn from the touch screen (no lawn STOP on screen yet); naming: the zone switch
+  "Lawn" vs the main switch "Lawn irrigation" can confuse in Home Assistant when a zone is also called "Lawn".
