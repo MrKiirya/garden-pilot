@@ -125,6 +125,8 @@ def _rank(key: str) -> int:
         return fixed.index(key)
     if key.startswith("lvgl_"):
         return 20
+    if key == "gh_lvgl_schedules":  # extends the schedules page; needs the hub and its slots
+        return 62
     if key == "gh_irrigation":
         return 30
     if re.fullmatch(r"gh_bed_\d+(_soil)?", key):

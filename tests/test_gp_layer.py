@@ -26,6 +26,7 @@ CALLERS = [
     "packages/greenhouse/gp_lvgl_status.yaml",
     "packages/greenhouse/lvgl_valve_test.yaml",
     "packages/greenhouse/screensaver_status.yaml",
+    "packages/greenhouse/lvgl_schedules.yaml",
 ]
 ENGINE_FILES = {
     "packages/greenhouse/irrigation.yaml",

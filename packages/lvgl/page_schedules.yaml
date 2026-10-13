@@ -1,0 +1,154 @@
+# Schedules page (WATER tab): the generic shell. Header, an empty-state label and the bottom nav with WATER active.
+# The rows (and the master switch, paging, Home "next") come from the schedule package of a domain, which extends this
+# page: packages/greenhouse/lvgl_schedules.yaml. Without it the page only says "No schedules configured".
+# View only: no time editor on the device (SPEC stage 11). Tokens only (design/tokens.json); ASCII only (built-in
+# fonts). Widget ids are global, hence the sched_* prefix.
+
+lvgl:
+  pages:
+    - id: schedules_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
+      widgets:
+        - label:
+            x: 8
+            y: 4
+            text: "Schedules"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            id: sched_empty_label
+            align: CENTER
+            y: -10
+            text: "No schedules configured"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        # --- Bottom nav (same as Home / Setup, WATER active) ---
+        - obj:
+            x: 0
+            y: 201
+            width: 320
+            height: 39
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            border_side: [TOP]
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - button:
+            id: sched_nav_btn_dash
+            x: 4
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: ""
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "DASH"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: home_page
+        - button:
+            id: sched_nav_btn_zones
+            x: 84
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: ""
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "ZONES"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: greenhouse_page
+        - button:
+            id: sched_nav_btn_water
+            x: 164
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x4caf50
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: ""
+                  text_font: montserrat_14
+                  text_color: 0x003c0b
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "WATER"
+                  text_font: montserrat_8
+                  text_color: 0x003c0b
+            on_click:
+              - lvgl.page.show: schedules_page
+        - button:
+            id: sched_nav_btn_setup
+            x: 244
+            y: 204
+            width: 72
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: ""
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "SETUP"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: setup_page

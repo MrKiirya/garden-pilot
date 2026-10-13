@@ -24,6 +24,13 @@ _spec.loader.exec_module(sim_ui)
 
 # Home bottom navigation button `nav_btn_setup` in packages/lvgl/page_home.yaml (x, y, width, height).
 SETUP_BTN = (244, 204, 72, 32)
+# Setup page nav button `setup_nav_btn_water` (packages/lvgl/page_setup.yaml): opens the Schedules page.
+WATER_BTN = (164, 204, 76, 32)
+# Schedules page (task 026): row 2 of the greenhouse rows (packages/greenhouse/lvgl_schedules.yaml, `gh_sched_row2`).
+SCHED_ROW2 = (8, 101, 304, 43)
+SCHED_ROW3 = (8, 147, 304, 43)
+CARD_BG = (0x1C, 0x1B, 0x1B)
+PAGE_BG = (0x13, 0x13, 0x13)
 
 
 # ---------------------------------------------------------------------------------------------- unit
@@ -163,6 +170,32 @@ def test_tap_target_is_the_setup_button() -> None:
 
 
 @pytest.mark.unit
+def test_schedule_tap_targets_match_yaml() -> None:
+    """The scenario taps WATER on the Setup page and inspects the pixels of schedule rows 2 and 3."""
+
+    def geometry(node: object, wid: str) -> tuple[int, int, int, int] | None:
+        if isinstance(node, dict):
+            if node.get("id") == wid and "width" in node:
+                return (int(node["x"]), int(node["y"]), int(node["width"]), int(node["height"]))
+            for value in node.values():
+                found = geometry(value, wid)
+                if found:
+                    return found
+        elif isinstance(node, list):
+            for value in node:
+                found = geometry(value, wid)
+                if found:
+                    return found
+        return None
+
+    setup = load_esphome_yaml(REPO_ROOT / "packages" / "lvgl" / "page_setup.yaml")
+    assert geometry(setup, "setup_nav_btn_water") == WATER_BTN
+    rows = load_esphome_yaml(REPO_ROOT / "packages" / "greenhouse" / "lvgl_schedules.yaml")
+    assert geometry(rows, "gh_sched_row2") == SCHED_ROW2
+    assert geometry(rows, "gh_sched_row3") == SCHED_ROW3
+
+
+@pytest.mark.unit
 def test_tap_validates_range_before_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sim_ui, "STATE_PATH", tmp_path / "state.json")  # no session
     assert sim_ui.main(["tap", "320", "0"]) == 2
@@ -254,6 +287,26 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         diff = ImageChops.difference(home_img, setup_img).convert("L").point(lambda v: 255 if v else 0)
         changed = diff.histogram()[255] / (320 * 240)
         assert changed > 0.02, f"only {changed:.1%} of pixels changed after tapping SETUP"
+
+        # Setup -> WATER: the Schedules page shows the two greenhouse slot rows (row 3 stays hidden: bg colour)
+        wx, wy, ww, wh = WATER_BTN
+        tapped = _sim_ui("tap", str(wx + ww // 2), str(wy + wh // 2), env=env)
+        assert tapped.returncode == 0, tapped.stderr
+        time.sleep(1.5)  # the rows are drawn by the 1 s poller
+        shot = _sim_ui("shot", "schedules", env=env)
+        assert shot.returncode == 0, shot.stderr
+        sched_img = Image.open(REPO_ROOT / ".esphome" / "shots" / "schedules.png").convert("RGB")
+        assert not sim_ui.looks_blank(sched_img)
+        diff = ImageChops.difference(setup_img, sched_img).convert("L").point(lambda v: 255 if v else 0)
+        assert diff.histogram()[255] / (320 * 240) > 0.02, "the Schedules page looks like the Setup page"
+
+        def near(pixel: tuple[int, ...], want: tuple[int, int, int]) -> bool:
+            return all(abs(a - b) <= 8 for a, b in zip(pixel, want))
+
+        rx, ry, rw, rh = SCHED_ROW2
+        assert near(sched_img.getpixel((rx + rw // 2, ry + rh - 4)), CARD_BG), "slot row 2 is not drawn"
+        ox, oy, ow, oh = SCHED_ROW3
+        assert near(sched_img.getpixel((ox + ow // 2, oy + oh // 2)), PAGE_BG), "slot row 3 must be hidden (2 slots)"
     finally:
         _sim_ui("stop", env=env)
     assert pids, "start did not record any pids"

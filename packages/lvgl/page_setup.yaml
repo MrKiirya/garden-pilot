@@ -317,7 +317,7 @@ lvgl:
                   text_font: montserrat_8
                   text_color: 0xbecab9
             on_click:
-              - lvgl.page.show: lawn_page
+              - lvgl.page.show: schedules_page
         - button:
             id: setup_nav_btn_setup
             x: 244
