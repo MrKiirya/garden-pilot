@@ -1,0 +1,198 @@
+# Board profile: LilyGO T-Relay-S3 (6 relays) with its 6-relay expansion board and the ILI9341 + XPT2046 display
+# board on the 2.4" TFT header (H1). Config-checked only: NOT flashed on a real board yet.
+#
+# Sources (checked 2026-10-12):
+# - Xinyuan-LilyGO/LilyGo-T-Relay: Schematic/T-Relay6-ESP32S3-Rev1.1.pdf (page 1: SOC, TFT header H1, expansion
+#   pins H2, "External cascade" CN1, the 74HC595 driver), docs/RELAY_ESP32S3.MD, ESPHome/T-Relay-ESP32S3-Chain.yaml.
+# - esphome.io/components/sn74hc595: `number: N` = bit N % 8 of register N / 8; register 0 is the one nearest the MCU.
+#
+# Module: ESP32-S3-WROOM-1U-N16R8 (16 MB flash, 8 MB octal PSRAM; GPIO33-37 are taken by the PSRAM).
+# Relays: 6 relays (10 A) driven through a HT74HC595 (U4): QA..QF = relay 1..6, QG / QH = the green / red LED.
+# The shift register's serial out (SQH) goes to the external cascade connector (CN1, DATA1), where the expansion
+# board's registers continue. This profile always declares `sr_count: 2` (16 outputs); without the expansion the
+# outputs 8-13 (board_relay_7..12) do nothing.
+#
+# Relay bit map (board_relay_N -> sn74hc595 `number`). THE ONE PLACE TO CHANGE if the board counts differently:
+#
+#   board_relay_1..6    number 0..5     main board, relays 1..6 (QA..QF)
+#   (not used)          number 6, 7     main board LEDs (QG green, QH red)
+#   board_relay_7..12   number 8..13    expansion relays 1..6 (the first 6 outputs of the second register)
+#
+# Wiring facts from the schematic (GPIO numbers; the packages never see them, only the substitutions below):
+#   shift register  DATA GPIO7, CLOCK (SHIFT) GPIO5, LATCH GPIO6, OUTPUTENABLE (nOE) GPIO4
+#   RTC PCF8563     SDA GPIO16, SCL GPIO17, INT GPIO18          (not used here: RTC is roadmap stage 10)
+#   DS18B20 spot    DSDATA GPIO21, not populated by default     (not used here)
+#   TFT header H1   CS GPIO8, RST GPIO3, DC GPIO46, MOSI GPIO11, CLK GPIO13, MISO GPIO12, BL GPIO9,
+#                   touch CS GPIO10, touch IRQ GPIO14
+# H1 follows the usual 14-pin order of the 2.4" ILI9341 + XPT2046 modules: VCC, GND, CS, RESET, DC, SDI (MOSI), SCK,
+# LED (backlight), SDO (MISO), T_CLK, T_CS, T_DIN, T_DO, T_IRQ, so the same display board as the breadboard build
+# plugs straight in.
+#
+# Newer revisions hold nOE high until the firmware drives it low. The `sn74hc595` component does this in its setup(),
+# so relays do nothing before that and then start OFF (LilyGo-T-Relay issue #21).
+#
+# TO VERIFY ON THE BOARD (nothing here was run on hardware):
+# - The bit map above (the vendor's own chain example numbers the outputs 0..N without skipping the two LEDs).
+# - That no relay clicks at power-on, after RST and across an OTA reboot (before setup() the outputs depend on the
+#   board's nOE pull-up).
+# - TFT_RST on GPIO3 and TFT_DC on GPIO46 are ESP32-S3 strapping pins; the board design uses them for the display, but
+#   check that the display does not disturb the boot.
+# - Display orientation and touch calibration below are copies of the breadboard values (same display board).
+# - The board name and esp-idf (the vendor uses `esp32-s3-devkitc-1` with Arduino).
+#
+# The backlight (BL, GPIO9) is switched on at boot by the internal switch `board_backlight`; it is not an actuator.
+#
+# Active-low relay modules are NOT supported (no `inverted:`). The relays here are driven high = on.
+# Pick exactly one profile as the `hardware` package of an entry file; features use board_relay_1..12 only.
+
+esp32:
+  board: esp32-s3-devkitc1-n16r8
+  framework:
+    type: esp-idf
+
+sn74hc595:
+  - id: board_sr
+    data_pin: ${sr_data_pin}
+    clock_pin: ${sr_clock_pin}
+    latch_pin: ${sr_latch_pin}
+    oe_pin: ${sr_oe_pin}
+    sr_count: 2
+
+# Raw relay drivers: internal, OFF on boot.
+switch:
+  - platform: gpio
+    id: board_relay_1
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 0
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_2
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 1
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_3
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 2
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_4
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 3
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_5
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 4
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_6
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 5
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_7
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 8
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_8
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 9
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_9
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 10
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_10
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 11
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_11
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 12
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    id: board_relay_12
+    internal: true
+    pin:
+      sn74hc595: board_sr
+      number: 13
+    restore_mode: ALWAYS_OFF
+
+  # Display backlight (TFT_BL): always on. Not an actuator, so ALWAYS_ON is fine here.
+  - platform: gpio
+    id: board_backlight
+    internal: true
+    pin: ${display_backlight_pin}
+    restore_mode: ALWAYS_ON
+
+substitutions:
+  # 74HC595 chain of the relays.
+  sr_data_pin: GPIO7
+  sr_clock_pin: GPIO5
+  sr_latch_pin: GPIO6
+  sr_oe_pin: GPIO4
+
+  # Shared SPI bus (display + touch) on the TFT header.
+  spi_clk_pin: GPIO13
+  spi_mosi_pin: GPIO11
+  spi_miso_pin: GPIO12
+
+  # Display (ILI9341).
+  display_cs_pin: GPIO8
+  display_dc_pin: GPIO46
+  display_reset_pin: GPIO3
+  display_backlight_pin: GPIO9
+  # Orientation of the picture for this module and mounting (copy of the breadboard values: verify).
+  display_swap_xy: "true"
+  display_mirror_x: "false"
+  display_mirror_y: "false"
+
+  # Touch controller (XPT2046).
+  touch_cs_pin: GPIO10
+  touch_irq_pin: GPIO14
+  # Touch calibration and orientation (copy of the breadboard values: verify).
+  touch_cal_x_min: "201"
+  touch_cal_x_max: "3792"
+  touch_cal_y_min: "371"
+  touch_cal_y_max: "3789"
+  touch_swap_xy: "true"
+  touch_mirror_x: "true"
+  touch_mirror_y: "true"

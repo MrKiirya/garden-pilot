@@ -17,10 +17,12 @@
 
 substitutions:
   gh_schedule_catch_up_window: 60min
+  # Path from the entry file to the repo root (SPEC 4.2): "." for garden-pilot.yaml, ".." for examples/*.yaml.
+  gp_root: "."
 
 # Remote-package users pin a tag here instead of `source: components` (SPEC 4.2).
 external_components:
-  - source: components
+  - source: ${gp_root}/components
     components: [garden_schedule, garden_schedule_slot]
 
 garden_schedule:

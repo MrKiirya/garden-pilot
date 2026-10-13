@@ -1,21 +1,65 @@
 # Board profile: breadboard build.
-# ESP32-S3 DevKitC-1 N16R8 + ILI9341 320x240 SPI display + XPT2046 touch + 3-channel relay module,
-# DHT11 and a resistive soil probe module.
+# ESP32-S3 DevKitC-1 N16R8 + ILI9341 320x240 SPI display + XPT2046 touch + up to 12 relay outputs (the 12-LED
+# indicator board, or a high-level-trigger relay module), DHT11 and resistive soil probe modules.
 #
 # This is the ONLY place with GPIO numbers and with settings that depend on the exact screen and how it is
 # mounted (orientation, touch calibration). Packages refer to them as ${...} substitutions.
 # Pin names describe the board function (relay_1_pin, adc_1_pin, ...); which relay a bed uses is decided
-# in the feature module, not here. The raw relay drivers live here too, as internal switches board_relay_1..N:
-# every board profile defines the same board_relay_N ids (features refer to them, never to pins). Analog
-# inputs are adc_N_pin, ADC1 pins only while Wi-Fi is active (ESP32-S3: GPIO1..GPIO10).
+# in the feature module, not here. The raw relay drivers live here too, as internal switches board_relay_1..N
+# (contiguous, N >= 3; this profile has 12). Features refer to them, never to pins. Analog inputs are adc_N_pin,
+# ADC1 pins only while Wi-Fi is active (ESP32-S3: GPIO1..GPIO10).
 #
-# To add a board: copy this file, keep every *_pin key and every board_relay_N switch (a test checks that each
-# profile defines all pins the packages use and the same relays), change the values and the esp32: block, and
-# !include the new file as the `hardware` package in garden-pilot.yaml. Pick exactly one profile.
+# To add a board: copy this file, keep every pin that your entry file's packages use (a test checks each entry file
+# against ITS profile: every ${..._pin} an entry uses must exist, and every board_relay_N it references), change the
+# values and the esp32: block, and !include the new file as the `hardware` package of the entry file. Pick exactly
+# one profile. The relay count may differ per profile.
 #
-# Wiring notes:
-# - The shared SPI MISO uses GPIO8 (not the strapping GPIO3); wire display and touch MISO to it.
-# - Relay and sensor pins avoid the SPI and touch pins.
+# Active-low relay modules are NOT supported (no `inverted:`): they energise while the ESP32 resets. Use a
+# high-level-trigger module or set its jumper to H.
+#
+# Pins to avoid on the N16R8: 26-32 (flash), 33-37 (octal PSRAM), 19/20 (USB), 43/44 (UART0), 0/3/45/46 (strapping).
+#
+# --- Display and touch wiring (ILI9341 + XPT2046 board, Dupont female-female wires to the breakout board) ---
+# The breakout board gives every GPIO a G (ground), S (signal) and V (power) pin: signals go to the S pin of the
+# GPIO, GND to any G pin, VCC to a V pin that carries 3.3 V (not the 5 V one). Display and touch share the SPI
+# bus: SCK/T_CLK, SDI/T_DIN and SDO/T_DO each go to the SAME GPIO (two wires on one S pin: a small breadboard strip or
+# a splitter header does it).
+#
+#   display board pin      ESP32-S3 GPIO   breakout board
+#   VCC                    3.3 V           V pin (3.3 V)
+#   GND                    GND             G pin
+#   CS                     GPIO13          S pin of GPIO13   (display_cs_pin)
+#   RESET                  GPIO12          S pin of GPIO12   (display_reset_pin)
+#   DC / RS                GPIO11          S pin of GPIO11   (display_dc_pin)
+#   SDI (MOSI)             GPIO10          S pin of GPIO10   (spi_mosi_pin)
+#   SCK                    GPIO9           S pin of GPIO9    (spi_clk_pin)
+#   LED (backlight)        3.3 V           V pin (3.3 V; always on)
+#   SDO (MISO)             GPIO8           S pin of GPIO8    (spi_miso_pin; MISO is on 8, not the strapping GPIO3)
+#   T_CLK                  GPIO9           same S pin as SCK
+#   T_CS                   GPIO18          S pin of GPIO18   (touch_cs_pin)
+#   T_DIN                  GPIO10          same S pin as SDI
+#   T_DO                   GPIO8           same S pin as SDO
+#   T_IRQ                  GPIO15          S pin of GPIO15   (touch_irq_pin)
+#
+# --- Relay outputs (TO VERIFY BY THE AUTHOR against the board) ---
+# Relays 4-12 are a proposal on safe pins; check each against the board, then wire LEDs/relays 1-12 to them.
+#
+#   relay  GPIO    indicator LED / relay channel   notes
+#   1      GPIO21  1
+#   2      GPIO47  2
+#   3      GPIO48  3                               GPIO48 is also the RGB LED line on DevKitC-1 v1.0
+#   4      GPIO14  4
+#   5      GPIO16  5
+#   6      GPIO17  6
+#   7      GPIO38  7                               GPIO38 is the RGB LED line on DevKitC-1 v1.1 (watch it at power-on)
+#   8      GPIO39  8                               GPIO39-42 are the JTAG pins (unused: the S3 debugs over USB-JTAG)
+#   9      GPIO40  9
+#   10     GPIO41  10
+#   11     GPIO42  11
+#   12     GPIO5   12
+#
+# Sensors: air DHT11 on GPIO4; soil probes AO on adc_1 = GPIO6 (also used by the greenhouse-wide probe), adc_2 =
+# GPIO1, adc_3 = GPIO2 (per-bed probes); soil comparator output DO on GPIO7.
 
 esp32:
   board: esp32-s3-devkitc1-n16r8
@@ -51,6 +95,87 @@ switch:
         output: true
     restore_mode: RESTORE_DEFAULT_OFF
 
+  - platform: gpio
+    id: board_relay_4
+    internal: true
+    pin:
+      number: ${relay_4_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_5
+    internal: true
+    pin:
+      number: ${relay_5_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_6
+    internal: true
+    pin:
+      number: ${relay_6_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_7
+    internal: true
+    pin:
+      number: ${relay_7_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_8
+    internal: true
+    pin:
+      number: ${relay_8_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_9
+    internal: true
+    pin:
+      number: ${relay_9_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_10
+    internal: true
+    pin:
+      number: ${relay_10_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_11
+    internal: true
+    pin:
+      number: ${relay_11_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_12
+    internal: true
+    pin:
+      number: ${relay_12_pin}
+      mode:
+        output: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
 substitutions:
   # Shared SPI bus (display + touch).
   spi_clk_pin: GPIO9
@@ -82,10 +207,22 @@ substitutions:
   relay_1_pin: GPIO21
   relay_2_pin: GPIO47
   relay_3_pin: GPIO48
+  relay_4_pin: GPIO14
+  relay_5_pin: GPIO16
+  relay_6_pin: GPIO17
+  relay_7_pin: GPIO38
+  relay_8_pin: GPIO39
+  relay_9_pin: GPIO40
+  relay_10_pin: GPIO41
+  relay_11_pin: GPIO42
+  relay_12_pin: GPIO5
 
   # Air sensor, interim single-wire DHT11 (replace with an I2C sensor later).
   air_dht_pin: GPIO4
 
   # Soil moisture module: AO = analog (ADC1), DO = comparator output.
   adc_1_pin: GPIO6
+  # Per-bed probes (ADC1).
+  adc_2_pin: GPIO1
+  adc_3_pin: GPIO2
   soil_do_pin: GPIO7

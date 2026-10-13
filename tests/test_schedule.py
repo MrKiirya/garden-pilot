@@ -90,9 +90,9 @@ def test_schedule_package_shape() -> None:
     config = _load(SCHEDULE_PKG)
     raw = (REPO_ROOT / SCHEDULE_PKG).read_text(encoding="utf-8")
     assert not re.search(r"!secret|GPIO\d+", _strip_comments(raw))
-    assert config["substitutions"] == {"gh_schedule_catch_up_window": "60min"}
+    assert config["substitutions"] == {"gh_schedule_catch_up_window": "60min", "gp_root": "."}
     assert config["external_components"] == [
-        {"source": "components", "components": ["garden_schedule", "garden_schedule_slot"]}
+        {"source": "${gp_root}/components", "components": ["garden_schedule", "garden_schedule_slot"]}
     ]
     hub, = config["garden_schedule"]
     assert hub["id"] == "gh_schedule" and hub["catch_up_window"] == "${gh_schedule_catch_up_window}"
