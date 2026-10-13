@@ -318,6 +318,11 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   "Bed N" with a green dot while a bed runs, "Touch to wake". Any touch hides it and is swallowed by the overlay. It never
   shows on the boot screen, over a confirm dialog or in service mode. No backlight dimming yet (needs a backlight pin
   in the board profile) and no "next run" part (no schedules).
+- **Screens: slots and widgets** (decided 2026-10-10, §10.2; built on the stage 8 `gp_*` layer): the bed page is up to 6 slots of
+  one card template (extra slots hidden at boot, data by zone index via `gp_*`; 1-3 beds full cards, 4-6 compact
+  in a grid). Home is a stack of widgets (308x172, gap 4, heights 26/40/44/76) filled by priority with a C++
+  fit helper; available widgets come from the enabled packages, their order is set in SETUP and stored on the
+  device.
 - Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
   layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
   LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the
@@ -363,11 +368,12 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
    group entities with the old names plus "Greenhouse watchdog" and its reset button, watchdog 60 min by default).
 8. **`gp_*` layer** on top of `garden_zones`, screens switched to it (task 018: read model, alerts, actions, HA surface, persisted last watering and history; soil reading follows).
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
-   at build time.
+   at build time. On top of the stage 8 `gp_*` layer: bed card slots and Home widgets (§8, decided in §10.2).
 10. **Time without HA:** SNTP fallback (done, task 016, `packages/core/time_sntp.yaml`, §4.1a); RTC chip if needed
     (follow-up) so schedules work offline.
 11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the WATER tab editor
-    and the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens), alerts.
+    and the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens)
+    with the heating widget, alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
     scenarios against the host build. Screenshots and taps under Xvfb exist (task 015, `script/sim-ui`, CI job
     `sim-ui`); remaining: reference-image comparison and `aioesphomeapi` scenarios.
@@ -398,7 +404,6 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 ## 10. Open questions
 **Screens** (decide with the design work, roadmap stage 9)
 1. Which drafts from the canvas to keep?
-2. Bed layouts: fixed variants or generated YAML?
 
 ### 10.1 Decided (2026-10-01)
 - **Board:** board profiles, ready-made (T-Relay-S3-like) and self-assembled builds (§2.2).
@@ -412,6 +417,24 @@ Optional modules; most can be built and tested without the physical sensors (`ha
   recommendations (§4).
 - **UI language:** chosen at build time (§8).
 - **Minimum ESPHome:** 2026.6.3, the technical floor found by scanning `esphome config` (task 003, §6).
+
+### 10.2 Decided (2026-10-10, screens, with the designer; canvas boards S0-S5, W0-W6)
+- **Bed card slots** (was: fixed variants or generated YAML?): one template `card_bed.yaml` included up to 6 times
+  (`vars: slot: N`); LVGL flex/grid sizes the cards; slots with index >= the group's zone count are hidden at boot.
+  Cards read data by zone index through `gp_*`, never by bed ids. 1-3 beds: full cards (RUN / +Q); 4-6: compact
+  cards in a 2x2 / 3x2 grid, a tap opens the bed page.
+- **Home = widgets:** area 308x172 between header and nav, widgets stacked with gap 4 and fixed heights
+  (26/40/44/76). Zones first (readings row if the zone has sensors, else last watering; 5+ zones as compact rows),
+  the remaining height is filled by widgets in priority order, an active alert strip is always on top. A small C++
+  helper decides what fits.
+- **Widget choice:** YAML decides which widgets exist (a module package brings its own, e.g. heating); order and
+  layout are chosen on the device in SETUP and stored (no reflash).
+- **First widgets:** zones + alert strip, weather from HA, now/next + day timeline (next runs from the task 019 schedules),
+  bed heating (with the heating module). Later: climate, water today.
+- **Weather from HA:** the weather entity has no `forecast` attribute since HA 2024.4 (`weather.get_forecasts`
+  action), and ESPHome cannot call actions, so the project documents a trigger-based HA template sensor that
+  stores the forecast in attributes, read by ESPHome `homeassistant` sensors with `attribute:`. Without HA the
+  weather widget is hidden.
 
 ## 11. Sources
 - ESPHome `esphome/components/sprinkler/` (`dev`, 2026-10-01) and its commit history.
@@ -434,3 +457,5 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 - https://code.claude.com/docs/en/devcontainer
 - https://github.com/microsoft/wslg/blob/main/samples/container/Containers.md
 - https://docs.podman.io/en/latest/markdown/podman-run.1.html
+- https://www.home-assistant.io/blog/2023/09/06/release-20239/ (weather forecast action)
+- https://www.home-assistant.io/integrations/template/ (trigger-based template sensors)
