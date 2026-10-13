@@ -27,6 +27,7 @@
 #include "esphome/core/preferences.h"
 
 #include "schedule_core.h"
+#include "schedule_format.h"
 
 namespace esphome::garden_schedule {
 
@@ -141,6 +142,66 @@ class GardenSchedule : public Component {
   }
   const std::string &next_run_text() const { return this->next_text_value_; }
   uint8_t slot_number(size_t index) const { return index < this->slots_.size() ? this->slots_[index].number : 0; }
+  // ---- data for the screens (task 026; the texts are the pure helpers of schedule_format.h) ----
+  size_t slot_count() const { return this->slots_.size(); }
+  bool master_on() const { return this->core_.master(); }
+  /// What a screen shows about slot `index` (0-based, include order); a default view when out of range.
+  SlotView slot_view(size_t index) const {
+    SlotView v;
+    if (index >= this->slots_.size())
+      return v;
+    const SlotConfig &c = this->cfg_[index];
+    v.number = this->slots_[index].number;
+    v.enabled = c.enabled;
+    v.start_minute = c.start_minute;
+    v.days_mask = c.days_mask;
+    v.zone_mask = c.zone_mask;
+    v.pct = c.pct;
+    v.today = this->today_(index);
+    return v;
+  }
+  std::string row_when(size_t index) const {
+    return index < this->slots_.size() ? format_time(this->cfg_[index].start_minute) : std::string();
+  }
+  std::string row_detail(size_t index) const {
+    return index < this->slots_.size() ? detail_text(this->slot_view(index), this->zone_count_) : std::string();
+  }
+  std::string row_today(size_t index) const { return today_word(this->slot_view(index).today); }
+  // reads the switch itself (not the 1 s copy in cfg_), so a tap shows at once
+  bool row_enabled(size_t index) const {
+    return index < this->slots_.size() && this->slots_[index].enabled != nullptr && this->slots_[index].enabled->state;
+  }
+  /// Paging of the slot rows (`per_page` rows on screen): the page after moving `delta`, the "1/3" label, the page count.
+  size_t page_step(size_t page, size_t per_page, int delta) const {
+    return step_page(page, per_page, this->slots_.size(), delta);
+  }
+  std::string page_label(size_t page, size_t per_page) const { return pager_text(page, per_page, this->slots_.size()); }
+  size_t page_total(size_t per_page) const { return page_count(this->slots_.size(), per_page); }
+  /// Home "next": "06:00" / "Tue 06:00" / "--:--".
+  std::string next_run_short() const {
+    const optional<NextRun> next = this->next_run();
+    return next_short(next.has_value(), next.has_value() ? next->day : 0, next.has_value() ? next->start_minute : 0,
+                      this->core_.today());
+  }
+  /// True when anything a schedule screen shows changed since `seen` (updated); `seen == 0` always redraws.
+  bool changed_since(uint32_t &seen) const {
+    std::vector<SlotView> views;
+    for (size_t i = 0; i < this->slots_.size(); i++)
+      views.push_back(this->slot_view(i));
+    const uint32_t hash = view_hash(views, this->core_.master(), this->next_run_short());
+    if (hash == seen)
+      return false;
+    seen = hash;
+    return true;
+  }
+  /// Flips the enabled switch of slot `index` (0-based, include order), so Home Assistant sees the change.
+  void toggle_slot(size_t index) {
+    if (index >= this->slots_.size() || this->slots_[index].enabled == nullptr) {
+      ESP_LOGW(TAG, "toggle_slot: no slot at index %u", (unsigned) index);
+      return;
+    }
+    this->slots_[index].enabled->toggle();
+  }
   /// Sets the global run-time factor in percent (100 = unchanged); slot multipliers are scaled by it.
   void set_global_pct(uint8_t pct) { this->core_.set_global_pct(pct); }
 
@@ -151,6 +212,26 @@ class GardenSchedule : public Component {
     Condition<> *condition;
     std::string reason;
   };
+
+  Today today_(size_t index) const {
+    for (const DayRun &run : this->core_.day_runs(0, this->cfg_, this->slots_.size())) {
+      if (run.slot != index)
+        continue;
+      switch (run.state) {
+        case DayRunState::FIRED:
+          return this->core_.state(index).pending != 0 ? Today::RUNNING : Today::DONE;
+        case DayRunState::MISSED:
+          return Today::MISSED;
+        case DayRunState::SKIPPED:
+          return Today::SKIPPED;
+        case DayRunState::STOPPED:
+          return Today::STOPPED;
+        default:
+          return Today::NONE;
+      }
+    }
+    return Today::NONE;
+  }
 
   Tick read_clock_(uint32_t now_ms) const {
     Tick t;
@@ -347,6 +428,17 @@ template<typename... Ts> class CancelPendingAction : public Action<Ts...> {
  public:
   explicit CancelPendingAction(GardenSchedule *hub) : hub_(hub) {}
   void play(const Ts &...x) override { this->hub_->cancel_pending(); }
+
+ protected:
+  GardenSchedule *hub_;
+};
+
+/// `garden_schedule.toggle_slot`: flips the enabled switch of a slot by index (0-based, include order).
+template<typename... Ts> class ToggleSlotAction : public Action<Ts...> {
+ public:
+  explicit ToggleSlotAction(GardenSchedule *hub) : hub_(hub) {}
+  TEMPLATABLE_VALUE(size_t, index)
+  void play(const Ts &...x) override { this->hub_->toggle_slot(this->index_.value(x...)); }
 
  protected:
   GardenSchedule *hub_;

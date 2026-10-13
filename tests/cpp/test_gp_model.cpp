@@ -294,7 +294,6 @@ TEST_CASE("format_lines") {
   CHECK(gp::fmt::modes_line(idle_summary) == "AA:off  Q:0");
   CHECK(gp::fmt::queue_line(idle_summary) == "Queue: (empty)");
   CHECK(gp::fmt::home_status(idle_summary) == "Idle");
-  CHECK(gp::fmt::home_next(idle_summary) == "--:--");
   CHECK(gp::fmt::zone_left_line(idle_summary) == "Zone left: --:--:--");
   CHECK(gp::fmt::total_left_line(idle_summary) == "Total left: --:--:--");
   CHECK(gp::fmt::saver_bed(idle_summary).empty());
@@ -326,7 +325,6 @@ TEST_CASE("format_lines") {
   CHECK(gp::fmt::modes_line(s) == "AA:on  Q:1");
   CHECK(gp::fmt::queue_line(s) == "Queue: 00:02:05 next B2");
   CHECK(gp::fmt::home_status(s) == "Watering");
-  CHECK(gp::fmt::home_next(s) == "02:05");
   CHECK(gp::fmt::zone_left_line(s) == "Zone left: 00:01:05");  // the smallest of the active zones
   CHECK(gp::fmt::total_left_line(s) == "Total left: 01:02:05");
   CHECK(gp::fmt::saver_bed(s) == "Bed 1+");

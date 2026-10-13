@@ -87,6 +87,21 @@ zone numbers above the group's zone count are dropped with a warning.
 sorted by start with `PENDING / FIRED / MISSED / SKIPPED`; `next_run_text()`. Durations for a timeline bar are not
 computed here (they need the engine's per-zone durations).
 
+The Schedules page (WATER tab, `packages/greenhouse/lvgl_schedules.yaml`) reads the hub through these, all one-liners
+for LVGL lambdas (the texts are pure functions in `schedule_format.h`, unit tested):
+- `slot_count()`, `master_on()`, `slot_view(i)` (number, enabled, start, days, zones, percent and today's state);
+- `row_when(i)` (`06:00`), `row_detail(i)` (`Mon-Fri  B1 B3  150%`: days `Daily` / `Mon-Fri` / `Sat Sun` / `Mon Wed Fri` /
+  `Never`; zones `All` or `B1 B3`, a count above 6), `row_today(i)` (`running` / `done` / `missed` / `skipped` /
+  `stopped` / empty), `row_enabled(i)` (the slot switch itself, so a tap shows at once);
+- `next_run_short()` (`06:00` today, `Tue 06:00`, `--:--`: the Home "NEXT" label);
+- `changed_since(seen)`: true when anything a schedule screen shows changed (the poller guard; `seen = 0` forces a
+  redraw), `page_step(page, per_page, delta)` / `page_label(page, per_page)` / `page_total(per_page)` for the PREV / NEXT
+  window of rows.
+
+Action `garden_schedule.toggle_slot: {id, index}` flips the enabled switch of a slot by its 0-based position in include
+order (a template, so Home Assistant sees the change); an index out of range logs a WARN and does nothing. The screen
+is view only: no time, day or zone editor on the device.
+
 ## Hub options
 `id`, `time_id` (default: first `time:`), `catch_up_window`, `zone_group` (gp group id: the default zone count counts only its `gp_zone` entries), `zone_count` (default: that count, else
 16), `master_switch_id`, `next_run_id`, `next_run_text_id`, `last_result_id`, `skip_if`, `on_run`. Action:
