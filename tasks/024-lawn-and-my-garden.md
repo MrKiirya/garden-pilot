@@ -329,3 +329,7 @@ The author was away; every open question uses the recommended default:
   `script/compile` x2 and the hardware checklist stay unticked.
 - Review follow-ups: a way to stop the lawn from the touch screen (no lawn STOP on screen yet); naming: the zone switch
   "Lawn" vs the main switch "Lawn irrigation" can confuse in Home Assistant when a zone is also called "Lawn".
+
+### ESP32 compile (review round 1 blocker), 2026-10-13
+`GP_SECRETS=example script/compile examples/my-garden.yaml` in the devcontainer image (Docker Desktop on Windows), pinned ESPHome: **SUCCESS**.
+RAM 38.4% (131175 / 341760 bytes), Flash 67.5% (1239247 / 1835008 bytes). Two gp groups + two `garden_zones` groups (one with a pump) compile and link.
