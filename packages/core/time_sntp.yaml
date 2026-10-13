@@ -1,0 +1,27 @@
+# Clock fallback without Home Assistant: NTP over Wi-Fi (SNTP).
+# `sntp` and `time: homeassistant` (time.yaml) write the same system clock, so features read `ha_time` only and
+# never `sntp_time` (that id is for logs and lambdas while debugging). An SNTP sync does not fire the
+# `on_time_sync` of `ha_time`, so readers must poll (the Home clock lags at most 30 s).
+# Needs Wi-Fi with internet access or a LAN NTP server. Override the servers from the entry file, e.g.
+# `sntp_server_1: ntp.example.lan` under `substitutions:`. With a manual IP setup the device needs DNS
+# (`dns1`/`dns2`) or IP-only server entries.
+# Timezone: `timezone: ${timezone}` (default UTC, same substitution as time.yaml): set your own IANA name (e.g.
+# Europe/Berlin) under `substitutions:` in garden-pilot.yaml. Home Assistant then no longer overrides the zone, and
+# the zone is right after a reboot without Home Assistant (see SPEC §4.1a).
+# Not available on the PC emulator (`host` has no sntp): garden-pilot-sim.yaml does not include it.
+# Comment out the include in garden-pilot.yaml for Home Assistant-only time.
+
+substitutions:
+  timezone: UTC
+  sntp_server_1: 0.pool.ntp.org
+  sntp_server_2: 1.pool.ntp.org
+  sntp_server_3: 2.pool.ntp.org
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: ${timezone}
+    servers:
+      - ${sntp_server_1}
+      - ${sntp_server_2}
+      - ${sntp_server_3}

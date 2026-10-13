@@ -29,7 +29,9 @@ CALLERS = [
 ]
 ENGINE_FILES = {
     "packages/greenhouse/irrigation.yaml",
+    "packages/greenhouse/irrigation_pump.yaml",
     "packages/greenhouse/bed.yaml",
+    "packages/greenhouse/bed_soil_skip.yaml",
     GH_GP,
     "packages/sim/fault.yaml",
 }
@@ -108,7 +110,7 @@ def test_lvgl_only_from_pollers() -> None:
     """LVGL is never touched from a gp trigger, an on_value / on_state callback or an API action (it can fire before
     LVGL is ready; see CLAUDE.md)."""
     # sensors_air_dht.yaml / sensors_soil.yaml predate this rule (on_value updating LVGL): follow-up in the task notes
-    irrigation_files = {"irrigation.yaml", "bed.yaml", "bed_soil.yaml", "gp.yaml", "gp_api.yaml"}
+    irrigation_files = {"irrigation.yaml", "irrigation_pump.yaml", "bed.yaml", "bed_soil.yaml", "bed_soil_skip.yaml", "gp.yaml", "gp_api.yaml"}
     for path in _yaml_files("packages"):
         data = load_esphome_yaml(path)
         for d in _walk(data):
@@ -145,7 +147,7 @@ def test_gp_yaml_shape() -> None:
 
     core = _load(CORE_GP)
     assert core["gp"]["id"] == "gp_hub"
-    assert core["external_components"] == [{"source": "components", "components": ["gp", "gp_zone"]}]
+    assert core["external_components"] == [{"source": "${gp_root}/components", "components": ["gp", "gp_zone"]}]
     alert = core["text_sensor"][0]
     assert alert["id"] == "gp_alert_text" and alert["name"] == "Alert"
     assert not re.search(r"!secret|GPIO\d+", (REPO_ROOT / CORE_GP).read_text(encoding="utf-8"))

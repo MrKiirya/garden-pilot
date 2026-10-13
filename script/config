@@ -3,34 +3,45 @@
 #
 # Uses the real secrets.yaml when it exists, otherwise secrets.example.yaml. Set GP_SECRETS=example to
 # force the example secrets (script/lint, tests and CI do). With the example secrets the config is copied
-# into a temp dir, so no secrets.yaml is ever created in the checkout. Output is shown only on failure
+# into a temp dir, so no secrets.yaml is ever created in the checkout. A config in a subdirectory (examples/) reads
+# <dir>/secrets.yaml when it exists, otherwise the root secrets.yaml is staged next to a temp copy. Output is shown only on failure
 # unless GP_VERBOSE=1.
 set -eu
 cd "$(dirname "$0")/.."
 
-# Entry files live in the repo root: the temp copy keeps only the basename, so relative !include paths
-# from a config in a subdirectory would break.
+# The config may live in a subdirectory (examples/*.yaml): its relative !include paths (../packages/...) and
+# `!secret` (looks for secrets.yaml next to the config file) must keep working in the temp copy, so the config is
+# staged at its relative path and the secrets file goes next to it.
 CONFIG="${1:-garden-pilot.yaml}"
 if [ ! -f "$CONFIG" ]; then
     echo "config file not found: $CONFIG" >&2
     exit 1
 fi
+CONFIG_DIR="$(dirname "$CONFIG")"
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -r -f "$TMP_DIR"' EXIT
 trap 'exit 130' INT TERM
 
-if [ "${GP_SECRETS:-}" != "example" ] && [ -f secrets.yaml ]; then
+if [ "${GP_SECRETS:-}" != "example" ] && [ "$CONFIG_DIR" = "." ] && [ -f secrets.yaml ]; then
+    WORK_CONFIG="$CONFIG"
+elif [ "${GP_SECRETS:-}" != "example" ] && [ "$CONFIG_DIR" != "." ] && [ -f "$CONFIG_DIR/secrets.yaml" ]; then
     WORK_CONFIG="$CONFIG"
 else
+    SECRETS=secrets.example.yaml
+    if [ "${GP_SECRETS:-}" != "example" ] && [ -f secrets.yaml ]; then
+        SECRETS=secrets.yaml
+    fi
     # Everything an entry file may include; extend this list when new top-level folders appear.
-    for path in "$CONFIG" packages hardware components; do
+    for path in packages hardware components; do
         if [ -e "$path" ]; then
             cp -R "$path" "$TMP_DIR/"
         fi
     done
-    cp secrets.example.yaml "$TMP_DIR/secrets.yaml"
-    WORK_CONFIG="$TMP_DIR/$(basename "$CONFIG")"
+    mkdir -p "$TMP_DIR/$CONFIG_DIR"
+    cp "$CONFIG" "$TMP_DIR/$CONFIG"
+    cp "$SECRETS" "$TMP_DIR/$CONFIG_DIR/secrets.yaml"
+    WORK_CONFIG="$TMP_DIR/$CONFIG"
 fi
 
 if sh script/_esphome config "$WORK_CONFIG" >"$TMP_DIR/esphome-config.log" 2>&1; then

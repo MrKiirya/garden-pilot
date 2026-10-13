@@ -1,0 +1,74 @@
+# Example 1: the smallest working device - ONE bed on relay 1 (breadboard board profile), the display and touch,
+# the LVGL pages, the gp_* layer and Home Assistant. No sensors, no pump.
+# The greenhouse page, the valve test and the screensaver show beds 1-3; the bed that is absent shows empty.
+#
+# Copy secrets.example.yaml to examples/secrets.yaml (git-ignored) and fill in your values, then:
+#   uv run esphome run examples/minimal-1-bed.yaml
+# `!include` paths here start with ../ because they resolve relative to this file. gp_root: ".." tells the
+# packages where the repository root (components/, the screensaver font) is. See examples/README.md.
+#
+# Active-low relay modules are NOT supported: they energise while the ESP32 resets. Use a high-level-trigger module
+# (or set its jumper to H). To run this config on the LilyGO T-Relay-S3, change the `hardware:` include to
+# ../hardware/lilygo-t-relay-s3.yaml (relay numbers 1..12 stay the same).
+
+substitutions:
+  api_encryption_key: !secret api_encryption_key
+  ota_password: !secret ota_password
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  wifi_ap_password: !secret wifi_ap_password
+  # Path from this file to the repository root: the packages find components/ and the font through it.
+  gp_root: ".."
+
+esphome:
+  name: gp-minimal
+  friendly_name: GardenPilot minimal
+
+logger:
+  level: INFO
+
+packages:
+  # Board profile: pins, display/touch orientation and calibration. Pick exactly one.
+  hardware: !include ../hardware/esp32-s3-devkitc1-breadboard.yaml
+
+  # Core: connectivity and clock.
+  core_api: !include ../packages/core/api.yaml
+  core_ota: !include ../packages/core/ota.yaml
+  core_network: !include ../packages/core/network.yaml
+  core_time: !include ../packages/core/time.yaml
+  core_diagnostics: !include ../packages/core/diagnostics.yaml
+
+  # Display + touch, then LVGL: base first, boot screen first among the pages.
+  display_touch: !include ../packages/display_touch.yaml
+  lvgl_base: !include ../packages/lvgl/base.yaml
+  lvgl_page_boot: !include ../packages/lvgl/page_boot.yaml
+  lvgl_page_home: !include ../packages/lvgl/page_home.yaml
+  lvgl_page_touch_test: !include ../packages/lvgl/page_touch_test.yaml
+  lvgl_page_lawn: !include ../packages/lvgl/page_lawn.yaml
+  lvgl_dialog_confirm: !include ../packages/lvgl/dialog_confirm.yaml
+  lvgl_screensaver: !include ../packages/lvgl/screensaver.yaml
+  lvgl_page_setup: !include ../packages/lvgl/page_setup.yaml
+  lvgl_page_network: !include ../packages/lvgl/page_network.yaml
+  lvgl_network_wifi: !include ../packages/lvgl/network_wifi_status.yaml
+  lvgl_boot_wifi: !include ../packages/lvgl/boot_wifi.yaml
+
+  # Irrigation group, then the beds in zone order, then the gp_* layer (screens and Home Assistant use it only).
+  gh_irrigation: !include ../packages/greenhouse/irrigation.yaml
+  gh_bed_1: !include
+    file: ../packages/greenhouse/bed.yaml
+    vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+
+  core_gp: !include ../packages/core/gp.yaml
+  core_gp_api: !include ../packages/core/gp_api.yaml
+  gh_gp: !include ../packages/greenhouse/gp.yaml
+  gh_lvgl_page: !include ../packages/greenhouse/lvgl_page.yaml
+  # No air / soil sensors in this example, so no gh_screensaver_status either (its status line reads their ids). To add
+  # them: gh_sensors_air (+ gh_sensors_soil on adc_1) and gh_screensaver_status, see garden-pilot.yaml.
+  gh_gp_lvgl: !include ../packages/greenhouse/gp_lvgl_status.yaml
+  gh_valve_test: !include ../packages/greenhouse/lvgl_valve_test.yaml
+
+  # Device-side watering schedule: a hub and one slot (slots are off until switched on in Home Assistant).
+  gh_schedule: !include ../packages/greenhouse/schedule.yaml
+  gh_schedule_slot_1: !include
+    file: ../packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "1", start: "06:00:00"}

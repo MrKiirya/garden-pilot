@@ -23,10 +23,12 @@ substitutions:
   gh_max_on_time: 60min
   gh_bed_run_max: "55"
   gh_bed_run_initial: "5"
+  # Path from the entry file to the repo root (SPEC §4.2): "." for garden-pilot.yaml, ".." for examples/*.yaml.
+  gp_root: "."
 
 # Remote-package users pin a tag here instead of `source: components` (SPEC §4.2).
 external_components:
-  - source: components
+  - source: ${gp_root}/components
     components: [garden_zones, garden_zone]
 
 garden_zones:

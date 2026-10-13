@@ -223,7 +223,7 @@ def test_sim_script() -> None:
     sim_paths = re.search(r"for path in (.*?); do", text)
     compile_paths = re.search(r"for path in (.*?); do", compile_text)
     assert sim_paths and compile_paths
-    assert sim_paths.group(1).split()[1:] == compile_paths.group(1).split()[1:]
+    assert sim_paths.group(1).split()[1:] == compile_paths.group(1).split()  # sim copies its config in the loop; compile copies it after it
 
 
 def test_sim_ctl_script() -> None:

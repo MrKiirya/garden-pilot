@@ -29,8 +29,17 @@ uncommenting one package) and **configurable** (pins, counts and names via subst
 Two kinds of builds are supported, each as a board profile `hardware/<board>.yaml` (§5) that holds all pins:
 - **Ready-made board:** an ESP32-S3 board with relays on board plus a display connector or free SPI pins
   (the author's target is the LILYGO T-Relay-S3). Check which pins remain free for the SPI display and touch.
+  Task 023 adds `hardware/lilygo-t-relay-s3.yaml` (config-checked only, not run on a real board): ESP32-S3-WROOM-1U
+  N16R8, 6 relays (10 A) behind an HT74HC595 (data GPIO7, clock GPIO5, latch GPIO6, nOE GPIO4) and its 6-relay
+  expansion on the same chain (`sn74hc595`, `sr_count: 2`: relays 1-6 = outputs 0-5, relays 7-12 = outputs 8-13 of the
+  chain, to verify on the board); the display board sits on the 14-pin TFT header H1 (CS GPIO8, RST GPIO3, DC GPIO46,
+  MOSI GPIO11, CLK GPIO13, MISO GPIO12, BL GPIO9, touch CS GPIO10, IRQ GPIO14; source: the vendor schematic
+  `T-Relay6-ESP32S3-Rev1.1.pdf`). RTC (PCF8563, I2C GPIO16/17, INT GPIO18) and the DS18B20 spot (GPIO21) are not used yet.
 - **Self-assembled ("breadboard") build:** a generic ESP32-S3 dev board + ILI9341/XPT2046 + a relay module,
-  as in §2.1.
+  as in §2.1. Since task 023 the profile has up to 12 relay outputs on safe pins (the author's 12-LED indicator
+  board stands in for the relays); the wiring table is in the profile header.
+- Active-low relay modules are not supported (no `inverted:`): they energise while the ESP32 resets. Use a
+  high-level-trigger module.
 
 The project must not depend on one specific board.
 
@@ -145,6 +154,19 @@ adapter (`components/garden_zones/gp_engine.h`, GPLv3). Full contract, names and
 - Not done yet (follow-ups): soil reading in the model and the soil-sensor alert, service-mode inhibit for HA zone
   switches, air-sensor alerts.
 
+### 4.1a Time sources
+The clock id `ha_time` is the only one features use. `packages/core/time.yaml` (`time: homeassistant`) and
+`packages/core/time_sntp.yaml` (`time: sntp`, id `sntp_time`, task 016) both write the same system clock, so the
+device has valid time with Home Assistant offline as long as Wi-Fi reaches an NTP server. SNTP is on by default
+(comment out `core_time_sntp` for HA-only time); servers are the `sntp_server_1..3` substitutions, default
+`0/1/2.pool.ntp.org`. An SNTP sync does not fire `ha_time.on_time_sync`, so readers poll (the Home clock lags at
+most 30 s). **Timezone:** the `timezone` substitution
+(default `UTC`, an IANA name such as `Europe/Berlin` or a POSIX string) is applied as `timezone: ${timezone}` to both
+`ha_time` and `sntp_time`, so the zone is known after a reboot without Home Assistant. Because a timezone is set,
+Home Assistant no longer overrides the zone: users must set their own zone in the entry file (`substitutions:`),
+otherwise the clock and the schedule start times (local day, §4 Schedules) run in UTC. The default carries no personal zone. The emulator
+uses `time: host` without `timezone` (it keeps the PC's zone detected at build time; no `sntp` on `host`). An RTC chip for "no Wi-Fi at all" is a follow-up.
+
 ### 4.2 Loading our own component
 ```yaml
 external_components:
@@ -154,6 +176,14 @@ external_components:
   # - source: github://MrKiirya/garden-pilot@v1.0
   #   components: [garden_zones, garden_zone]
 ```
+Task 023: the literal `source: components` is `source: ${gp_root}/components` in every package that has a local source
+(`irrigation.yaml`, `irrigation_pump.yaml`, `schedule.yaml`, `core/gp.yaml`), and the screensaver font file is
+`${gp_root}/packages/lvgl/fonts/...`. Each of those packages defines `gp_root: "."`; an entry file in a subdirectory
+(`examples/*.yaml`) sets `gp_root: ".."`. Reason (ESPHome 2026.9.1): `!include` resolves against the including file,
+but `external_components` local sources and font files resolve against the directory of the main config file, and
+`!secret` reads `secrets.yaml` next to the file that contains the tag. The substitution is expanded before
+`external_components` is loaded (verified by the example config rows). A remote-package user replaces the source by a
+git source and the font by a URL or a local copy (roadmap stage 13).
 
 ## 5. Modularity
 - Many small YAML files, not one big file.
@@ -181,8 +211,23 @@ external_components:
   - since task 018 each bed also adds a `gp_zone:` list item (the Home Assistant switch of the gp layer); `packages/core/gp.yaml`, `gp_api.yaml` and `packages/greenhouse/gp.yaml` come after the last bed.
   - optional `packages/greenhouse/bed_soil.yaml` per bed (reporting soil moisture sensor; vars `bed`, `bed_name`,
     `adc_pin`, `cal_dry_v`, `cal_wet_v`); one ADC pin serves one probe.
-  - the board profile holds the raw relay drivers as internal switches `board_relay_N` (the same ids in every
-    profile) and names analog inputs `adc_N_pin` (ADC1 only with Wi-Fi); features never use GPIO numbers.
+  - the board profile holds the raw relay drivers as internal switches `board_relay_N` (contiguous from 1, see task 023
+    below) and names analog inputs `adc_N_pin` (ADC1 only with Wi-Fi); features never use GPIO numbers.
+  - task 023: **per-entry pins and relays.** Profiles no longer define the same `board_relay_N` ids: each has contiguous
+    `board_relay_1..N` (N >= 3: breadboard 12, LilyGO 12, sim 3). Every entry file (`garden-pilot.yaml`,
+    `examples/*.yaml`) must get every `${..._pin}` its packages and vars use, and every relay it references (bed
+    `relay`, `gh_pump_relay`), from ITS profile; a profile may define only pins that something uses.
+  - task 023: **variants.** `packages/greenhouse/irrigation_pump.yaml` is `irrigation.yaml` plus `pump_switch_id:
+    board_relay_${gh_pump_relay}`, `pump_max_on_time` (`gh_pump_max_on_time`, default `2h`) and `pump_idle_timeout`
+    (`gh_pump_idle_timeout`, default `10s`); it replaces `irrigation.yaml` under the same package key (a second package
+    cannot add keys to a `garden_zones: groups:` item). `packages/greenhouse/bed_soil_skip.yaml` is `bed.yaml` plus the
+    `soil_moisture:` block (var `skip_above`; used together with that bed's `bed_soil.yaml`), because a second package
+    cannot add `soil_moisture:` to an existing `garden_zone:` list item. Tests keep both files equal to their originals
+    apart from those keys.
+  - task 023: **`examples/`**: four complete entry files (`minimal-1-bed.yaml`, `beds-with-pump.yaml`,
+    `soil-sensors.yaml`, `relay-module-8ch.yaml`, device names `gp-minimal`, `gp-beds-pump`, `gp-soil-sensors`,
+    `gp-relay-8ch`), all with display + touch, `../` includes, `gp_root: ".."` and `examples/secrets.yaml`; see
+    `examples/README.md`.
   - `hardware/sim.yaml` (`host:` + template relays that log every state change) is the board profile of the PC
     emulator (task 006, `garden-pilot-sim.yaml`, §7); it cannot be combined with `core/network.yaml` (Wi-Fi),
     `core/ota.yaml`, `display_touch.yaml` or the DHT/ADC sensors (the host platform has none of them).
@@ -191,9 +236,10 @@ Target layout:
 ```
 garden-pilot.yaml          # device entry file, modules commented out
 garden-pilot-sim.yaml      # PC emulator entry file (host + SDL), same packages
-hardware/                  # esp32-<board>.yaml (pins, relay drivers), sim.yaml
+hardware/                  # esp32-<board>.yaml, lilygo-t-relay-s3.yaml (pins, relay drivers), sim.yaml
+examples/                  # four complete device configs (`../` includes, gp_root: "..")
 packages/
-  core/                    # api, ota, network (Wi-Fi), time, time_host
+  core/                    # api, ota, network (Wi-Fi), time, time_sntp, time_host
   display_touch.yaml, display_sdl.yaml   # device display + touch; emulator window + mouse
   sim/                     # emulator only: simulated sensors, auto drift, SIM board page
   lvgl/                    # pages
@@ -217,6 +263,7 @@ tests/
 Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${GP_PYTEST_WORKERS:-4} --dist loadgroup`, 4 workers by default so the machine stays usable; `GP_PYTEST_WORKERS=0` = serial, `auto` = every CPU). Every host build and its tests form one xdist group (`HOST_GROUPS` in `tests/conftest.py`), so no two workers share a build directory. The schedule host scenario starts its program at a chosen second of the minute through `libfaketime` (shifted wall clock, real monotonic clock, offsets only grow), which removes the random minute-boundary waits; without the library it runs on the real clock, and `GP_REQUIRE_FAKETIME=1` (CI) turns a missing library into a failure.
 1. `esphome config` for every module combination: the matrix in `tests/test_config_matrix.py` (variants built from
    the real entry file) runs in CI job `checks` via `script/test`; 2 beds, a bed with its own soil sensor and the sim board were added by task 005; task 006 adds rows for the emulator entry file `garden-pilot-sim.yaml` (the two SDL rows need `sdl2-config`; `GP_REQUIRE_SDL=1` in CI makes a missing one a failure).
+1a. **Examples (task 023):** `tests/test_examples.py` checks the shape of `examples/*.yaml` (paths, secrets, package order) and runs `esphome config` (pinned version only) on the four examples, on example 1 with the LilyGO profile swapped in, and through `script/config examples/...` (which stages the config at its relative path with the example secrets next to it); no new compile or host build. `script/compile examples/<file>.yaml` works the same way.
 2. `esphome compile` for ESP32 and for the host emulator build `garden-pilot-sim.yaml` (CI jobs `compile (pinned)` and `compile (minimum)`, weekly canary for the device build).
 3. Unit tests of the `garden_zones` core (a minimal header-only harness, `script/test-cpp`).
 4. **`host` platform (task 006, done):** `script/sim` builds and runs `garden-pilot-sim.yaml` on Linux: the real LVGL
@@ -322,13 +369,22 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
 8. **`gp_*` layer** on top of `garden_zones`, screens switched to it (task 018: read model, alerts, actions, HA surface, persisted last watering and history; soil reading follows).
 9. **Screens on the design system:** Greenhouse (proposal), Home, navigation; bed layout variants; UI language
    at build time. On top of the stage 8 `gp_*` layer: bed card slots and Home widgets (§8, decided in §10.2).
-10. **Time without HA:** SNTP fallback (and RTC if needed) so schedules work offline.
+10. **Time without HA:** SNTP fallback (done, task 016, `packages/core/time_sntp.yaml`, §4.1a); RTC chip if needed
+    (follow-up) so schedules work offline.
 11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the WATER tab editor
     and the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens)
     with the heating widget, alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
     scenarios against the host build. Screenshots and taps under Xvfb exist (task 015, `script/sim-ui`, CI job
     `sim-ui`); remaining: reference-image comparison and `aioesphomeapi` scenarios.
+
+13. **Examples and remote packages.** Task 023 (this stage's first part): `examples/` (four complete device configs),
+    the 12-relay breadboard profile, the LilyGO T-Relay-S3 profile, `gp_root`, the pump and soil-skip package variants.
+    Task 024: a lawn + flowers package (one `garden_zones` group with a pump, one zone at a time) and the author's
+    `examples/my-garden.yaml`. Then "remote packages + private config repo": packages usable as ESPHome remote packages
+    (`external_components` git source pinned to a tag, font path, includes with `vars`), a CI check of a remote-mode
+    example, version tags `vX.Y.Z`, and a git-ignored private override file; the author then moves his own config to a
+    private repo.
 
 ### 9.1 Backlog (ideas, separate tasks once the base is ready)
 Optional modules; most can be built and tested without the physical sensors (`hardware/sim.yaml`):
@@ -340,6 +396,9 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 - Cycle and soak (water in several passes).
 - Rain delay (sensor or HA command; lawn).
 - Dynamic lanes for `max_parallel` between 1 and all.
+- **Lawn one zone at a time, flowers in parallel, one shared pump.** Today a pump belongs to one group, so this needs either
+  lanes with different parallelism in one group (pinned lanes, at the cost of lawn and flowers overlapping) or a fork
+  patch for a pump shared across groups. Its own task.
 - Heating: night-tariff window and schedule modes.
 
 ## 10. Open questions
@@ -385,6 +444,8 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 - https://esphome.io/components/external_components/
 - https://esphome.io/components/host/
 - https://esphome.io/components/display/sdl/
+- https://esphome.io/components/time/sntp/
+- https://esphome.io/components/time/
 - https://docs.wokwi.com/wokwi-ci/github-actions
 - https://containers.dev/implementors/spec/
 - https://docs.astral.sh/uv/guides/integration/docker/
