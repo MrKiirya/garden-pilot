@@ -16,6 +16,12 @@
 # - One probe per ADC pin: do not use the same adc_pin for two sensors, nor together with the greenhouse-wide
 #   probe (sensors_soil.yaml) on the same pin.
 
+# The bed's card on the Greenhouse page shows this sensor: the gp zone (packages/greenhouse/bed.yaml, include the bed
+# first) gets its soil_sensor_id.
+gp_zone:
+  - id: !extend gh_bed${bed}_switch
+    soil_sensor_id: gh_bed${bed}_soil_moisture
+
 sensor:
   - platform: adc
     pin: ${adc_pin}

@@ -1,0 +1,169 @@
+# One bed card of the design system (design/README.md, "Bed card"): a single widget to include as an item of a
+# `widgets:` list, once per card slot. It is generic: it knows a gp group and a zone index, never a bed id
+# or an engine, so a lawn page can include it with `p: lw`, `group: gp_lawn`. Texts, colours, progress and the
+# geometry are set at run time by the script of packages/lvgl/card_bed_refresh.yaml (same vars); this file only
+# declares the widgets and the buttons.
+#
+#   - !include
+#       file: ../lvgl/card_bed.yaml          # path relative to the including file
+#       vars: {p: gh, group: gp_greenhouse, slot: "1", count: "id(gp_greenhouse)->summary().zone_count", idx: "0",
+#              zone: "0", detail_page: gh_bed_detail_page, detail_zone: gh_detail_zone,
+#              detail_update: gh_carddetail_update}
+#
+#   p              id prefix of the page ("gh"); every id is ${p}_card${slot}[_part]
+#   group          the gp group id (RUN / +Q act on it)
+#   slot           id suffix: "1".."6" for the grid, "detail" for the detail page copy
+#   count, idx     C++ expressions: the zone count of the group and the card slot (0-based) for the layout
+#   zone           C++ expression: the zone index the card shows ("0" or "id(gh_detail_zone)")
+#   detail_page    page opened by a tap on a compact card; detail_zone: int global it sets; detail_update: the script
+#                  that redraws the detail card
+#
+# The card starts hidden (a slot past the zone count stays hidden). Coordinates inside the card are the same for the
+# full and the compact card (57 px high: name, state, time and bar only; RUN, +Q, last and soil are hidden there).
+obj:
+  id: ${p}_card${slot}
+  x: 8
+  y: 48
+  width: 97
+  height: 57
+  hidden: true
+  bg_color: 0x1c1b1b
+  bg_opa: COVER
+  border_width: 1
+  border_color: 0x3f4a3c
+  radius: 2
+  pad_all: 0
+  shadow_width: 0
+  scrollable: false
+  on_click:
+    # a compact card opens the bed detail page; a full card has nothing to open
+    - if:
+        condition:
+          lambda: "return gp::layout::bed_card(${count}, ${idx}).compact;"
+        then:
+          - globals.set:
+              id: ${detail_zone}
+              value: ${idx}
+          - script.execute:
+              id: ${detail_update}
+              layout: true
+          - lvgl.page.show: ${detail_page}
+  widgets:
+    - obj:
+        id: ${p}_card${slot}_edge
+        x: 0
+        y: 0
+        width: 97
+        height: 3
+        bg_color: 0x3f4a3c
+        bg_opa: COVER
+        border_width: 0
+        radius: 0
+        pad_all: 0
+        scrollable: false
+        clickable: false
+    - label:
+        id: ${p}_card${slot}_name
+        x: 4
+        y: 5
+        width: 89
+        long_mode: DOT
+        text: ""
+        text_font: montserrat_10
+        text_color: 0xe5e2e1
+    - label:
+        id: ${p}_card${slot}_state
+        x: 4
+        y: 17
+        width: 89
+        long_mode: DOT
+        text: ""
+        text_font: montserrat_10
+        text_color: 0xbecab9
+    - label:
+        id: ${p}_card${slot}_time
+        x: 4
+        y: 29
+        text: ""
+        text_font: montserrat_12
+        text_color: 0xe5e2e1
+    - bar:
+        id: ${p}_card${slot}_bar
+        x: 4
+        y: 46
+        width: 89
+        height: 5
+        min_value: 0
+        max_value: 100
+        value: 0
+        bg_color: 0x353534
+        bg_opa: COVER
+        radius: 3
+        scrollable: false
+        indicator:
+          bg_color: 0x4caf50
+          bg_opa: COVER
+    - label:
+        id: ${p}_card${slot}_last
+        x: 4
+        y: 56
+        width: 89
+        long_mode: DOT
+        text: ""
+        text_font: montserrat_8
+        text_color: 0xbecab9
+    - label:
+        id: ${p}_card${slot}_soil
+        x: 4
+        y: 67
+        width: 89
+        long_mode: DOT
+        text: ""
+        text_font: montserrat_8
+        text_color: 0xbecab9
+    - button:
+        id: ${p}_card${slot}_run
+        x: 4
+        y: 95
+        width: 44
+        height: 20
+        bg_color: 0x4caf50
+        bg_opa: COVER
+        radius: 3
+        pad_all: 0
+        shadow_width: 0
+        scrollable: false
+        on_click:
+          - gp.run_zone:
+              id: ${group}
+              zone: !lambda "return ${zone};"
+        widgets:
+          - label:
+              align: CENTER
+              text: "RUN"
+              text_font: montserrat_10
+              text_color: 0x003c0b
+    - button:
+        id: ${p}_card${slot}_queue
+        x: 52
+        y: 95
+        width: 44
+        height: 20
+        bg_color: 0x201f1f
+        bg_opa: COVER
+        border_width: 1
+        border_color: 0xbecab9
+        radius: 3
+        pad_all: 0
+        shadow_width: 0
+        scrollable: false
+        on_click:
+          - gp.enqueue_zone:
+              id: ${group}
+              zone: !lambda "return ${zone};"
+        widgets:
+          - label:
+              align: CENTER
+              text: "+Q"
+              text_font: montserrat_10
+              text_color: 0xbecab9

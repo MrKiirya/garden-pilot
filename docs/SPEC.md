@@ -341,6 +341,9 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   layer, `gp_confirm`) follow the tokens, and so does `schedules_page` (WATER tab, task 026: master row, three slot rows per page
   with PREV / NEXT, view only). `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
   LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → schedules (`lawn_page` stays included but has no entry point until the lawn task or the Home widgets give it one), SETUP → setup (its DISPLAY tile opens the
+- Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
+  layer, `gp_confirm`) follow the tokens. `greenhouse_page` (bed cards, task 025) and its bed detail page `gh_bed_detail_page` follow the tokens too;
+  `lawn_page` and `touch_test_page` still use the default LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the
   touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). STOP on the Greenhouse page and RESTART on the Network page ask
   touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). The Lawn page now has backing data through
   `gp_lawn` (task 024) but is not wired to it. STOP on the Greenhouse page and RESTART on the Network page ask

@@ -30,6 +30,7 @@ GardenPilot is the on-device UI for a greenhouse and lawn irrigation controller:
 - `blue` / `blue-fill` mean **water-as-resource and the queue**: lawn bar, humidity icon, RUN QUEUE, WATER NOW, a queued bed. Text on `blue-fill` is `on-blue`.
 - `error-fill` with `on-error` is reserved for **STOP**. Nothing else is red.
 - `amber` / `amber-fill` are reserved for warnings and a paused bed; the Schedules page uses `amber` text for a missed slot.
+- `amber` / `amber-fill` are reserved for warnings and a paused bed; the bed card uses them for a locked or paused bed (state word in `amber`, top edge `amber-fill`).
 - `border` (1px) outlines cards and draws dividers. It is decorative (1.85:1 on `card`). State is always shown with a fill colour plus a word, never by the outline alone.
 - Contrast: every text pair above passes 4.5:1 (`on-green` 4.58, `on-blue` 4.57 are the tightest).
 
@@ -63,6 +64,9 @@ Five stroke icons (house, leaf, drop, gear, thermo) on a 24-unit grid, 2.2 strok
 - **Home** (`home_page`): built. Greenhouse card + Lawn card + nav.
 - **Greenhouse** (`greenhouse_page`): proposal. Stats strip, three `BedCard`s with state edges, status line, STOP / RUN QUEUE / HOME.
 - **History** (`gh_history_page`): built (task 027). Sub-page without nav: "History" header, 6 one-line rows (`B2  13 Oct 06:00  5 min  done`, skips `... skipped wet`), "1-6 of 37" caption, PREV / NEXT (`btn-h-sm`), BACK. Reached from the HISTORY ghost button (`gh_btn_history`) in the Greenhouse header. Paged, never scrolled.
+- **Greenhouse** (`greenhouse_page`): built (task 025). Stats strip (AIR / HUMIDITY / SOIL), up to six `BedCard`s from one template (`packages/lvgl/card_bed.yaml`; ids `gh_card<N>_*`), transport row STOP (`gh_btn_stop`) / RUN QUEUE (`gh_btn_start_queue`) / WATER ALL (`gh_btn_water_all`), nav with ZONES active (`gh_nav_btn_*`). 1-3 beds: full cards with RUN and +Q; 4-6 beds: compact 97x57 grid, a tap opens the bed detail page. STOP and WATER ALL ask through the confirm dialog.
+- **Bed detail** (`gh_bed_detail_page`): built (task 025). The same card, one zone, full size, and BACK (`gh_detail_btn_back`); no nav.
+  Card states: Watering green, Queued #N blue, Locked / Paused amber, Off / Skipped / Idle `text-dim`; the 3 px top edge is `green-fill` / `blue-fill` / `amber-fill` / `border`.
 - **Boot** (`boot_page`): built (D17). Title, "Connecting to Wi-Fi...", spinner (replaces the draft's progress bar), "Valves closed - offline mode in 30s", ESPHome version.
 - **Setup** (`setup_page`): built (D10). 2x3 tile grid (NETWORK, TIME, DISPLAY, SERVICE active; CYCLE, SENSORS "Soon"), nav with SETUP active.
 - **Setup - Service - Valves** (`valve_test_page`): built (D18). Beds 1-3 only (no Lawn/Pump, no per-row CLOSE), TEST per bed (10 s max from the tap, ~8 s open), STOP, EXIT SERVICE.

@@ -1,0 +1,83 @@
+# The update script of one bed card (packages/lvgl/card_bed.yaml, same vars): a single `script:` list item.
+#   script.execute: {id: ${p}_card${slot}_update, layout: true}   place and size the card (once, when the zone count is
+#                                                                  known), then fill it
+#   script.execute: {id: ${p}_card${slot}_update, layout: false}  fill it (texts, colours, progress)
+# Every lambda is one call into gp::layout, gp::fmt (components/gp) or the group. Call it from a poller only, never from
+# a gp trigger (LVGL may not be ready then).
+id: ${p}_card${slot}_update
+mode: restart
+parameters:
+  layout: bool
+then:
+  - if:
+      condition:
+        lambda: "return layout;"
+      then:
+        - if:
+            condition:
+              lambda: "return gp::layout::bed_card(${count}, ${idx}).visible;"
+            then:
+              - lvgl.widget.update:
+                  id: ${p}_card${slot}
+                  x: !lambda "return gp::layout::bed_card(${count}, ${idx}).x;"
+                  y: !lambda "return gp::layout::bed_card(${count}, ${idx}).y;"
+                  width: !lambda "return gp::layout::bed_card(${count}, ${idx}).w;"
+                  height: !lambda "return gp::layout::bed_card(${count}, ${idx}).h;"
+              - lvgl.widget.update:
+                  id: ${p}_card${slot}_edge
+                  width: !lambda "return gp::layout::bed_card(${count}, ${idx}).w - 2;"
+              - lvgl.widget.update:
+                  id:
+                    - ${p}_card${slot}_name
+                    - ${p}_card${slot}_state
+                    - ${p}_card${slot}_bar
+                    - ${p}_card${slot}_last
+                    - ${p}_card${slot}_soil
+                  width: !lambda "return gp::layout::bed_card(${count}, ${idx}).w - 10;"
+              - lvgl.widget.update:
+                  id: ${p}_card${slot}_run
+                  width: !lambda "return (gp::layout::bed_card(${count}, ${idx}).w - 14) / 2;"
+              - lvgl.widget.update:
+                  id: ${p}_card${slot}_queue
+                  x: !lambda "return 4 + (gp::layout::bed_card(${count}, ${idx}).w - 14) / 2 + 4;"
+                  width: !lambda "return (gp::layout::bed_card(${count}, ${idx}).w - 14) / 2;"
+              - if:
+                  condition:
+                    lambda: "return gp::layout::bed_card(${count}, ${idx}).compact;"
+                  then:
+                    - lvgl.widget.hide:
+                        - ${p}_card${slot}_last
+                        - ${p}_card${slot}_soil
+                        - ${p}_card${slot}_run
+                        - ${p}_card${slot}_queue
+                  else:
+                    - lvgl.widget.show:
+                        - ${p}_card${slot}_last
+                        - ${p}_card${slot}_soil
+                        - ${p}_card${slot}_run
+                        - ${p}_card${slot}_queue
+              - lvgl.widget.show: ${p}_card${slot}
+            else:
+              - lvgl.widget.hide: ${p}_card${slot}
+  - lvgl.label.update:
+      id: ${p}_card${slot}_name
+      text: !lambda "return id(${group})->card_name(${zone});"
+  - lvgl.label.update:
+      id: ${p}_card${slot}_state
+      text: !lambda "return gp::fmt::card_state(id(${group})->zone(${zone}));"
+      text_color: !lambda "return lv_color_hex(gp::fmt::card_state_color(id(${group})->zone(${zone})));"
+  - lvgl.widget.update:
+      id: ${p}_card${slot}_edge
+      bg_color: !lambda "return lv_color_hex(gp::fmt::card_edge_color(id(${group})->zone(${zone})));"
+  - lvgl.label.update:
+      id: ${p}_card${slot}_time
+      text: !lambda "return gp::fmt::card_time(id(${group})->zone(${zone}));"
+  - lvgl.bar.update:
+      id: ${p}_card${slot}_bar
+      value: !lambda "return gp::fmt::card_progress(id(${group})->zone(${zone}));"
+  - lvgl.label.update:
+      id: ${p}_card${slot}_last
+      text: !lambda "return id(${group})->card_last(${zone});"
+  - lvgl.label.update:
+      id: ${p}_card${slot}_soil
+      text: !lambda "return gp::fmt::card_soil(id(${group})->zone(${zone}).soil);"

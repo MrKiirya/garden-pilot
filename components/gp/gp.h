@@ -5,11 +5,13 @@
 // this file connects it to ESPHome (loop, preferences, time, actions) and to one engine adapter per group.
 #pragma once
 
+#include <cmath>
 #include <cstdio>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "esphome/components/sensor/sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/time/real_time_clock.h"
 #include "esphome/core/application.h"
@@ -27,6 +29,7 @@
 #include "format.h"
 #include "format_history.h"
 #include "history.h"
+#include "layout.h"
 #include "limits.h"
 #include "zone_model.h"
 
@@ -93,6 +96,21 @@ class GpGroup {
       return {};
     this->last_status_ = text;
     return text;
+  }
+
+  // ---- texts of the zone cards (packages/lvgl/card_bed*.yaml): one-line glue over the pure formatters ----
+  /// The zone name without the group name ("Greenhouse bed 1" -> "Bed 1").
+  std::string card_name(size_t zone) const { return fmt::card_name(this->model_.zone(zone).name, this->name_.c_str()); }
+  /// "06:00 5m" / "12 Oct 5m" / "-": the last watering of the zone in local time.
+  std::string card_last(size_t zone) const {
+    const ZoneView &z = this->model_.zone(zone);
+    return fmt::card_last(moment_(z.last_start_epoch.value_or(0)), moment_(this->now_epoch_), z.last_duration.has_value(),
+                          z.last_duration.value_or(0));
+  }
+  /// Soil moisture sensor of a zone (reports only); nothing is shown for a zone without one.
+  void set_zone_soil(size_t zone, sensor::Sensor *soil) {
+    if (zone < MAX_ZONES)
+      this->soil_[zone] = soil;
   }
 
   bool zone_running(size_t index) const { return this->model_.zone(index).state == ZoneState::RUNNING; }
@@ -294,9 +312,16 @@ class GpGroup {
 
   /// Reads the engine and updates the model; persists completed runs.
   void refresh(uint32_t now_ms, uint32_t now_epoch) {
+    this->now_epoch_ = now_epoch;
     this->engine_->read(this->input_);
-    for (size_t i = 0; i < this->input_.zone_count; i++)
+    for (size_t i = 0; i < this->input_.zone_count; i++) {
       this->input_.start_source[i] = this->source_for_(i, now_ms);
+      const sensor::Sensor *soil = this->soil_[i];
+      if (soil != nullptr && soil->has_state() && !std::isnan(soil->state)) {
+        this->input_.zones[i].has_soil = true;
+        this->input_.zones[i].soil = soil->state;
+      }
+    }
     this->model_.refresh(now_ms, now_epoch, this->input_);
     const GroupSummary &s = this->model_.summary();
     if (s.running || s.queue_length > 0)
@@ -440,7 +465,23 @@ class GpGroup {
     return this->queue_run_ ? Source::QUEUE : Source::UNKNOWN;
   }
 
+  static fmt::Moment moment_(uint32_t epoch) {
+    fmt::Moment m;
+    if (epoch == 0)
+      return m;
+    const ESPTime t = ESPTime::from_epoch_local(epoch);
+    m.known = t.is_valid();
+    m.year = t.year;
+    m.month = t.month;
+    m.day = t.day_of_month;
+    m.hour = t.hour;
+    m.minute = t.minute;
+    return m;
+  }
+
   std::string key_, name_;
+  sensor::Sensor *soil_[MAX_ZONES]{};
+  uint32_t now_epoch_{0};
   std::unique_ptr<Engine> engine_;
   GpHub *hub_{nullptr};
   size_t zone_count_{0};

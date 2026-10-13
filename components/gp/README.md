@@ -7,6 +7,7 @@ state and start or stop watering **only** through this contract; no package outs
 engine it adapts).
 
 Files: `zone_model.h`, `alerts.h`, `history.h`, `format.h`, `format_history.h` and `engine.h` are pure C++17 without ESPHome includes
+Files: `zone_model.h`, `alerts.h`, `history.h`, `format.h` (+ `format_screens.h`), `layout.h` and `engine.h` are pure C++17 without ESPHome includes
 (unit tests in `tests/cpp/`); `gp.h` is the ESPHome glue; `__init__.py` the schema and codegen. `components/gp_zone/`
 adds the per-zone Home Assistant switch.
 
@@ -42,7 +43,8 @@ Zones are addressed by the **0-based index** inside the group (= bed include ord
 | `time_left` | RUNNING only in the current engine adapter (paused zones report none) |
 | `run_duration` | configured run |
 | `queue_position` | 0-based, in the engine's queue order |
-| `soil` | reserved, always empty for now (soil display is a follow-up) |
+| `soil` | soil moisture in percent when the zone has a sensor (`gp_zone: soil_sensor_id`, set by `bed_soil.yaml`), else empty; the revision moves when the shown whole percent changes |
+| `run_total` | seconds left at the first sample of the current run (RAM only, 0 when not running or unknown): the card's progress bar goes 0 to 100 % even for a run longer than `run_duration` |
 | `last_start_epoch` / `last_start_uptime` / `last_duration` | last watering: start (Unix seconds only if the clock was valid; uptime seconds), seconds the valve was open (a pause inside one run is not counted). **Persisted to flash**: epoch and duration survive a reboot, uptime does not |
 
 `id(gp_greenhouse)->summary()`: `zone_count`, `running`, `active[]`, `queue_length`, `queue_time`, `auto_advance`,
@@ -107,7 +109,7 @@ switches, auto advance, reset button) have `entity_category: config`.
 ## LVGL reads gp only from pollers
 Update LVGL widgets from `interval:` pollers (1 s) that start with `changed_since(...)`, never from a gp trigger,
 `on_value` or an engine callback: those can fire before LVGL is ready (restore, Home Assistant). Label texts come from
-`gp::fmt::*` (`format.h`), so every label lambda is one line.
+`gp::fmt::*` (`format.h`), so every label lambda is one line. The bed cards use `fmt::card_*` (`format_screens.h`: state word, colours, time, progress, soil, last watering as `Moment`s converted by the glue) and `layout::bed_card(count, slot)` (`layout.h`: which of the six card slots show and where: 1-3 zones full, 4-6 compact grid). Glue on the group: `card_name(zone)`, `card_last(zone)`, `set_zone_soil(zone, sensor)`. The old debug formatters (`status_line`, `modes_line`, `durations_line`, `zone_left_line`, `total_left_line`, `queue_line`) are gone.
 
 ## Writing an adapter
 Implement `gp::Engine` over your engine's group, add a key next to `garden_zones_id` in `__init__.py` (`ENGINE_KEYS`

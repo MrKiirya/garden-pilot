@@ -45,6 +45,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/display_sdl.yaml` | Emulator only: SDL display + mouse touch with the same ids and scripts as `display_touch.yaml` (keep in sync). |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`. |
 | `packages/lvgl/page_*.yaml` | One LVGL page per file under `lvgl: pages:`. |
+| `packages/lvgl/card_bed.yaml`, `card_bed_refresh.yaml` | The generic bed card (one widget, vars `p`, `group`, `slot`, `count`, `idx`, `zone`, `detail_*`) and its update script (`script.execute: {id: <p>_card<slot>_update, layout: true/false}`); the greenhouse page includes the card 6 times plus once for `gh_bed_detail_page`, the poller in `gp_lvgl_status.yaml` includes the scripts. |
 | `packages/lvgl/screensaver.yaml` | Idle screensaver overlay on the top layer + the `clock` font token (`gp_font_clock`); status line from `packages/greenhouse/screensaver_status.yaml`. |
 | `packages/lvgl/fonts/` | Vendored TTF (Montserrat Bold) + `OFL.txt` for the glyph-limited custom font. |
 | `packages/lvgl/dialog_confirm.yaml` | Confirm dialog on the LVGL top layer + `gp_confirm` script (pattern in its header). |
@@ -141,6 +142,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - `xdotool click` is too short for LVGL to register a touch: use press, move, release with pauses (`script/sim-ui tap`). SDL `headless: true` disables the SDL touchscreen, so screenshots are X-level grabs under Xvfb instead.
 - A template entity must not reuse the generated id `<group>_watchdog` (the group's watchdog component) or `<group>_lane_<n>`.
 - LVGL reads `gp` only from `interval:` pollers (guard with `changed_since`), never from a gp trigger, `on_value` or API action; label texts come from `gp::fmt::*` so lambdas stay one line. The hub id is `gp_hub` (an id may not equal an integration name).
+- **Cards and includes:** `!include {file, vars}` works as an item of `widgets:` and of `script:` (path relative to the including file); in an included file use block lists, not `[${var}_x]` flow lists (`{` breaks YAML). `lvgl.widget.update` takes lambdas for `x`, `y`, `width`, `height`; the card geometry therefore comes from `gp::layout::bed_card` at run time (ESPHome 2026.9.1 and the minimum 2026.6.3). `!extend` of a `gp_zone` item by id adds `soil_sensor_id` from the bed's soil include.
 - Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
   (`tests/test_service.py`); it is enforced by the `duration` of `gp.run_zone` and by the separate `gp_valve_test_guard` script. Service
