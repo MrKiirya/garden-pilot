@@ -90,6 +90,7 @@ packages:
   core_gp_api: !include packages/core/gp_api.yaml
   gh_gp: !include packages/greenhouse/gp.yaml
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
+  gh_lvgl_history: !include packages/greenhouse/lvgl_history.yaml
   gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml
   gh_sensors_soil: !include packages/greenhouse/sensors_soil.yaml
   gh_gp_lvgl: !include packages/greenhouse/gp_lvgl_status.yaml

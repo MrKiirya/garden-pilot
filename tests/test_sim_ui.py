@@ -24,6 +24,11 @@ _spec.loader.exec_module(sim_ui)
 
 # Home bottom navigation button `nav_btn_setup` in packages/lvgl/page_home.yaml (x, y, width, height).
 SETUP_BTN = (244, 204, 72, 32)
+# Setup bottom navigation `setup_nav_btn_zones`, the HISTORY header button of the Greenhouse page and the BACK button of
+# the History page (packages/lvgl/page_setup.yaml, packages/greenhouse/lvgl_history.yaml).
+ZONES_BTN = (84, 204, 76, 32)
+HISTORY_BTN = (240, 1, 72, 20)
+HISTORY_BACK_BTN = (8, 210, 92, 26)
 
 
 # ---------------------------------------------------------------------------------------------- unit
@@ -162,6 +167,37 @@ def test_tap_target_is_the_setup_button() -> None:
     assert (int(button["x"]), int(button["y"]), int(button["width"]), int(button["height"])) == SETUP_BTN
 
 
+def _find_widget(node: object, wid: str) -> dict | None:
+    if isinstance(node, dict):
+        if node.get("id") == wid:
+            return node
+        for value in node.values():
+            found = _find_widget(value, wid)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = _find_widget(value, wid)
+            if found:
+                return found
+    return None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "rel, wid, geometry",
+    [
+        ("packages/lvgl/page_setup.yaml", "setup_nav_btn_zones", ZONES_BTN),
+        ("packages/greenhouse/lvgl_history.yaml", "gh_btn_history", HISTORY_BTN),
+        ("packages/greenhouse/lvgl_history.yaml", "gh_history_btn_back", HISTORY_BACK_BTN),
+    ],
+)
+def test_history_tap_targets_match_yaml(rel: str, wid: str, geometry: tuple[int, int, int, int]) -> None:
+    button = _find_widget(load_esphome_yaml(REPO_ROOT / rel), wid)
+    assert button, f"{wid} not found in {rel}: update the constants in tests/test_sim_ui.py"
+    assert (int(button["x"]), int(button["y"]), int(button["width"]), int(button["height"])) == geometry
+
+
 @pytest.mark.unit
 def test_tap_validates_range_before_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sim_ui, "STATE_PATH", tmp_path / "state.json")  # no session
@@ -254,6 +290,34 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         diff = ImageChops.difference(home_img, setup_img).convert("L").point(lambda v: 255 if v else 0)
         changed = diff.histogram()[255] / (320 * 240)
         assert changed > 0.02, f"only {changed:.1%} of pixels changed after tapping SETUP"
+
+        # Task 027: SETUP > ZONES (Greenhouse page) > HISTORY (empty history, nothing was watered) > BACK.
+        def tap_and_shot(button: tuple[int, int, int, int], name: str) -> Image.Image:
+            bx, by, bw, bh = button
+            assert _sim_ui("tap", str(bx + bw // 2), str(by + bh // 2), env=env).returncode == 0
+            assert _sim_ui("shot", name, env=env).returncode == 0
+            image = Image.open(REPO_ROOT / ".esphome" / "shots" / f"{name}.png").convert("RGB")
+            assert image.size == (320, 240) and not sim_ui.looks_blank(image), name
+            return image
+
+        def changed_share(a: Image.Image, b: Image.Image) -> float:
+            mask = ImageChops.difference(a, b).convert("L").point(lambda v: 255 if v else 0)
+            return mask.histogram()[255] / (320 * 240)
+
+        def near(pixel: tuple[int, int, int], rgb: tuple[int, int, int]) -> bool:
+            return all(abs(p - c) <= 8 for p, c in zip(pixel, rgb))
+
+        # top border row of the History BACK button: text-dim #becab9 there, nothing on the Greenhouse page
+        back_probe = (HISTORY_BACK_BTN[0] + HISTORY_BACK_BTN[2] // 2, HISTORY_BACK_BTN[1])
+        zones_img = tap_and_shot(ZONES_BTN, "zones")
+        assert changed_share(setup_img, zones_img) > 0.02, "tapping ZONES did not change the screen"
+        assert not near(zones_img.getpixel(back_probe), (0xBE, 0xCA, 0xB9))
+        history_img = tap_and_shot(HISTORY_BTN, "history")
+        assert changed_share(zones_img, history_img) > 0.005, "tapping HISTORY did not change the screen"
+        assert near(history_img.getpixel(back_probe), (0xBE, 0xCA, 0xB9)), "the History BACK button is not drawn"
+        back_img = tap_and_shot(HISTORY_BACK_BTN, "history_back")
+        assert changed_share(history_img, back_img) > 0.005, "tapping BACK did not leave the History page"
+        assert not near(back_img.getpixel(back_probe), (0xBE, 0xCA, 0xB9)), "still on the History page"
     finally:
         _sim_ui("stop", env=env)
     assert pids, "start did not record any pids"

@@ -739,7 +739,8 @@ def test_sim_entry_file() -> None:
     keys = list(files)
     required = ["core_api", "core_time_host", "display_sdl", "lvgl_base", "lvgl_page_boot", "lvgl_page_home", "gh_irrigation",
                 "gh_bed_1", "gh_bed_2", "gh_bed_3", "core_gp", "core_gp_api", "gh_gp", "gh_lvgl_page", "gh_gp_lvgl",
-                "core_diagnostics", "lvgl_dialog_confirm", "lvgl_page_setup", "lvgl_page_network", "gh_valve_test"]
+                "core_diagnostics", "lvgl_dialog_confirm", "lvgl_page_setup", "lvgl_page_network", "gh_valve_test",
+                "gh_lvgl_history"]
     assert set(required) <= set(keys), sorted(set(required) - set(keys))
     first_page = [k for k in keys if k.startswith("lvgl_page_")][0]
     assert first_page == "lvgl_page_boot"

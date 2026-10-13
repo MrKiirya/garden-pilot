@@ -79,6 +79,7 @@ packages:
   core_gp_api: !include ../packages/core/gp_api.yaml
   gh_gp: !include ../packages/greenhouse/gp.yaml
   gh_lvgl_page: !include ../packages/greenhouse/lvgl_page.yaml
+  gh_lvgl_history: !include ../packages/greenhouse/lvgl_history.yaml
   # No air / soil sensors in this example, so no gh_screensaver_status either (its status line reads their ids). To add
   # them: gh_sensors_air (+ gh_sensors_soil on adc_1) and gh_screensaver_status, see garden-pilot.yaml.
   gh_gp_lvgl: !include ../packages/greenhouse/gp_lvgl_status.yaml

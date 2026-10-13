@@ -85,6 +85,7 @@ packages:
   core_gp_api: !include packages/core/gp_api.yaml
   gh_gp: !include packages/greenhouse/gp.yaml
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
+  gh_lvgl_history: !include packages/greenhouse/lvgl_history.yaml
   gh_gp_lvgl: !include packages/greenhouse/gp_lvgl_status.yaml
   gh_screensaver_status: !include packages/greenhouse/screensaver_status.yaml
   gh_valve_test: !include packages/greenhouse/lvgl_valve_test.yaml
