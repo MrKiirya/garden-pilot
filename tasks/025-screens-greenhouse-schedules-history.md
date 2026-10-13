@@ -319,9 +319,55 @@ This is about 3x the usual task size (see Open questions 1); the parts are order
     `layout_bed_cards` check cover it, plus one manual screenshot in the PR.
 11. **Old debug formatters.** Default: delete the ones no screen uses any more, with their checks.
 
-<!-- Filled in by implementer -->
 ## Implementation notes
+Scope of this run: Part A only (author's scope change: schedules and history are separate tasks 026 / 027). Not done
+here: Part B, Part C, the gp history `result` byte and skip entries (owned by 027; `history.h` and `PersistBlob` are
+untouched), the HISTORY header button (the header right of the title, x 232..312, is left free for `gh_btn_history`),
+and the WATER tab still opens `lawn_page`.
+
+Decided (default, author to confirm): open questions 3 (amber for locked / paused), 4 (WATER ALL asks first, green
+primary button), 6 (compact cards open `gh_bed_detail_page`, no RUN / +Q on them), 7 (`soil_sensor_id` on `gp_zone`,
+added by `!extend` from the bed's soil include), 10 (no 6-bed screenshot in CI), 11 (old debug formatters deleted).
+
+ESPHome assumptions verified (config on pinned 2026.9.1 and minimum 2026.6.3, generated C++ read on 2026.9.1):
+- `!include {file, vars}` works as an item of a `widgets:` list and of a `script:` list; the path is relative to the
+  including file (`../lvgl/card_bed.yaml`). In an included file `[${p}_x, ...]` flow lists fail (`{` in a flow
+  sequence): block lists are used.
+- `lvgl.widget.update` takes lambdas for `x`, `y`, `width`, `height` (generated `lv_obj_set_style_x/width(...)` with the
+  lambda value), a list of ids works. No flex fallback was needed.
+- `lvgl.label.update` takes a lambda for `text_color` and `lvgl.widget.update` for `bg_color` (`lv_color_hex(...)`).
+- `!extend <gp_zone id>` from a bed soil include adds `soil_sensor_id`.
+
+Deviations:
+- The card's last-watering line shows time and duration only (`06:00 5m`, `12 Oct 5m`, `--:-- 5m`, `-`), no result word
+  (the result byte belongs to task 027); durations use the short `5m` form so the line fits a 97 px card.
+- Compact cards show name, state, time and bar (the time stays; soil, last line, RUN and +Q are hidden).
+- The bed detail page has a static header "Bed detail"; the zone name is in the card.
+- The card name drops the group name prefix ("Greenhouse bed 1" -> "Bed 1", `fmt::card_name`).
+- Config rows: `beds_1_lvgl` (device, only bed 1) and `beds_6_lvgl` (device profile, six beds on relays 1..6; the spec's
+  `sim_beds_6` on relays 1..3 is impossible: `garden_zones` rejects a relay shared by two zones, and the sim profile has
+  3 relays; the 12-relay breadboard profile covers the compact grid without SDL). `no_schedules_lvgl` is Part B.
+- The sim-ui scenario got the ZONES step (zones.png, card and background pixel checks) and
+  `test_tap_targets_match_yaml`; the history / schedules steps belong to their tasks.
+- `gp_lvgl_status.yaml` still writes `gh_home_next_label` from `home_next` (the NEXT fix is Part B).
+- Removed with their checks: `status_line`, `modes_line`, `durations_line`, `zone_left_line`, `total_left_line`,
+  `queue_line` (`home_next` stays until the NEXT fix).
+
+Checks: `script/lint` ok; `uv run pytest -m unit` 766 passed, 6 failed (all Windows-host: 4 `test_devcontainer.py`
+script / exec-bit tests, `test_ci.py::test_esphome_selector_resolves`, `test_sim_ui.py::test_start_xvfb_deadline...`);
+C++ via zig (`ziglang c++ -std=c++17 -Wall -Wextra -Werror`): 86 cases, 0 failed (78 before, 8 new in
+`test_gp_screens.cpp`); config rows `beds_1_lvgl` and `beds_6_lvgl` pass; `garden-pilot.yaml` config ok on pinned and
+minimum. Not run: sim-ui / SDL config rows (no SDL, no Xvfb), host scenario tests (no host ESPHome build on Windows),
+`GP_ESPHOME=minimum script/compile`. Size: master built once on this host (ESP32-S3, example secrets): RAM 61352 B,
+Flash 1280603 B; the branch build failed to start ("MSys/Mingw is not supported" during the ESP-IDF install), so there
+is no branch comparison here: CI compiles. Estimated growth from the generated code: 7 card scripts of about 20 actions.
+Not verified on hardware (rendering, 20 px button hits, free heap after opening the pages).
+
 ## Follow-ups
 - Schedule -> gp "missed" history entries; time editor on the WATER tab; lawn card/history reuse (`p: lw`,
   `group: gp_lawn`).
 - Move `sensors_air_dht.yaml` / `sensors_soil.yaml` LVGL updates from `on_value` to pollers.
+
+### ESP32 compile, 2026-10-13
+`GP_SECRETS=example script/compile garden-pilot.yaml` in the devcontainer image (Docker Desktop on Windows), pinned ESPHome:
+**SUCCESS**. RAM 39.6% (135315 / 341760 bytes), Flash 70.8% (1298815 / 1835008 bytes). Minimum ESPHome: CI.
