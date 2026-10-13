@@ -62,6 +62,7 @@ struct ZoneInput {
   bool has_skip{false};
   uint32_t skip_stamp{0};  ///< millis() of the engine's last skip of this zone
   const char *skip_text{""};
+  bool skip_wet{false};  ///< the skip was "soil too wet" (the adapter knows its engine's reasons); else a generic skip
   const char *name{""};
 };
 
@@ -97,12 +98,15 @@ struct ZoneView {
   std::optional<uint32_t> last_duration;
 };
 
-/// A completed run (for the history).
+/// A completed run or a skip (for the history). A run carries Result::DONE (the glue turns it into STOPPED inside the
+/// stop window); a skip carries SKIPPED_WET / SKIPPED, duration 0 and Source::UNKNOWN.
 struct RunRecord {
   uint32_t epoch{0};
   uint32_t duration{0};
   uint8_t zone{0};
   Source source{Source::UNKNOWN};
+  Result result{Result::DONE};
+  bool is_skip() const { return this->result == Result::SKIPPED_WET || this->result == Result::SKIPPED; }
 };
 
 /// Per-zone bookkeeping between refreshes: SKIPPED visibility and the last watering.
@@ -129,6 +133,10 @@ class ZoneTracker {
       this->skip_stamp_ = in.skip_stamp;
       this->skip_active_ = true;
       this->skip_since_ = now_ms;
+      this->skip_pending_ = true;  // one history entry per engine skip stamp
+      this->skip_wet_ = in.skip_wet;
+      this->skip_epoch_ = now_epoch;
+      this->index_ = static_cast<uint8_t>(index);
       std::snprintf(this->skip_text_, sizeof(this->skip_text_), "%s", in.skip_text != nullptr ? in.skip_text : "");
     }
     if (in.running || in.queued)
@@ -198,16 +206,26 @@ class ZoneTracker {
       out.last_duration = this->last_duration_;
   }
 
+  /// The finished run first, then the pending skip (each once).
   bool take_completed(RunRecord &record) {
-    if (!this->done_)
-      return false;
-    this->done_ = false;
-    record = this->record_;
-    return true;
+    if (this->done_) {
+      this->done_ = false;
+      record = this->record_;
+      return true;
+    }
+    if (this->skip_pending_) {
+      this->skip_pending_ = false;
+      record = RunRecord{this->skip_epoch_, 0, this->index_, Source::UNKNOWN,
+                         this->skip_wet_ ? Result::SKIPPED_WET : Result::SKIPPED};
+      return true;
+    }
+    return false;
   }
 
  protected:
-  bool skip_seen_{false}, skip_active_{false};
+  bool skip_seen_{false}, skip_active_{false}, skip_pending_{false}, skip_wet_{false};
+  uint32_t skip_epoch_{0};
+  uint8_t index_{0};
   uint32_t skip_stamp_{0}, skip_since_{0};
   char skip_text_[SKIP_TEXT_LEN]{};
   bool run_open_{false}, seg_open_{false}, done_{false};

@@ -19,11 +19,13 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/core/preferences.h"
+#include "esphome/core/time.h"
 
 #include "alerts.h"
 #include "deferred_start.h"
 #include "engine.h"
 #include "format.h"
+#include "format_history.h"
 #include "history.h"
 #include "limits.h"
 #include "zone_model.h"
@@ -49,6 +51,32 @@ class GpGroup {
   const GroupSummary &summary() const { return this->model_.summary(); }
   const GroupModel &model() const { return this->model_; }
   const History<HISTORY_LENGTH> &history() const { return this->blob_.history; }
+
+  /// True when an entry was added since the count stored in `seen` (a RAM counter, not part of the flash blob);
+  /// stores the current count. For the History page poller.
+  bool history_changed_since(uint32_t &seen) const {
+    const bool changed = seen != this->history_pushes_;
+    seen = this->history_pushes_;
+    return changed;
+  }
+  /// Text of row `row` (0-based) of History page `page`, newest entry first; empty past the end.
+  std::string history_row(int page, size_t row) const {
+    const size_t index = static_cast<size_t>(fmt::history_clamp_page(this->blob_.history.size(), page)) * fmt::HISTORY_ROWS + row;
+    if (index >= this->blob_.history.size())
+      return "";
+    const HistoryEntry entry = this->blob_.history.at(index);
+    fmt::LocalTime when;
+    if (entry.epoch != 0) {
+      const ESPTime t = ESPTime::from_epoch_local(entry.epoch);
+      when = fmt::LocalTime{t.is_valid(), static_cast<uint8_t>(t.day_of_month), static_cast<uint8_t>(t.month),
+                            static_cast<uint8_t>(t.hour), static_cast<uint8_t>(t.minute)};
+    }
+    return fmt::history_row(entry, when);
+  }
+  /// "1-6 of 37" for History page `page`.
+  std::string history_pager(int page) const { return fmt::history_pager(this->blob_.history.size(), page); }
+  /// `page` limited to the existing History pages.
+  int history_clamp_page(int page) const { return fmt::history_clamp_page(this->blob_.history.size(), page); }
 
   /// True when something visible changed since the revision stored in `seen`; stores the current revision.
   bool changed_since(uint32_t &seen) const {
@@ -278,16 +306,26 @@ class GpGroup {
     RunRecord record;
     bool changed = false;
     while (this->model_.take_completed(record)) {
-      HistoryEntry entry{record.epoch, record.duration, record.zone, static_cast<uint8_t>(record.source), 0};
-      this->blob_.history.push(entry);
+      const bool stopped = this->stop_ms_ != 0 && (uint32_t) (now_ms - this->stop_ms_) < STOP_WINDOW_MS;
+      changed = true;
+      this->history_pushes_++;
+      if (record.is_skip()) {  // a skip is a history entry only: not a "last watering", not a finished run
+        this->blob_.history.push(HistoryEntry{record.epoch, 0, record.zone, static_cast<uint8_t>(Source::UNKNOWN),
+                                              static_cast<uint8_t>(record.result), 0});
+        ESP_LOGI(TAG, "%s: zone %u skipped%s", this->name_.c_str(), (unsigned) (record.zone + 1),
+                 record.result == Result::SKIPPED_WET ? " (too wet)" : "");
+        continue;
+      }
+      // a run ended by STOP inside the window reads "stopped"; a watchdog-ended run counts as done, like `completed`
+      record.result = stopped ? Result::STOPPED : Result::DONE;
+      this->blob_.history.push(HistoryEntry{record.epoch, record.duration, record.zone,
+                                            static_cast<uint8_t>(record.source), static_cast<uint8_t>(record.result), 0});
       if (record.zone < MAX_ZONES && record.source != Source::SERVICE) {
         this->blob_.last[record.zone].epoch = record.epoch;
         this->blob_.last[record.zone].duration = record.duration;
       }
       ESP_LOGI(TAG, "%s: zone %u finished: %u s (%s)", this->name_.c_str(), (unsigned) (record.zone + 1),
                (unsigned) record.duration, source_word(record.source));
-      changed = true;
-      const bool stopped = this->stop_ms_ != 0 && (uint32_t) (now_ms - this->stop_ms_) < STOP_WINDOW_MS;
       this->finished_cb_.call(record.zone, record.source == Source::QUEUE && !stopped);
     }
     if (changed && !this->pref_.save(&this->blob_))
@@ -409,6 +447,7 @@ class GpGroup {
   GroupInput input_;
   GroupModel model_;
   PersistBlob blob_;
+  uint32_t history_pushes_{0};  ///< entries added since boot (RAM only), for history_changed_since
   ESPPreferenceObject pref_;
   std::string last_status_;
   Source intent_[MAX_ZONES]{};

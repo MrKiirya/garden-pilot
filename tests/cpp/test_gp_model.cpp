@@ -258,7 +258,7 @@ TEST_CASE("history_ring") {
 TEST_CASE("persist_blob_full_ring_round_trip") {
   gp::PersistBlob a;
   for (uint32_t i = 0; i < 130; i++)
-    a.history.push(gp::HistoryEntry{1000 + i, 10 + i, static_cast<uint8_t>(i % 4), 1, 0});
+    a.history.push(gp::HistoryEntry{1000 + i, 10 + i, static_cast<uint8_t>(i % 4), 1, 0, 0});
   for (size_t z = 0; z < gp::MAX_ZONES; z++)
     a.last[z] = gp::LastRun{5000 + static_cast<uint32_t>(z), 60 + static_cast<uint32_t>(z)};
   gp::PersistBlob b;
