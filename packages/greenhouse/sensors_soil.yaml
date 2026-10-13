@@ -49,7 +49,7 @@ sensor:
             id: gh_greenhouse_soil_hint
             text: !lambda |-
               char buf[40];
-              snprintf(buf, sizeof(buf), "Soil: %.0f %%", x);
+              snprintf(buf, sizeof(buf), "%.0f%%", x);
               return std::string(buf);
 
 binary_sensor:

@@ -79,6 +79,7 @@ BED_SOIL_FILE = "packages/greenhouse/bed_soil.yaml"
 SIM_BED_SOIL = REPO_ROOT / "packages" / "sim" / "bed_soil.yaml"
 SIM_BED_SOIL_FILE = "packages/sim/bed_soil.yaml"
 SCHEDULE_SLOT = REPO_ROOT / "packages" / "greenhouse" / "schedule_slot.yaml"
+CARD_VARS = {"p", "group", "slot", "count", "idx", "zone", "detail_page", "detail_zone", "detail_update"}
 SCHEDULE_SLOT_FILE = "packages/greenhouse/schedule_slot.yaml"
 _EXAMPLE_START = re.compile(r"^  # ([A-Za-z0-9_]+): !include\s*$")
 _EXAMPLE_CONT = re.compile(r"^  #   ")
@@ -474,7 +475,7 @@ def test_bed_soil_includes() -> None:
 def test_bed_soil_shape() -> None:
     data = load_esphome_yaml(BED_SOIL)
     assert isinstance(data, dict)
-    assert set(data) == {"sensor"}
+    assert set(data) == {"sensor", "gp_zone"}  # gp_zone: the soil link, see tests/test_screens_gp.py
     assert len(data["sensor"]) == 1
     sensor = data["sensor"][0]
     assert sensor["platform"] == "adc"
@@ -561,6 +562,9 @@ def test_substitutions_resolve() -> None:
         SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
         BED_SOIL_SKIP: set().union(*(set(p["vars"]) for e in EXAMPLES for p in _entry_packages(e).values() if p["path"] == BED_SOIL_SKIP_FILE)),
         SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
+        # bed card templates: the vars are given by the includes in the greenhouse page and poller (tests/test_screens_gp.py)
+        REPO_ROOT / "packages" / "lvgl" / "card_bed.yaml": CARD_VARS,
+        REPO_ROOT / "packages" / "lvgl" / "card_bed_refresh.yaml": CARD_VARS,
     }
     missing = set()
     for path in package_files:

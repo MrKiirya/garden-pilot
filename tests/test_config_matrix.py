@@ -40,8 +40,17 @@ class Variant:
     source: str = "garden-pilot.yaml"  # entry file the variant is built from
     subst: tuple[str, ...] = ()  # `-s KEY VALUE` command-line substitutions (flat: key, value, key, value, ...)
     edits: tuple[tuple[str, str], ...] = ()  # (old, new) text replacements in the built entry file
+    adds: tuple[str, ...] = ()  # package keys that `edits` add to the entry file (appended to the expected keys)
     fails_with: tuple[str, ...] = ()  # expected failure: `esphome config` must fail and print all of these
 
+
+
+CORE_GP_LINE = "  core_gp: !include packages/core/gp.yaml\n"
+BEDS_456 = "".join(
+    f"  gh_bed_{n}: !include\n    file: packages/greenhouse/bed.yaml\n"
+    f'    vars: {{bed: "{n}", bed_name: "Greenhouse bed {n}", relay: "{n}"}}\n'
+    for n in (4, 5, 6)
+)
 
 VARIANTS: dict[str, Variant] = {
     "full": Variant("keep"),
@@ -96,11 +105,17 @@ VARIANTS: dict[str, Variant] = {
         edits=(('vars: {slot: "2", start: "07:00:00"}', 'vars: {slot: "9", start: "07:00:00"}'),),
         fails_with=("slot", "8"),
     ),
+    # one bed with the whole LVGL UI: the Greenhouse page with a single full-width card, slots 2-6 hidden (task 025)
+    "beds_1_lvgl": Variant("without", ["gh_bed_2", "gh_bed_3"]),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
     "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1", *GP], hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),
     # PC emulator entry file (host + SDL); the first two need SDL2 dev files, sim_api_only does not.
     "sim_full": Variant("keep", source=SIM_ENTRY),
+    # six beds on relays 1..6 of the 12-relay profile: the compact card grid (layout coverage, task 025)
+    "beds_6_lvgl": Variant(
+        "keep", adds=("gh_bed_4", "gh_bed_5", "gh_bed_6"), edits=((CORE_GP_LINE, BEDS_456 + CORE_GP_LINE),)
+    ),
     "sim_no_touch_debug": Variant("without", ["touch_dot_test"], source=SIM_ENTRY),
     "sim_no_board_page": Variant("without", ["sim_sensors_lvgl", "sim_page_board"], source=SIM_ENTRY),
     "sim_api_only": Variant("keep", SIM_API_ONLY, source=SIM_ENTRY),
@@ -215,6 +230,12 @@ def test_builder_blocks() -> None:
     assert hw.replace("hardware/sim.yaml", "hardware/a.yaml") == SAMPLE
 
 
+def _with_adds(expected: list[str], adds: tuple[str, ...]) -> list[str]:
+    """`adds` are inserted in front of core_gp (the order of the edit)."""
+    at = expected.index("core_gp")
+    return [*expected[:at], *adds, *expected[at:]]
+
+
 @pytest.mark.parametrize("name", list(VARIANTS))
 def test_variant_validates(name: str, tmp_path: Path) -> None:
     v = VARIANTS[name]
@@ -229,6 +250,7 @@ def test_variant_validates(name: str, tmp_path: Path) -> None:
     expected = all_keys if v.keys is None else (
         [k for k in all_keys if k in v.keys] if v.mode == "keep" else [k for k in all_keys if k not in v.keys]
     )
+    expected = _with_adds(expected, v.adds) if v.adds else expected
     assert package_keys(variant) == expected, f"variant {name} has unexpected packages"
     if name not in ("full", "sim_full"):
         assert package_keys(variant) != all_keys, f"variant {name} is identical to the full config"

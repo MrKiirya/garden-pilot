@@ -1,150 +1,194 @@
-# Full-screen greenhouse page (beds + air + soil + irrigation).
-# Run durations are shown as text from the gp_* read model; do not sync LVGL spinboxes — wrong ranges overwrite HA.
-# Buttons use only gp.* actions on gp_greenhouse (packages/greenhouse/gp.yaml); labels: gp_lvgl_status.yaml.
+# Greenhouse page (ZONES tab) and the bed detail page, on the design system (design/README.md, tokens only).
+# Six bed card slots from one template (packages/lvgl/card_bed.yaml); slots past the group's zone count stay hidden.
+# 1-3 beds are full cards (RUN, +Q), 4-6 a compact grid whose tap opens `gh_bed_detail_page` (the same card, one
+# zone, full size). Cards read the group only through gp_* (components/gp/README.md); their update scripts and the
+# poller that runs them are in packages/greenhouse/gp_lvgl_status.yaml. The stats strip labels (gh_greenhouse_*)
+# are written by the sensor packages (sensors_air_dht.yaml, sensors_soil.yaml, the emulator's sensors_lvgl.yaml).
+# The header right of the title (x 232..312, y 2..20) is left free for a 20 px button (the history task adds
+# gh_btn_history). Buttons use only gp.* actions on gp_greenhouse (packages/greenhouse/gp.yaml); STOP and
+# WATER ALL ask first.
+
+globals:
+  # zone index (0-based) shown on the bed detail page; set by a tap on a compact card
+  - id: gh_detail_zone
+    type: int
+    restore_value: false
+    initial_value: "0"
 
 lvgl:
   pages:
     - id: greenhouse_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
       widgets:
         - label:
-            x: 10
-            y: 8
+            x: 8
+            y: 4
             text: "Greenhouse"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            x: 8
+            y: 25
+            text: "AIR"
+            text_font: montserrat_8
+            text_color: 0xbecab9
         - label:
             id: gh_greenhouse_t_label
-            x: 10
-            y: 26
-            text: "Air: -- C"
+            x: 8
+            y: 33
+            text: "--"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            x: 112
+            y: 25
+            text: "HUMIDITY"
+            text_font: montserrat_8
+            text_color: 0xbecab9
         - label:
             id: gh_greenhouse_rh_label
-            x: 140
-            y: 26
-            text: "RH: -- %"
+            x: 112
+            y: 33
+            text: "--"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
         - label:
-            id: gh_greenhouse_irr_main
-            x: 10
-            y: 44
-            text: "Irrigation: idle"
-        - label:
-            id: gh_greenhouse_irr_modes
-            x: 10
-            y: 58
-            text: "AA:off  Q:off  Rev:off"
-        - label:
-            id: gh_greenhouse_run_dur_hint
-            x: 10
-            y: 72
-            text: "Dur: B1 -- B2 -- B3 --"
-        - label:
-            id: gh_greenhouse_t_left_zone
-            x: 10
-            y: 86
-            text: "Zone left: --:--:--"
-        - label:
-            id: gh_greenhouse_t_left_total
-            x: 10
-            y: 100
-            text: "Total left: --:--:--"
-        - label:
-            id: gh_greenhouse_queue_hint
-            x: 10
-            y: 114
-            text: "Queue: (empty)"
+            x: 216
+            y: 25
+            text: "SOIL"
+            text_font: montserrat_8
+            text_color: 0xbecab9
         - label:
             id: gh_greenhouse_soil_hint
-            x: 10
-            y: 128
-            text: "Soil: --"
-        - button:
-            id: gh_btn_run_bed1
-            x: 10
-            y: 146
-            width: 92
-            height: 30
-            on_click:
-              - gp.run_zone:
-                  id: gp_greenhouse
-                  zone: 0
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "Bed 1"
-        - button:
-            id: gh_btn_run_bed2
-            x: 114
-            y: 146
-            width: 92
-            height: 30
-            on_click:
-              - gp.run_zone:
-                  id: gp_greenhouse
-                  zone: 1
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "Bed 2"
-        - button:
-            id: gh_btn_run_bed3
-            x: 218
-            y: 146
-            width: 92
-            height: 30
-            on_click:
-              - gp.run_zone:
-                  id: gp_greenhouse
-                  zone: 2
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "Bed 3"
-        - button:
-            id: gh_btn_queue_bed1
-            x: 10
-            y: 180
-            width: 92
-            height: 28
-            on_click:
-              - gp.enqueue_zone:
-                  id: gp_greenhouse
-                  zone: 0
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "+Q B1"
-        - button:
-            id: gh_btn_queue_bed2
-            x: 114
-            y: 180
-            width: 92
-            height: 28
-            on_click:
-              - gp.enqueue_zone:
-                  id: gp_greenhouse
-                  zone: 1
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "+Q B2"
-        - button:
-            id: gh_btn_queue_bed3
-            x: 218
-            y: 180
-            width: 92
-            height: 28
-            on_click:
-              - gp.enqueue_zone:
-                  id: gp_greenhouse
-                  zone: 2
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "+Q B3"
+            x: 216
+            y: 33
+            text: "--"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 47
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        # --- bed cards (geometry and texts: packages/lvgl/card_bed_refresh.yaml) ---
+        - !include
+          file: ../lvgl/card_bed.yaml
+          vars:
+            p: gh
+            group: gp_greenhouse
+            slot: "1"
+            count: "id(gp_greenhouse)->summary().zone_count"
+            idx: "0"
+            zone: "0"
+            detail_page: gh_bed_detail_page
+            detail_zone: gh_detail_zone
+            detail_update: gh_carddetail_update
+        - !include
+          file: ../lvgl/card_bed.yaml
+          vars:
+            p: gh
+            group: gp_greenhouse
+            slot: "2"
+            count: "id(gp_greenhouse)->summary().zone_count"
+            idx: "1"
+            zone: "1"
+            detail_page: gh_bed_detail_page
+            detail_zone: gh_detail_zone
+            detail_update: gh_carddetail_update
+        - !include
+          file: ../lvgl/card_bed.yaml
+          vars:
+            p: gh
+            group: gp_greenhouse
+            slot: "3"
+            count: "id(gp_greenhouse)->summary().zone_count"
+            idx: "2"
+            zone: "2"
+            detail_page: gh_bed_detail_page
+            detail_zone: gh_detail_zone
+            detail_update: gh_carddetail_update
+        - !include
+          file: ../lvgl/card_bed.yaml
+          vars:
+            p: gh
+            group: gp_greenhouse
+            slot: "4"
+            count: "id(gp_greenhouse)->summary().zone_count"
+            idx: "3"
+            zone: "3"
+            detail_page: gh_bed_detail_page
+            detail_zone: gh_detail_zone
+            detail_update: gh_carddetail_update
+        - !include
+          file: ../lvgl/card_bed.yaml
+          vars:
+            p: gh
+            group: gp_greenhouse
+            slot: "5"
+            count: "id(gp_greenhouse)->summary().zone_count"
+            idx: "4"
+            zone: "4"
+            detail_page: gh_bed_detail_page
+            detail_zone: gh_detail_zone
+            detail_update: gh_carddetail_update
+        - !include
+          file: ../lvgl/card_bed.yaml
+          vars:
+            p: gh
+            group: gp_greenhouse
+            slot: "6"
+            count: "id(gp_greenhouse)->summary().zone_count"
+            idx: "5"
+            zone: "5"
+            detail_page: gh_bed_detail_page
+            detail_zone: gh_detail_zone
+            detail_update: gh_carddetail_update
+        - obj:
+            x: 0
+            y: 169
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        # --- transport row ---
         - button:
             id: gh_btn_stop
-            x: 10
-            y: 212
-            width: 92
-            height: 28
+            x: 8
+            y: 172
+            width: 70
+            height: 26
+            bg_color: 0x93000a
+            bg_opa: COVER
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
             on_click:
               # Asks first (packages/lvgl/dialog_confirm.yaml), then stops through the gp_* layer.
               - if:
@@ -167,28 +211,237 @@ lvgl:
             widgets:
               - label:
                   align: CENTER
-                  text: "Stop"
+                  text: "STOP"
+                  text_font: montserrat_10
+                  text_color: 0xffdad6
         - button:
             id: gh_btn_start_queue
-            x: 114
-            y: 212
-            width: 92
-            height: 28
+            x: 82
+            y: 172
+            width: 100
+            height: 26
+            bg_color: 0x1e95f2
+            bg_opa: COVER
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
             on_click:
               - gp.start_queue: gp_greenhouse
             widgets:
               - label:
                   align: CENTER
-                  text: "Run Q"
+                  text: "RUN QUEUE"
+                  text_font: montserrat_10
+                  text_color: 0x002b4d
         - button:
-            id: gh_btn_home
-            x: 218
-            y: 212
-            width: 92
-            height: 28
+            id: gh_btn_water_all
+            x: 186
+            y: 172
+            width: 126
+            height: 26
+            bg_color: 0x1e95f2
+            bg_opa: COVER
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
             on_click:
-              - lvgl.page.show: home_page
+              # Asks first: a full cycle opens every enabled valve in turn.
+              - if:
+                  condition:
+                    not:
+                      script.is_running: gp_confirm
+                  then:
+                    - script.execute:
+                        id: gp_confirm
+                        title: "Water all beds?"
+                        body: "Every enabled bed runs in turn."
+                        action: "WATER ALL"
+                        danger: false
+                    - script.wait: gp_confirm
+                    - if:
+                        condition:
+                          lambda: "return id(gp_confirm_result);"
+                        then:
+                          - gp.full_cycle: gp_greenhouse
             widgets:
               - label:
                   align: CENTER
-                  text: "Home"
+                  text: "WATER ALL"
+                  text_font: montserrat_10
+                  text_color: 0x002b4d
+        # --- bottom nav (ZONES active) ---
+        - obj:
+            x: 0
+            y: 201
+            width: 320
+            height: 39
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            border_side: [TOP]
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - button:
+            id: gh_nav_btn_dash
+            x: 4
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF015"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "DASH"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: home_page
+        - button:
+            id: gh_nav_btn_zones
+            x: 84
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x4caf50
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF06C"
+                  text_font: montserrat_14
+                  text_color: 0x003c0b
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "ZONES"
+                  text_font: montserrat_8
+                  text_color: 0x003c0b
+            on_click:
+              - lvgl.page.show: greenhouse_page
+        - button:
+            id: gh_nav_btn_water
+            x: 164
+            y: 204
+            width: 76
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF043"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "WATER"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: lawn_page
+        - button:
+            id: gh_nav_btn_setup
+            x: 244
+            y: 204
+            width: 72
+            height: 32
+            bg_color: 0x201f1f
+            bg_opa: COVER
+            radius: 3
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  y: -3
+                  text: "\uF013"
+                  text_font: montserrat_14
+                  text_color: 0xbecab9
+              - label:
+                  align: CENTER
+                  y: 9
+                  text: "SETUP"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+            on_click:
+              - lvgl.page.show: setup_page
+
+    - id: gh_bed_detail_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
+      widgets:
+        - label:
+            x: 8
+            y: 4
+            text: "Bed detail"
+            text_font: montserrat_10
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - !include
+          file: ../lvgl/card_bed.yaml
+          vars:
+            p: gh
+            group: gp_greenhouse
+            slot: "detail"
+            count: "1"
+            idx: "0"
+            zone: "id(gh_detail_zone)"
+            detail_page: gh_bed_detail_page
+            detail_zone: gh_detail_zone
+            detail_update: gh_carddetail_update
+        - button:
+            id: gh_detail_btn_back
+            x: 8
+            y: 176
+            width: 90
+            height: 26
+            bg_color: 0x131313
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            pad_all: 0
+            shadow_width: 0
+            scrollable: false
+            on_click:
+              - lvgl.page.show: greenhouse_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "BACK"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9

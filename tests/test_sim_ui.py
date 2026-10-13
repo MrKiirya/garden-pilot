@@ -24,6 +24,9 @@ _spec.loader.exec_module(sim_ui)
 
 # Home bottom navigation button `nav_btn_setup` in packages/lvgl/page_home.yaml (x, y, width, height).
 SETUP_BTN = (244, 204, 72, 32)
+ZONES_BTN = (84, 204, 76, 32)  # setup_nav_btn_zones on the Setup page
+CARD_PROBE = (60, 120)  # inside card 1 of the Greenhouse page (3 beds: 97 px cards from x=8)
+EMPTY_PROBE = (200, 40)  # the stats strip: page background
 
 
 # ---------------------------------------------------------------------------------------------- unit
@@ -163,6 +166,29 @@ def test_tap_target_is_the_setup_button() -> None:
 
 
 @pytest.mark.unit
+def test_tap_targets_match_yaml() -> None:
+    """The scenario taps ZONES on the Setup page: its coordinates are the YAML geometry of setup_nav_btn_zones."""
+    setup = load_esphome_yaml(REPO_ROOT / "packages/lvgl/page_setup.yaml")
+
+    def find(node: object) -> dict | None:
+        if isinstance(node, dict):
+            if node.get("id") == "setup_nav_btn_zones":
+                return node
+            for value in node.values():
+                if (found := find(value)) is not None:
+                    return found
+        elif isinstance(node, list):
+            for value in node:
+                if (found := find(value)) is not None:
+                    return found
+        return None
+
+    button = find(setup)
+    assert button, "setup_nav_btn_zones not found"
+    assert (int(button["x"]), int(button["y"]), int(button["width"]), int(button["height"])) == ZONES_BTN
+
+
+@pytest.mark.unit
 def test_tap_validates_range_before_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sim_ui, "STATE_PATH", tmp_path / "state.json")  # no session
     assert sim_ui.main(["tap", "320", "0"]) == 2
@@ -254,6 +280,21 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         diff = ImageChops.difference(home_img, setup_img).convert("L").point(lambda v: 255 if v else 0)
         changed = diff.histogram()[255] / (320 * 240)
         assert changed > 0.02, f"only {changed:.1%} of pixels changed after tapping SETUP"
+
+        # ZONES: the Greenhouse page with bed cards (task 025); card 1 is on `card` #1c1b1b, the slot-4 area is `bg`
+        x, y, w, h = ZONES_BTN
+        tapped = _sim_ui("tap", str(x + w // 2), str(y + h // 2), env=env)
+        assert tapped.returncode == 0, tapped.stderr
+        zones = _sim_ui("shot", "zones", env=env)
+        assert zones.returncode == 0, zones.stderr
+        zones_img = Image.open(REPO_ROOT / ".esphome" / "shots" / "zones.png").convert("RGB")
+        assert not sim_ui.looks_blank(zones_img)
+        diff = ImageChops.difference(setup_img, zones_img).convert("L").point(lambda v: 255 if v else 0)
+        assert diff.histogram()[255] / (320 * 240) > 0.02, "tapping ZONES did not change the screen"
+        card = zones_img.getpixel(CARD_PROBE)
+        assert all(abs(a - b) <= 8 for a, b in zip(card, (0x1C, 0x1B, 0x1B))), f"card 1 is not the card colour: {card}"
+        bg = zones_img.getpixel(EMPTY_PROBE)
+        assert all(abs(a - b) <= 8 for a, b in zip(bg, (0x13, 0x13, 0x13))), f"page background expected: {bg}"
     finally:
         _sim_ui("stop", env=env)
     assert pids, "start did not record any pids"
