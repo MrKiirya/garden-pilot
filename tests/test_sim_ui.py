@@ -307,17 +307,23 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         def near(pixel: tuple[int, int, int], rgb: tuple[int, int, int]) -> bool:
             return all(abs(p - c) <= 8 for p, c in zip(pixel, rgb))
 
-        # top border row of the History BACK button: text-dim #becab9 there, nothing on the Greenhouse page
-        back_probe = (HISTORY_BACK_BTN[0] + HISTORY_BACK_BTN[2] // 2, HISTORY_BACK_BTN[1])
+        # The History BACK button (ghost: text-dim #becab9 outline and text) is drawn inside its box; a single pixel
+        # is fragile (RGB565 rounding, 1 px border), so look for the colour anywhere in the box.
+        bx0, by0, bw0, bh0 = HISTORY_BACK_BTN
+        back_box = (bx0, by0, bx0 + bw0, by0 + bh0)
+
+        def back_drawn(image: Image.Image) -> bool:
+            return any(near(px, (0xBE, 0xCA, 0xB9)) for px in image.crop(back_box).getdata())
+
         zones_img = tap_and_shot(ZONES_BTN, "zones")
         assert changed_share(setup_img, zones_img) > 0.02, "tapping ZONES did not change the screen"
-        assert not near(zones_img.getpixel(back_probe), (0xBE, 0xCA, 0xB9))
+        assert not back_drawn(zones_img)
         history_img = tap_and_shot(HISTORY_BTN, "history")
         assert changed_share(zones_img, history_img) > 0.005, "tapping HISTORY did not change the screen"
-        assert near(history_img.getpixel(back_probe), (0xBE, 0xCA, 0xB9)), "the History BACK button is not drawn"
+        assert back_drawn(history_img), "the History BACK button is not drawn"
         back_img = tap_and_shot(HISTORY_BACK_BTN, "history_back")
         assert changed_share(history_img, back_img) > 0.005, "tapping BACK did not leave the History page"
-        assert not near(back_img.getpixel(back_probe), (0xBE, 0xCA, 0xB9)), "still on the History page"
+        assert not back_drawn(back_img), "still on the History page"
     finally:
         _sim_ui("stop", env=env)
     assert pids, "start did not record any pids"
