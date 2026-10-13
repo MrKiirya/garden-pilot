@@ -57,6 +57,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/lvgl/page_schedules.yaml`, `packages/greenhouse/lvgl_schedules.yaml` | Schedules page (WATER tab): the generic shell (header, empty state, nav) and the greenhouse rows that `!extend` it (master row, 3 slot rows per page, PREV / NEXT, toggles via `garden_schedule.toggle_slot`, Home "NEXT" label); view only. |
 | `packages/greenhouse/schedule.yaml`, `schedule_slot.yaml` | Hub `gh_schedule` with master switch, next-run / last-result text sensors, `on_run` -> `gp.enqueue_zones` + `gp.start_queue`; one include per slot (`vars: {slot, start}`, 2 in the entry files, max 8). |
 | `packages/greenhouse/lvgl_history.yaml` | History page `gh_history_page` (6 paged rows from `gp` history, PREV / NEXT / BACK) and the HISTORY header button added to `greenhouse_page` with `!extend`; entry order: `gh_lvgl_history` right after `gh_lvgl_page`. |
+| `packages/lawn/irrigation.yaml`, `zone.yaml`, `gp.yaml` | Lawn / flower zones on a pump (task 024): group `lawn_zones` (`max_parallel 1`, pump = var `pump_relay`, `lawn_*` substitutions), one include per zone (vars `zone`, `zone_name`, `relay`), gp group `gp_lawn` (key `lawn`) with status / watchdog / main switch "Lawn irrigation". Commented-out blocks in `garden-pilot.yaml`; no LVGL page or schedule yet. |
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`irrigation.yaml`: the `garden_zones` group `gh_zones` and its own entities; the watchdog sensor, reset button and status live in `gp.yaml`), LVGL page. Every config that includes `bed.yaml` also needs `core_gp` + `gh_gp` (its `gp_zone:` switch), and `core_gp_api` when `api` is present. |
 | `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), watchdog fault injection "Sim rogue relay 1" (`fault.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
@@ -86,6 +87,8 @@ introduced by roadmap tasks, not ad hoc.
    `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test) → `gh_schedule` → `gh_schedule_slot_N` (one include per slot, N unique 1..8).
    `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `core_gp` → `core_gp_api` (needs `core_api`) → `gh_gp` (the gp layer; screens and Home Assistant reach irrigation only through it) → `gh_lvgl_page` → `gh_sensors_air` →
    `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test) → `gh_schedule` → `gh_schedule_slot_N` (one include per slot, N unique 1..8) → `gh_lvgl_schedules` (rows of the Schedules page; needs `lvgl_page_schedules`, placed after `lvgl_page_lawn`).
+   `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `core_gp` → `core_gp_api` (needs `core_api`) → `gh_gp` (the gp layer; screens and Home Assistant reach irrigation only through it) → `gh_lvgl_page` → `gh_sensors_air` →
+   `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test) → `gh_schedule` → `gh_schedule_slot_N` (one include per slot, N unique 1..8) → optional lawn: `lawn_irrigation` (var `pump_relay`) → `lawn_zone_N` (consecutive from 1) → `lawn_gp` (after `core_gp` / `core_gp_api`; works without any greenhouse package).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 
 `garden-pilot-sim.yaml` uses the same order with `hardware/sim.yaml`, `core_api`, `core_time_host`, `core_diagnostics`, `display_sdl` and
@@ -98,6 +101,10 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
   packages use `${x}`. `tests/test_layout.py` enforces both.
 - **Add a bed** = one `!include` block with `vars` in the entry file; features reference relays as `board_relay_N`
   and analog inputs as `${adc_N_pin}`, never GPIO numbers. One bed is enough; its run-duration max (`gh_bed_run_max`) must fit under `gh_max_on_time`.
+- **Add a lawn zone** = one `packages/lawn/zone.yaml` include with `vars` `{zone, zone_name, relay}` (zone consecutive
+  from 1); the pump relay is the `pump_relay` var of `lawn_irrigation`. Keep (zones) x `lawn_zone_run_max` under
+  `lawn_pump_max_on_time`: with one zone at a time the pump stays on through the whole queue (a test checks the entry
+  files). Relays must be unique across beds, lawn zones and pumps. Greenhouse and lawn groups run independently (no interlock).
 - **Board:** match the `esp32:` board declared in the `hardware/` profile until a migration task changes it.
 - **Secrets files:** `secrets.yaml` / `secrets.example.yaml` are substitution files only (no `esphome:` block);
   `.vscode/settings.json` maps them to plain YAML so the ESPHome extension doesn't validate them as devices.

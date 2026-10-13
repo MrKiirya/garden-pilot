@@ -70,6 +70,7 @@ Five stroke icons (house, leaf, drop, gear, thermo) on a 24-unit grid, 2.2 strok
 - **Confirm dialog** (`gp_confirm`, top layer): built (D14). Dim layer (`bg` at 65 %), card, CANCEL ghost + one action button: `error-fill` for stop actions only, `green-fill` for other confirmations. ASCII-only texts.
 - **Schedules** (`schedules_page`): built (task 026, WATER tab, view only). Header "Schedules" (PREV / NEXT with "1/3" at the right when more than 3 slots), master row (`GREENHOUSE`, next run, switch pill), 3 slot rows of 43 px (start time `value`, today's word `done` green / `missed` amber, days - zones - multiplier as `caption`, switch pill; the tappable end is 68x41, the pill is only drawn), nav with WATER active. First built use of `amber` (a missed slot). Ids `gh_sched_*`, `sched_*`.
 - **Lawn** (`lawn_page`): concept. Headline soil bar, status card with AUTO-MODE `Switch`, WATER NOW / HOME. No backing entities exist yet.
+- **Lawn** (`lawn_page`): concept. Headline soil bar, status card with AUTO-MODE `Switch`, WATER NOW / HOME. Backing data exists (`gp_lawn`, task 024); not wired yet.
 
 Component notes keep the LVGL ids (`gh_btn_run_bed1`, `home_clock_label`…) so a design change can be traced to the YAML that implements it.
 

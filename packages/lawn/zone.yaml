@@ -1,0 +1,49 @@
+# One lawn (or flower bed) zone: a `garden_zone:` list item of the group lawn_zones (engine side: enable switch,
+# run-duration number, the raw-relay valve switch kept internal) and a `gp_zone:` list item of the gp group gp_lawn (the
+# Home Assistant switch "${zone_name}": on = run the zone, off = stop). Needs packages/core/gp.yaml and
+# packages/lawn/gp.yaml. Include it once per zone from the entry file (vars are all required, literal strings):
+#
+#   lawn_zone_1: !include
+#     file: packages/lawn/zone.yaml
+#     vars: {zone: "1", zone_name: "Lawn", relay: "5"}
+#
+#   zone       zone number 1..16, consecutive from 1; used in ids (lawn_zone<zone>_run_duration) and as the gp position.
+#   zone_name  entity name in Home Assistant; "<zone_name> enable" and "<zone_name> run duration" derive from it.
+#   relay      board relay number; the zone drives `board_relay_<relay>` from the hardware profile.
+#
+# Requirements and rules:
+# - Include packages/lawn/irrigation.yaml (lawn_irrigation) BEFORE the zones: it declares the group lawn_zones and the
+#   pump. The gp packages (core_gp, lawn_gp) come after the last zone.
+# - The order of the zone blocks in the entry file is the zone order.
+# - The run-duration number max (lawn_zone_run_max, minutes) must fit under the watchdog limit lawn_max_on_time, and
+#   (zones) x lawn_zone_run_max under lawn_pump_max_on_time, see packages/lawn/irrigation.yaml.
+# - Do not call lvgl.* from run_duration_number on_value (restore/HA can fire outside an LVGL-safe context).
+
+garden_zone:
+  - group: lawn_zones
+    # The engine's own zone switch is internal: Home Assistant sees the gp_zone switch below with the same name.
+    valve_switch:
+      id: lawn_zone${zone}_engine_valve
+      name: "${zone_name}"
+      internal: true
+    enable_switch:
+      id: lawn_zone${zone}_enable
+      name: "${zone_name} enable"
+    run_duration_number:
+      id: lawn_zone${zone}_run_duration
+      name: "${zone_name} run duration"
+      initial_value: ${lawn_zone_run_initial}
+      min_value: 1
+      max_value: ${lawn_zone_run_max}
+      step: 1
+      unit_of_measurement: "min"
+      restore_value: true
+      icon: mdi:timer-outline
+      mode: BOX
+    valve_switch_id: board_relay_${relay}
+
+gp_zone:
+  - group: gp_lawn
+    position: ${zone}
+    id: lawn_zone${zone}_switch
+    name: "${zone_name}"

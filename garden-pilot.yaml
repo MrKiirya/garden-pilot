@@ -112,5 +112,21 @@ packages:
   # Schedules page rows (WATER tab) and the Home "next" label; needs lvgl_page_schedules and gh_schedule.
   gh_lvgl_schedules: !include packages/greenhouse/lvgl_schedules.yaml
 
+  # Optional lawn / flower zones on a pump (group lawn_zones, one zone at a time; no screen yet, Home Assistant only).
+  # Uncomment the irrigation block, one zone block per zone (consecutive from 1) and lawn_gp; they must stay after
+  # core_gp / core_gp_api. The pump and zone relays must differ from the bed relays above. Keep
+  # (zones) x lawn_zone_run_max under lawn_pump_max_on_time, see packages/lawn/irrigation.yaml.
+  # lawn_irrigation: !include
+  #   file: packages/lawn/irrigation.yaml
+  #   vars: {pump_relay: "4"}
+  # lawn_zone_1: !include
+  #   file: packages/lawn/zone.yaml
+  #   vars: {zone: "1", zone_name: "Lawn", relay: "5"}
+  # lawn_zone_2: !include
+  #   file: packages/lawn/zone.yaml
+  #   vars: {zone: "2", zone_name: "Flowers", relay: "6"}
+  # lawn_gp: !include
+  #   file: packages/lawn/gp.yaml
+
   # Optional: touch dot / coord updates on press. Comment out to disable (overlay script stays no-op).
   touch_dot_test: !include packages/touch_dot_test.yaml

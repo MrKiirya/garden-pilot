@@ -14,7 +14,7 @@ import yaml
 from conftest import REPO_ROOT, load_esphome_yaml
 
 EXAMPLES_DIR = REPO_ROOT / "examples"
-EXAMPLE_NAMES = ["minimal-1-bed", "beds-with-pump", "soil-sensors", "relay-module-8ch"]
+EXAMPLE_NAMES = ["minimal-1-bed", "beds-with-pump", "soil-sensors", "relay-module-8ch", "my-garden"]
 EXAMPLES = [EXAMPLES_DIR / f"{n}.yaml" for n in EXAMPLE_NAMES]
 ROOT_ENTRIES = [REPO_ROOT / "garden-pilot.yaml", REPO_ROOT / "garden-pilot-sim.yaml"]
 LOG_LEVELS = {"INFO", "WARN", "WARNING", "ERROR", "NONE"}
@@ -115,7 +115,7 @@ def test_gp_root_default() -> None:
         seen += 1
         assert all(s.startswith("${gp_root}/") for s in local), f"{path}: {local}"
         assert data["substitutions"]["gp_root"] == ".", f"{path}: define gp_root: \".\""
-    assert seen == 5, "irrigation, irrigation_pump, schedule, gp (components) and screensaver (font)"
+    assert seen == 6, "irrigation, irrigation_pump, lawn irrigation, schedule, gp (components) and screensaver (font)"
     assert "gp_root" not in (_load(REPO_ROOT / "garden-pilot.yaml")["substitutions"]), "root entry uses the default"
 
 
@@ -137,6 +137,12 @@ def _rank(key: str) -> int:
         return 41
     if key == "gh_gp":
         return 42
+    if key == "lawn_irrigation":
+        return 70
+    if re.fullmatch(r"lawn_zone_\d+", key):
+        return 71
+    if key == "lawn_gp":
+        return 72
     if key == "gh_schedule":
         return 60
     if key.startswith("gh_schedule_slot_"):
@@ -162,6 +168,32 @@ def test_example_package_order() -> None:
         slots = [k for k in keys if k.startswith("gh_schedule_slot_")]
         assert slots == [f"gh_schedule_slot_{n}" for n in range(1, len(slots) + 1)] and 1 <= len(slots) <= 8, path.name
         assert "gh_schedule" in keys and keys.index("gh_schedule") < keys.index(slots[0]), path.name
+
+
+@pytest.mark.unit
+def test_my_garden_shape() -> None:
+    path = EXAMPLES_DIR / "my-garden.yaml"
+    data = _load(path)
+    assert data["esphome"]["name"] == "gp-my-garden"
+    includes = _includes(data)
+    assert includes["hardware"][0] == "../hardware/lilygo-t-relay-s3.yaml"
+    assert includes["gh_irrigation"][0] == "../packages/greenhouse/irrigation.yaml", "gravity barrel: no pump"
+    s = {k: v for k, v in data["substitutions"].items() if not isinstance(v, dict)}
+    beds = {k: v for k, (f, v) in includes.items() if re.fullmatch(r"gh_bed_\d+", k)}
+    assert [(v["bed"], v["relay"]) for v in beds.values()] == [("1", "1"), ("2", "2"), ("3", "3")]
+    assert s["gh_max_parallel"] == "all"
+    assert int(s["gh_bed_run_max"]) >= 180
+    m = re.fullmatch(r"(\d+)(min|h)", str(s["gh_max_on_time"]))  # ESPHome time periods have one unit ("3h30min" is invalid)
+    assert m, s["gh_max_on_time"]
+    assert int(s["gh_bed_run_max"]) * 60 + 2 <= int(m.group(1)) * {"min": 60, "h": 3600}[m.group(2)]
+    assert "never" not in [str(v) for v in s.values()]
+    assert "gh_schedule" in includes
+    pump = includes["lawn_irrigation"][1]["pump_relay"]
+    zones = [v for k, (f, v) in includes.items() if re.fullmatch(r"lawn_zone_\d+", k)]
+    assert zones, "at least one lawn zone"
+    relays = [int(pump), *(int(v["relay"]) for v in zones), *(int(v["relay"]) for v in beds.values())]
+    assert max(relays) <= 6, "every relay on the six main-board relays"
+    assert len(set(relays)) == len(relays)
 
 
 # ---------------------------------------------------------------------------------------------------- esphome config

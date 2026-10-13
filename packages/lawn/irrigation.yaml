@@ -1,0 +1,72 @@
+# Lawn irrigation: one `garden_zones` group, lawn_zones ("Lawn"), with a pump. Lawn and flower-bed zones share the
+# pump. The zones come from packages/lawn/zone.yaml (one include per zone, each adds a `garden_zone:` list item;
+# include this file first). One zone at a time (`max_parallel: 1`): the pump runs through a whole queue.
+# This is the ENGINE side. Screens, schedules and Home Assistant talk to it only through the gp_* layer
+# (packages/core/gp.yaml + packages/lawn/gp.yaml: group gp_lawn, key "lawn", watchdog sensor and reset button, zone
+# switches, the "Lawn irrigation" main switch, Home Assistant actions with `group: lawn`); do not call garden_zones.*
+# from anywhere else. The raw relay drivers (board_relay_N) live in the board profile under hardware/.
+# Groups run independently: the lawn and the greenhouse can water at the same time (there is no interlock).
+# Do not call lvgl.* from run_duration_number on_value: restore/HA can fire outside an LVGL-safe context and crash.
+#
+# Include it with the pump relay as a var (required, no default; it must not be a zone relay):
+#
+#   lawn_irrigation: !include
+#     file: packages/lawn/irrigation.yaml
+#     vars: {pump_relay: "4"}
+#
+# Override any of these substitutions in the entry file:
+#   lawn_name             entity-name prefix in Home Assistant (default "Lawn"); the gp group key stays `lawn`.
+#   lawn_max_parallel     must stay "1": other values are not supported by this package yet.
+#                         (Also: a queue built from Home Assistant can hold more zones or repeats than the session
+#                         check assumes and then exceed lawn_pump_max_on_time (the pump watchdog locks the group).
+#   lawn_max_on_time      watchdog limit of every zone valve (default 60min, `never` disables it, see
+#                         components/garden_zones/README.md). Raise it together with lawn_zone_run_max.
+#   lawn_zone_run_max     maximum of the zone run-duration numbers, minutes. Must satisfy
+#                         lawn_zone_run_max * 60 s + pump delays + 2 s <= lawn_max_on_time, else the config is rejected.
+#   lawn_zone_run_initial initial value of the zone run-duration numbers, minutes (<= lawn_zone_run_max).
+#   lawn_pump_max_on_time pump limit for one watering SESSION (default 2h; must be >= lawn_max_on_time; `never` disables
+#                         it). With one zone at a time the pump stays on through the whole queue or full cycle, so
+#                         (number of zones) x lawn_zone_run_max must fit under it, else a long run trips the pump
+#                         watchdog and locks the group. Changing a safety limit is your call.
+#   lawn_pump_idle_timeout the pump is forced off after this long with no open valve (default 10s; `never` disables it).
+#   lawn_pump_start_pump_delay  valve opens first, the pump starts this long after it (default 0s: together).
+#   lawn_pump_stop_valve_delay  pump stops first, the last valve closes this long after it (default 0s: together).
+
+substitutions:
+  lawn_name: "Lawn"
+  lawn_max_parallel: "1"
+  lawn_max_on_time: 60min
+  lawn_zone_run_max: "55"
+  lawn_zone_run_initial: "15"
+  lawn_pump_max_on_time: 2h
+  lawn_pump_idle_timeout: 10s
+  lawn_pump_start_pump_delay: 0s
+  lawn_pump_stop_valve_delay: 0s
+  # Path from the entry file to the repo root (SPEC section 4.2): "." for garden-pilot.yaml, ".." for examples/*.yaml.
+  gp_root: "."
+
+# Remote-package users pin a tag here instead of `source: components` (SPEC section 4.2).
+external_components:
+  - source: ${gp_root}/components
+    components: [garden_zones, garden_zone]
+
+garden_zones:
+  groups:
+    - id: lawn_zones
+      name: "${lawn_name}"
+      max_parallel: ${lawn_max_parallel}
+      max_on_time: ${lawn_max_on_time}
+      pump_switch_id: board_relay_${pump_relay}
+      pump_max_on_time: ${lawn_pump_max_on_time}
+      pump_idle_timeout: ${lawn_pump_idle_timeout}
+      pump_start_pump_delay: ${lawn_pump_start_pump_delay}
+      pump_stop_valve_delay: ${lawn_pump_stop_valve_delay}
+      auto_advance_switch:
+        id: lawn_zones_auto_advance
+        name: "${lawn_name} auto advance"
+      on_watchdog_trip:
+        - logger.log:
+            level: ERROR
+            tag: lawn_zones
+            format: "Watchdog tripped: zone %d, reason %s"
+            args: ['(int) zone', 'reason.c_str()']

@@ -104,6 +104,13 @@ Decision: no intermediate MVP on the stock `sprinkler`; we copy `esphome/compone
   device (014), a bed's sensor is reporting-only (task 005, `packages/greenhouse/bed_soil.yaml`).
 - **History** of runs per zone (wanted; see the backlog in §9).
 
+**Second group: lawn (task 024).** `packages/lawn/` adds the pump group `lawn_zones` (`max_parallel: 1`, pump from the
+`pump_relay` var) next to the greenhouse group `gh_zones`, with its own gp group `gp_lawn` (key `lawn`). Lawn and flower
+zones share the pump, one include per zone. Groups run independently: the lawn and the greenhouse can water at the same
+time, there is no cross-group interlock. `pump_max_on_time` bounds a whole session: with one zone at a time the pump
+stays on through a queue or full cycle, so (zones) x `lawn_zone_run_max` must fit under it (a repo test checks the entry
+files). Lawn schedules will be a second `garden_schedule` hub later.
+
 It takes valves from YAML by id and exposes standard ESPHome entities (switch / number / sensor / text_sensor),
 actions and conditions, so everything shows up in Home Assistant. New logic goes into plain C++ classes without
 ESPHome dependencies where practical (unit-testable).
@@ -146,7 +153,8 @@ adapter (`components/garden_zones/gp_engine.h`, GPLv3). Full contract, names and
 
 - Home Assistant gets ONE generic action set for all groups (`gp_run_zone` etc. with `group` and a 1-based `zone`), one
   switch per zone from the gp layer ("Greenhouse bed N"; the engine's zone switches are internal), a "Greenhouse status"
-  and an "Alert" text sensor; settings entities have `entity_category: config`.
+  and an "Alert" text sensor; settings entities have `entity_category: config`. The same actions address the lawn with
+  `group: lawn`; its zone switches are named after the zone ("Lawn", "Flowers").
 - The last watering of each zone and the last 100 runs are persisted to flash after each run; the full history stays
   in Home Assistant.
 - "Home Assistant disconnected" is a quiet header icon, not an alert.
@@ -237,13 +245,15 @@ Target layout:
 garden-pilot.yaml          # device entry file, modules commented out
 garden-pilot-sim.yaml      # PC emulator entry file (host + SDL), same packages
 hardware/                  # esp32-<board>.yaml, lilygo-t-relay-s3.yaml (pins, relay drivers), sim.yaml
-examples/                  # four complete device configs (`../` includes, gp_root: "..")
+examples/                  # five complete device configs (`../` includes, gp_root: "..")
 packages/
   core/                    # api, ota, network (Wi-Fi), time, time_sntp, time_host
   display_touch.yaml, display_sdl.yaml   # device display + touch; emulator window + mouse
   sim/                     # emulator only: simulated sensors, auto drift, SIM board page
   lvgl/                    # pages
-  greenhouse/bed.yaml, bed_soil.yaml, ...   # lawn.yaml, heating.yaml, ...
+  greenhouse/bed.yaml, bed_soil.yaml, ...
+  lawn/irrigation.yaml, zone.yaml, gp.yaml  # pump group `lawn_zones` (var `pump_relay`), one zone per include
+                                            # (vars `zone`, `zone_name`, `relay`), gp group `gp_lawn`; heating.yaml, ... later
 components/garden_zones/   # __init__.py, *.h, *.cpp
 design/                    # tokens.json, README, icons
 docs/
@@ -332,6 +342,8 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   with PREV / NEXT, view only). `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
   LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → schedules (`lawn_page` stays included but has no entry point until the lawn task or the Home widgets give it one), SETUP → setup (its DISPLAY tile opens the
   touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). STOP on the Greenhouse page and RESTART on the Network page ask
+  touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). The Lawn page now has backing data through
+  `gp_lawn` (task 024) but is not wired to it. STOP on the Greenhouse page and RESTART on the Network page ask
   through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
   only, so UI texts are ASCII (`-`, `...`). Version, uptime, Wi-Fi and the restart button are `internal: true`.
 - The Home "NEXT" label shows the next scheduled run (`06:00` today, `Tue 06:00`, `--:--`), written by the Schedules
@@ -384,8 +396,12 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
 
 13. **Examples and remote packages.** Task 023 (this stage's first part): `examples/` (four complete device configs),
     the 12-relay breadboard profile, the LilyGO T-Relay-S3 profile, `gp_root`, the pump and soil-skip package variants.
-    Task 024: a lawn + flowers package (one `garden_zones` group with a pump, one zone at a time) and the author's
-    `examples/my-garden.yaml`. Then "remote packages + private config repo": packages usable as ESPHome remote packages
+    Task 024 (done): `packages/lawn/` (one `garden_zones` group with a pump, one zone at a time, lawn and flowers share
+    it) and the author's `examples/my-garden.yaml` (LilyGO T-Relay-S3, 3 greenhouse beds on a barrel with limits raised
+    for a ~3 h run, 2 lawn zones on a pump). Follow-ups: lawn schedules (a second `garden_schedule` hub; needs
+    `schedule_slot.yaml` generalised to a group prefix), the Lawn page / Home card / valve-test rows reading `gp_lawn`,
+    service mode for all groups, a per-group zone name prefix in `gp` ("B1" is hard-coded), the lawn in the emulator.
+    Then "remote packages + private config repo": packages usable as ESPHome remote packages
     (`external_components` git source pinned to a tag, font path, includes with `vars`), a CI check of a remote-mode
     example, version tags `vX.Y.Z`, and a git-ignored private override file; the author then moves his own config to a
     private repo.
@@ -400,7 +416,8 @@ Optional modules; most can be built and tested without the physical sensors (`ha
 - Cycle and soak (water in several passes).
 - Rain delay (sensor or HA command; lawn).
 - Dynamic lanes for `max_parallel` between 1 and all.
-- **Lawn one zone at a time, flowers in parallel, one shared pump.** Today a pump belongs to one group, so this needs either
+- **Lawn one zone at a time, flowers in parallel, one shared pump.** Task 024 ships the simple case (lawn and flowers in
+  one group, one at a time). Parallel flowers next to the lawn: today a pump belongs to one group, so this needs either
   lanes with different parallelism in one group (pinned lanes, at the cost of lawn and flowers overlapping) or a fork
   patch for a pump shared across groups. Its own task.
 - Heating: night-tariff window and schedule modes.

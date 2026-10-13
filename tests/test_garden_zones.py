@@ -456,11 +456,16 @@ def test_device_uses_groups_form() -> None:
     irrigation = REPO_ROOT / "packages" / "greenhouse" / "irrigation.yaml"
     bed = REPO_ROOT / "packages" / "greenhouse" / "bed.yaml"
     irrigation_pump = REPO_ROOT / "packages" / "greenhouse" / "irrigation_pump.yaml"
+    lawn_irrigation = REPO_ROOT / "packages" / "lawn" / "irrigation.yaml"  # second group (task 024), same shape
+    lawn_zone = REPO_ROOT / "packages" / "lawn" / "zone.yaml"
     bed_soil_skip = REPO_ROOT / "packages" / "greenhouse" / "bed_soil_skip.yaml"  # variants of irrigation.yaml / bed.yaml
     for path in paths:
         text = path.read_text(encoding="utf-8")
         code = "\n".join(re.sub(r"(^|\s)#.*$", "", line) for line in text.splitlines())
-        if path in (irrigation, irrigation_pump):
+        if path == lawn_zone:
+            assert re.search(r"^garden_zone:", code, re.MULTILINE)
+            assert not re.search(r"^garden_zones:|^external_components:", code, re.MULTILINE)
+        elif path in (irrigation, irrigation_pump, lawn_irrigation):
             config = load_esphome_yaml(path)
             assert isinstance(config, dict) and isinstance(config["garden_zones"], dict), "groups form (a dict)"
             assert "groups" in config["garden_zones"]

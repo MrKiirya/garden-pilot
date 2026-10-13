@@ -80,6 +80,8 @@ SIM_BED_SOIL = REPO_ROOT / "packages" / "sim" / "bed_soil.yaml"
 SIM_BED_SOIL_FILE = "packages/sim/bed_soil.yaml"
 SCHEDULE_SLOT = REPO_ROOT / "packages" / "greenhouse" / "schedule_slot.yaml"
 SCHEDULE_SLOT_FILE = "packages/greenhouse/schedule_slot.yaml"
+LAWN_ZONE_FILE = "packages/lawn/zone.yaml"
+LAWN_IRRIGATION_FILE = "packages/lawn/irrigation.yaml"
 _EXAMPLE_START = re.compile(r"^  # ([A-Za-z0-9_]+): !include\s*$")
 _EXAMPLE_CONT = re.compile(r"^  #   ")
 
@@ -238,12 +240,25 @@ def test_entry_relays_exist(entry: Path) -> None:
     subst = load_esphome_yaml(entry)["substitutions"]  # type: ignore[index]
     if "gh_pump_relay" in subst:
         wanted.add(str(subst["gh_pump_relay"]))
+    wanted |= {str(p["vars"]["pump_relay"]) for p in packages.values() if "pump_relay" in p["vars"]}
     assert wanted, entry.name
     for n in wanted:
         assert f"board_relay_{n}" in relays, f"{entry.name}: no board_relay_{n} in its profile"
     text = _entry_text(entry)
     for n in re.findall(r"board_relay_(\d+)", text):
         assert f"board_relay_{n}" in relays, f"{entry.name}: no board_relay_{n} in its profile"
+
+
+@pytest.mark.parametrize("entry", DEVICE_ENTRIES, ids=lambda p: p.name)
+def test_entry_relays_unique(entry: Path) -> None:
+    """Bed relays, lawn zone relays, the lawn pump relay and gh_pump_relay are pairwise distinct (examples active)."""
+    packages = _entry_packages(entry)
+    used = [str(p["vars"]["relay"]) for p in packages.values() if "relay" in p["vars"]]
+    used += [str(p["vars"]["pump_relay"]) for p in packages.values() if "pump_relay" in p["vars"]]
+    subst = load_esphome_yaml(entry)["substitutions"]  # type: ignore[index]
+    if "gh_pump_relay" in subst:
+        used.append(str(subst["gh_pump_relay"]))
+    assert len(set(used)) == len(used), f"{entry.name}: a relay is used twice: {sorted(used)}"
 
 
 def test_hardware_board_settings_are_used() -> None:
@@ -517,7 +532,10 @@ def test_bed_shape() -> None:
 
 
 def test_bed_vars_do_not_shadow_globals() -> None:
-    names = _bed_vars() | _template_vars(BED_SOIL)
+    lawn = REPO_ROOT / "packages" / "lawn"
+    lawn_vars = {"zone", "zone_name", "relay", "pump_relay"}
+    assert lawn_vars <= _template_vars(lawn / "zone.yaml") | _template_vars(lawn / "irrigation.yaml")
+    names = _bed_vars() | _template_vars(BED_SOIL) | lawn_vars
     defined = set(load_esphome_yaml_text(ENTRY.read_text(encoding="utf-8")).get("substitutions") or {})
     for path in _hardware_profiles():
         defined |= _subst_keys(path)
@@ -561,6 +579,8 @@ def test_substitutions_resolve() -> None:
         SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
         BED_SOIL_SKIP: set().union(*(set(p["vars"]) for e in EXAMPLES for p in _entry_packages(e).values() if p["path"] == BED_SOIL_SKIP_FILE)),
         SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
+        REPO_ROOT / LAWN_ZONE_FILE: set().union(*(set(i["vars"]) for i in _entry_includes(LAWN_ZONE_FILE))),
+        REPO_ROOT / LAWN_IRRIGATION_FILE: set().union(*(set(i["vars"]) for i in _entry_includes(LAWN_IRRIGATION_FILE))),
     }
     missing = set()
     for path in package_files:
