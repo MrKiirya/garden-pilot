@@ -9,6 +9,7 @@
 #if __has_include("esphome/components/gp/engine.h")
 
 #include <algorithm>
+#include <cstring>
 
 #include "esphome/components/gp/engine.h"
 #include "group.h"
@@ -45,6 +46,8 @@ class GardenZonesEngine final : public gp::Engine {
       z.has_skip = this->group_->last_skip(zone, stamp, text);
       z.skip_stamp = stamp;
       z.skip_text = text;
+      // the engine's own reason texts: "soil moisture X > Y" = too wet, "soil sensor unavailable" = a generic skip
+      z.skip_wet = z.has_skip && std::strncmp(text, "soil moisture", 13) == 0;
     }
     in.active_count = 0;
     for (size_t zone : active) {

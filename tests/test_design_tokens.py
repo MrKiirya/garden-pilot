@@ -24,6 +24,7 @@ TOKENIZED_PAGES = [
     "packages/greenhouse/lvgl_valve_test.yaml",
     "packages/lvgl/screensaver.yaml",
     "packages/greenhouse/screensaver_status.yaml",
+    "packages/greenhouse/lvgl_history.yaml",
 ]
 # Built-in sizes of the four base tokens; the `clock` token is the custom font gp_font_clock (screensaver only).
 TOKEN_FONTS = {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14", "gp_font_clock"}

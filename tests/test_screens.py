@@ -82,7 +82,7 @@ def _page_ids(files: list[str]) -> set[str]:
     for f in files:
         d = load_esphome_yaml(REPO_ROOT / f)
         if isinstance(d, dict) and isinstance(d.get("lvgl"), dict):
-            ids |= {p["id"] for p in d["lvgl"].get("pages") or []}
+            ids |= {p["id"] for p in d["lvgl"].get("pages") or [] if isinstance(p["id"], str)}  # `!extend` ids are dicts
     return ids
 
 
@@ -106,7 +106,7 @@ def test_page_ids_unique() -> None:
         ids: list[str] = []
         lv = data.get("lvgl")
         if isinstance(lv, dict):
-            ids += [p["id"] for p in lv.get("pages") or []]
+            ids += [p["id"] for p in lv.get("pages") or [] if isinstance(p["id"], str)]  # `!extend` ids are dicts
             ids += [p["id"] for _t, p in _widgets(lv) if isinstance(p.get("id"), str)]
         for wid in ids:
             rel = str(path.relative_to(REPO_ROOT))
@@ -243,7 +243,8 @@ def test_device_only_packages_not_in_sim() -> None:
 
 
 TOKENIZED_TEXT_FILES = [SETUP, NETWORK, DIALOG, WIFI, BOOT, "packages/greenhouse/lvgl_valve_test.yaml",
-                        "packages/lvgl/screensaver.yaml", "packages/greenhouse/screensaver_status.yaml"]
+                        "packages/lvgl/screensaver.yaml", "packages/greenhouse/screensaver_status.yaml",
+                        "packages/greenhouse/lvgl_history.yaml"]
 
 
 @pytest.mark.parametrize("rel", TOKENIZED_TEXT_FILES)

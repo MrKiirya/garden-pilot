@@ -62,6 +62,7 @@ Five stroke icons (house, leaf, drop, gear, thermo) on a 24-unit grid, 2.2 strok
 
 - **Home** (`home_page`): built. Greenhouse card + Lawn card + nav.
 - **Greenhouse** (`greenhouse_page`): proposal. Stats strip, three `BedCard`s with state edges, status line, STOP / RUN QUEUE / HOME.
+- **History** (`gh_history_page`): built (task 027). Sub-page without nav: "History" header, 6 one-line rows (`B2  13 Oct 06:00  5 min  done`, skips `... skipped wet`), "1-6 of 37" caption, PREV / NEXT (`btn-h-sm`), BACK. Reached from the HISTORY ghost button (`gh_btn_history`) in the Greenhouse header. Paged, never scrolled.
 - **Boot** (`boot_page`): built (D17). Title, "Connecting to Wi-Fi...", spinner (replaces the draft's progress bar), "Valves closed - offline mode in 30s", ESPHome version.
 - **Setup** (`setup_page`): built (D10). 2x3 tile grid (NETWORK, TIME, DISPLAY, SERVICE active; CYCLE, SENSORS "Soon"), nav with SETUP active.
 - **Setup - Service - Valves** (`valve_test_page`): built (D18). Beds 1-3 only (no Lawn/Pump, no per-row CLOSE), TEST per bed (10 s max from the tap, ~8 s open), STOP, EXIT SERVICE.

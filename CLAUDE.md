@@ -55,6 +55,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `components/garden_schedule/` | Device-side schedules (MIT): hub with a pure C++ core (`schedule_core.h`, unit tested with a fake clock), engine-agnostic; fires `on_run(zone_mask, pct, slot)` and takes `garden_schedule.zone_done`. README has the rules. |
 | `components/garden_schedule_slot/` | One `garden_schedule_slot:` list item per slot (schema only; the hub generates the code). |
 | `packages/greenhouse/schedule.yaml`, `schedule_slot.yaml` | Hub `gh_schedule` with master switch, next-run / last-result text sensors, `on_run` -> `gp.enqueue_zones` + `gp.start_queue`; one include per slot (`vars: {slot, start}`, 2 in the entry files, max 8). |
+| `packages/greenhouse/lvgl_history.yaml` | History page `gh_history_page` (6 paged rows from `gp` history, PREV / NEXT / BACK) and the HISTORY header button added to `greenhouse_page` with `!extend`; entry order: `gh_lvgl_history` right after `gh_lvgl_page`. |
 | `packages/greenhouse/*.yaml` | Greenhouse domain: substitutions, sensors, irrigation (`irrigation.yaml`: the `garden_zones` group `gh_zones` and its own entities; the watchdog sensor, reset button and status live in `gp.yaml`), LVGL page. Every config that includes `bed.yaml` also needs `core_gp` + `gh_gp` (its `gp_zone:` switch), and `core_gp_api` when `api` is present. |
 | `packages/sim/*.yaml` | Emulator only (never included by `garden-pilot.yaml`): simulated sensors as settable template numbers (`sensors.yaml`, `bed_soil.yaml`), "Sim auto drift" (`drift.yaml`), watchdog fault injection "Sim rogue relay 1" (`fault.yaml`), polled Home/Greenhouse labels (`sensors_lvgl.yaml`) and the SIM board page (`page_board.yaml`). |
 | `packages/touch_dot_test.yaml` | Optional touch debug overlay (`!extend touch_dot_overlay`). |
@@ -80,7 +81,7 @@ introduced by roadmap tasks, not ad hoc.
    `lvgl_screensaver`,
    `lvgl_page_setup`, `lvgl_page_network` and (device only) `lvgl_network_wifi`, `lvgl_boot_wifi`.
 5. `gh_irrigation` (the engine group `gh_zones`) → `gh_bed_N` (+ optional
-   `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `core_gp` → `core_gp_api` (needs `core_api`) → `gh_gp` (the gp layer; screens and Home Assistant reach irrigation only through it) → `gh_lvgl_page` → `gh_sensors_air` →
+   `gh_bed_N_soil` after its bed) in zone order, at least 1 bed → `core_gp` → `core_gp_api` (needs `core_api`) → `gh_gp` (the gp layer; screens and Home Assistant reach irrigation only through it) → `gh_lvgl_page` → `gh_lvgl_history` → `gh_sensors_air` →
    `gh_sensors_soil` → `gh_gp_lvgl` → `gh_screensaver_status` → `gh_valve_test` (Setup > SERVICE valve test) → `gh_schedule` → `gh_schedule_slot_N` (one include per slot, N unique 1..8).
 6. `touch_dot_test` last (extends `touch_dot_overlay` from `display_touch`).
 

@@ -323,8 +323,9 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   in a grid). Home is a stack of widgets (308x172, gap 4, heights 26/40/44/76) filled by priority with a C++
   fit helper; available widgets come from the enabled packages, their order is set in SETUP and stored on the
   device.
-- Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
-  layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
+- Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11), `gh_history_page` (task 027: reached from
+  a HISTORY button in the Greenhouse header, 6 rows per page with PREV / NEXT and BACK, no scrolling) and the confirm
+  dialog (D14, top layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
   LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the
   touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). STOP on the Greenhouse page and RESTART on the Network page ask
   through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
@@ -388,7 +389,7 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
 
 ### 9.1 Backlog (ideas, separate tasks once the base is ready)
 Optional modules; most can be built and tested without the physical sensors (`hardware/sim.yaml`):
-- **Watering history** per zone, on screen and in HA (wanted first).
+- **Watering history** per zone: on screen since task 027 (History page, 6 rows per page, result `done` / `stopped` / `skipped` / `skipped wet`, skips included); in HA still open (wanted).
 - Barrel water level sensor: don't water when empty, alert.
 - Pump dry-run protection (flow or pressure sensor).
 - Flow meter: litres per zone, watering by volume.

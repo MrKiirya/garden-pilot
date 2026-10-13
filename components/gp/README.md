@@ -6,7 +6,7 @@ state and start or stop watering **only** through this contract; no package outs
 `gp::Engine` (`engine.h`), and an adapter implements it (today `components/garden_zones/gp_engine.h`, GPLv3, next to the
 engine it adapts).
 
-Files: `zone_model.h`, `alerts.h`, `history.h`, `format.h` and `engine.h` are pure C++17 without ESPHome includes
+Files: `zone_model.h`, `alerts.h`, `history.h`, `format.h`, `format_history.h` and `engine.h` are pure C++17 without ESPHome includes
 (unit tests in `tests/cpp/`); `gp.h` is the ESPHome glue; `__init__.py` the schema and codegen. `components/gp_zone/`
 adds the per-zone Home Assistant switch.
 
@@ -50,9 +50,19 @@ Zones are addressed by the **0-based index** inside the group (= bed include ord
 `total_left` and `revision` (bumps on any visible change; a countdown bumps it once per second while something runs).
 `changed_since(uint32_t &seen)` compares the revision with a `globals` value.
 
-**History.** The last 100 completed runs (time, zone, duration, source `manual` / `queue` / `service` / unknown) are kept in RAM and
-written to flash with the ESPHome preferences after each run (one write per run; ESPHome batches, NVS wear-levels).
+**History.** The last 100 entries (time, zone, duration, source `manual` / `queue` / `service` / unknown, **result**) are kept in
+RAM and written to flash with the ESPHome preferences after each entry (one write per entry; ESPHome batches, NVS wear-levels).
 `id(gp_greenhouse)->history().at(0)` is the newest. The full history lives in Home Assistant.
+An entry is a run or a **skip**. `result` (`gp::Result`, one byte taken from the former `reserved` field, so the blob
+size and magic `GP01` are unchanged and `static_assert`ed): `done`, `stopped` (a run that ended inside the 3 s window
+after `stop_all`; a watchdog-ended run counts as done), `skipped wet` (the engine skipped the zone, soil too wet),
+`skipped` (any other engine skip, duration 0) and `-` (`UNKNOWN`: entries written before the byte existed; a valve-test
+run shows `test`). A skip is recorded once per engine skip stamp; the adapter sets `ZoneInput::skip_wet` from its own
+reason texts (`components/garden_zones/gp_engine.h`). A skip is not a "last watering" and does not fire
+`on_zone_finished`.
+The History page reads it through `history_changed_since(uint32_t &seen)` (a RAM push counter) and the glue one-liners
+`history_row(page, row)`, `history_pager(page)` and `history_clamp_page(page)`, which convert the epoch to local time and
+call the pure formatters in `format_history.h` (6 rows per page, rows like `B2  13 Oct 06:00  5 min  done`).
 
 **Alerts** (`id(gp_hub)`): fixed table of 12, entry = key, severity (`error` / `warn` / `info`), ASCII text (<= 40), since,
 group. `top()` = highest severity, then newest; the oldest lowest-severity entry is dropped first, an ERROR never (the new

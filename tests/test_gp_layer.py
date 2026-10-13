@@ -26,6 +26,7 @@ CALLERS = [
     "packages/greenhouse/gp_lvgl_status.yaml",
     "packages/greenhouse/lvgl_valve_test.yaml",
     "packages/greenhouse/screensaver_status.yaml",
+    "packages/greenhouse/lvgl_history.yaml",
 ]
 ENGINE_FILES = {
     "packages/greenhouse/irrigation.yaml",
@@ -88,7 +89,7 @@ def test_callers_use_gp() -> None:
         for target in (d["gp.run_zone"] for d in _walk(data) if "gp.run_zone" in d):
             assert target["id"] == "gp_greenhouse", rel
         reads = re.findall(r"id\((gp_\w+)\)", code)
-        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_service_mode", "gp_confirm_result"}, (rel, reads)
+        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_hist_seen", "gp_service_mode", "gp_confirm_result"}, (rel, reads)
 
 
 @pytest.mark.unit
@@ -217,7 +218,7 @@ def test_stop_and_deferred_start_are_documented_and_wired() -> None:
 
 @pytest.mark.unit
 def test_pure_headers() -> None:
-    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h", "deferred_start.h"):
+    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h", "deferred_start.h", "format_history.h"):
         text = (COMPONENT / name).read_text(encoding="utf-8")
         assert "esphome/" not in re.sub(r"namespace esphome::", "", text), f"{name} must stay free of ESPHome includes"
         assert not re.search(r'#include\s+"esphome/', text), name
