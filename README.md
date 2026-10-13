@@ -123,10 +123,11 @@ and Greenhouse like the real sensors.
   without `/dev/dri` does not hang.
 
 ## Examples
-Four complete, ready-to-copy device configs live in [`examples/`](examples/README.md); each is an entry file like
+Five complete, ready-to-copy device configs live in [`examples/`](examples/README.md); each is an entry file like
 `garden-pilot.yaml` with the display and touch screen:
 `minimal-1-bed.yaml` (one bed), `beds-with-pump.yaml` (three beds one at a time and a shared pump),
-`soil-sensors.yaml` (a probe per bed, wet beds are skipped) and `relay-module-8ch.yaml` (an 8-channel relay module).
+`soil-sensors.yaml` (a probe per bed, wet beds are skipped), `relay-module-8ch.yaml` (an 8-channel relay module) and
+`my-garden.yaml` (the author's setup on the LilyGO T-Relay-S3: three beds on a barrel plus a lawn and flowers on a pump).
 
 ```sh
 cp secrets.example.yaml examples/secrets.yaml
@@ -150,7 +151,7 @@ Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/comp
 
 ## Repository
 - `garden-pilot.yaml` — device entry file: a list of packages. `garden-pilot-sim.yaml` — the same packages for the PC emulator.
-- `examples/` — four complete device configs (see Examples above). `hardware/` — board profiles (breadboard, LilyGO T-Relay-S3: pins, relay drivers) and `sim.yaml` (PC emulator and config checks without a board); `packages/` — core (API, OTA, network, time), display and touch (device or SDL window), LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; one bed is enough (the greenhouse page still shows beds 1-3).
+- `examples/` — five complete device configs (see Examples above). `hardware/` — board profiles (breadboard, LilyGO T-Relay-S3: pins, relay drivers) and `sim.yaml` (PC emulator and config checks without a board); `packages/` — core (API, OTA, network, time), display and touch (device or SDL window), LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; one bed is enough (the greenhouse page still shows beds 1-3). Optional lawn / flower zones on a pump: `packages/lawn/` (commented-out blocks in `garden-pilot.yaml`, one `!include` per zone; Home Assistant only, no screen yet).
 - Irrigation is reached only through the `gp_*` layer (`components/gp/README.md`): the greenhouse page, valve test and Home Assistant use the same actions; Home Assistant gets one generic action set (`gp_run_zone`, `gp_enqueue_zone`, `gp_start_queue`, `gp_full_cycle`, `gp_stop_all`, `gp_reset_watchdog`, with `group` and a 1-based `zone`).
 - Watering schedules run on the device (`components/garden_schedule/README.md`): 2 slots by default (max 8), each with a start time, 7 day switches, a zone list and a run-time multiplier, edited in Home Assistant; they keep working without Home Assistant once the clock was set, catch up a run missed by a power cut within 60 minutes, and never repeat a zone that already completed.
 - `design/` — design system: rules, colour/type tokens, icons.

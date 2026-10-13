@@ -1,0 +1,110 @@
+# My garden (the author's setup, generic names): three greenhouse beds on a gravity-fed barrel, watered all at once,
+# plus a lawn and flower zone group on a pump, on the LilyGO T-Relay-S3 board profile.
+#
+# Relays (main board, R1..R6): R1-R3 greenhouse beds 1-3 (valves), R4 the lawn pump (switch a contactor or the pump's
+# own relay, not the motor directly), R5 "Lawn" zone valve, R6 "Flowers" zone valve.
+#
+# The limits are this setup's choice for a ~3 h gravity run (3 beds open together, 180 min each): gh_max_on_time 210min
+# and gh_bed_run_max 200 (200 x 60 s + 2 s <= 12600 s). The public defaults (60 min watchdog, 55 min run maximum) are
+# unchanged in packages/greenhouse/irrigation.yaml; a stuck valve here drains the barrel for at most 3.5 h.
+# The lawn keeps its package defaults: zone run maximum 55 min, watchdog 60 min, pump session limit 2 h (2 zones x
+# 55 min = 110 min). The greenhouse and the lawn are separate groups and can water at the same time (no interlock).
+# All six relays are on the main board, so the unverified expansion-board bit map of the profile is not needed.
+#
+# Copy secrets.example.yaml to examples/secrets.yaml (git-ignored) and fill in your values, then:
+#   uv run esphome run examples/my-garden.yaml
+# NOT run on a real board yet. See hardware/lilygo-t-relay-s3.yaml (header: what to verify) and examples/README.md.
+# `!include` paths here start with ../ because they resolve relative to this file; gp_root: ".." tells the packages
+# where the repository root (components/, the screensaver font) is.
+#
+# Active-low relay modules are NOT supported. This board's relays are driven high = on.
+# No air or soil sensors: the profile has no DHT / ADC pins, so no gh_sensors_* and no gh_screensaver_status.
+
+substitutions:
+  api_encryption_key: !secret api_encryption_key
+  ota_password: !secret ota_password
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  wifi_ap_password: !secret wifi_ap_password
+  # Path from this file to the repository root: the packages find components/ and the font through it.
+  gp_root: ".."
+  # Greenhouse: all beds at once from the gravity barrel, limits raised for a ~3 h run (see the header).
+  gh_max_parallel: "all"
+  gh_max_on_time: 210min
+  gh_bed_run_max: "200"
+  gh_bed_run_initial: "180"
+
+esphome:
+  name: gp-my-garden
+  friendly_name: GardenPilot my garden
+
+logger:
+  level: INFO
+
+packages:
+  # Board profile: pins, display/touch orientation and calibration. Pick exactly one.
+  hardware: !include ../hardware/lilygo-t-relay-s3.yaml
+
+  # Core: connectivity and clock.
+  core_api: !include ../packages/core/api.yaml
+  core_ota: !include ../packages/core/ota.yaml
+  core_network: !include ../packages/core/network.yaml
+  core_time: !include ../packages/core/time.yaml
+  core_diagnostics: !include ../packages/core/diagnostics.yaml
+
+  # Display + touch, then LVGL: base first, boot screen first among the pages.
+  display_touch: !include ../packages/display_touch.yaml
+  lvgl_base: !include ../packages/lvgl/base.yaml
+  lvgl_page_boot: !include ../packages/lvgl/page_boot.yaml
+  lvgl_page_home: !include ../packages/lvgl/page_home.yaml
+  lvgl_page_touch_test: !include ../packages/lvgl/page_touch_test.yaml
+  lvgl_page_lawn: !include ../packages/lvgl/page_lawn.yaml
+  lvgl_dialog_confirm: !include ../packages/lvgl/dialog_confirm.yaml
+  lvgl_screensaver: !include ../packages/lvgl/screensaver.yaml
+  lvgl_page_setup: !include ../packages/lvgl/page_setup.yaml
+  lvgl_page_network: !include ../packages/lvgl/page_network.yaml
+  lvgl_network_wifi: !include ../packages/lvgl/network_wifi_status.yaml
+  lvgl_boot_wifi: !include ../packages/lvgl/boot_wifi.yaml
+
+  # Irrigation group, then the beds in zone order, then the gp_* layer (screens and Home Assistant use it only).
+  # Greenhouse group without a pump (gravity barrel).
+  gh_irrigation: !include ../packages/greenhouse/irrigation.yaml
+  gh_bed_1: !include
+    file: ../packages/greenhouse/bed.yaml
+    vars: {bed: "1", bed_name: "Greenhouse bed 1", relay: "1"}
+  gh_bed_2: !include
+    file: ../packages/greenhouse/bed.yaml
+    vars: {bed: "2", bed_name: "Greenhouse bed 2", relay: "2"}
+  gh_bed_3: !include
+    file: ../packages/greenhouse/bed.yaml
+    vars: {bed: "3", bed_name: "Greenhouse bed 3", relay: "3"}
+
+  core_gp: !include ../packages/core/gp.yaml
+  core_gp_api: !include ../packages/core/gp_api.yaml
+  gh_gp: !include ../packages/greenhouse/gp.yaml
+  gh_lvgl_page: !include ../packages/greenhouse/lvgl_page.yaml
+  # No air / soil sensors here (see the header), so no gh_screensaver_status either (its status line reads their ids).
+  gh_gp_lvgl: !include ../packages/greenhouse/gp_lvgl_status.yaml
+  gh_valve_test: !include ../packages/greenhouse/lvgl_valve_test.yaml
+
+  # Device-side watering schedule of the greenhouse: a hub and two slots (off until switched on in Home Assistant).
+  # The lawn has no schedule yet; start it from Home Assistant (switch "Lawn irrigation").
+  gh_schedule: !include ../packages/greenhouse/schedule.yaml
+  gh_schedule_slot_1: !include
+    file: ../packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "1", start: "06:00:00"}
+  gh_schedule_slot_2: !include
+    file: ../packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "2", start: "07:00:00"}
+
+  # Lawn group: the pump on relay 4, then the zones in order (relays 5 and 6); lawn_gp comes last, after core_gp.
+  lawn_irrigation: !include
+    file: ../packages/lawn/irrigation.yaml
+    vars: {pump_relay: "4"}
+  lawn_zone_1: !include
+    file: ../packages/lawn/zone.yaml
+    vars: {zone: "1", zone_name: "Lawn", relay: "5"}
+  lawn_zone_2: !include
+    file: ../packages/lawn/zone.yaml
+    vars: {zone: "2", zone_name: "Flowers", relay: "6"}
+  lawn_gp: !include ../packages/lawn/gp.yaml
