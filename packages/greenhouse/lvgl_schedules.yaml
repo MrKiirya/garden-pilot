@@ -1,0 +1,534 @@
+# Greenhouse rows of the Schedules page (WATER tab): a master row (the "Greenhouse schedules" switch and the next run),
+# three slot rows per page (start time, today's word, days, zones, multiplier, an on/off pill) and PREV / NEXT in the
+# header when there are more than three slots. View only: the time, days, zones and multiplier are edited in Home
+# Assistant. Needs packages/lvgl/page_schedules.yaml (the page this extends) and packages/greenhouse/schedule.yaml
+# (hub gh_schedule, switch gh_schedules_on) plus its slots; also writes the Home "NEXT" label (gh_home_next_label) from
+# the schedule.
+#
+# A row toggle calls `garden_schedule.toggle_slot` (the slot's own enabled switch, so Home Assistant sees it); the
+# master pill toggles `gh_schedules_on`. LVGL is only touched by the click handlers and by a 1 s poller guarded by the
+# hub's `changed_since` (never from a hub trigger). The texts come from the pure helpers of the schedule component
+# (components/garden_schedule/schedule_format.h), so every lambda is one line. Slots past the page are hidden.
+
+lvgl:
+  pages:
+    - id: !extend schedules_page
+      widgets:
+        - label:
+            id: gh_sched_pager_label
+            x: 150
+            y: 5
+            hidden: true
+            text: "1/1"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - button:
+            id: gh_sched_btn_prev
+            x: 188
+            y: 1
+            width: 56
+            height: 20
+            hidden: true
+            bg_opa: TRANSP
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - globals.set:
+                  id: gh_sched_page
+                  value: !lambda "return id(gh_schedule)->page_step(id(gh_sched_page), 3, -1);"
+              - script.execute: gh_sched_refresh
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "PREV"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+        - button:
+            id: gh_sched_btn_next
+            x: 252
+            y: 1
+            width: 56
+            height: 20
+            hidden: true
+            bg_opa: TRANSP
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - globals.set:
+                  id: gh_sched_page
+                  value: !lambda "return id(gh_schedule)->page_step(id(gh_sched_page), 3, 1);"
+              - script.execute: gh_sched_refresh
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "NEXT"
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+        # --- Master row ---
+        - obj:
+            id: gh_sched_master
+            x: 8
+            y: 26
+            width: 304
+            height: 26
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  x: 8
+                  y: 2
+                  text: "GREENHOUSE"
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              - label:
+                  id: gh_sched_next_label
+                  x: 8
+                  y: 11
+                  text: "Next: --:--"
+                  text_font: montserrat_10
+                  text_color: 0xe5e2e1
+              - button:
+                  id: gh_sched_master_btn
+                  x: 232
+                  y: 0
+                  width: 68
+                  height: 24
+                  bg_opa: TRANSP
+                  border_width: 0
+                  shadow_width: 0
+                  pad_all: 0
+                  scrollable: false
+                  on_click:
+                    - switch.toggle: gh_schedules_on
+                    - script.execute: gh_sched_refresh
+                  widgets:
+                    - switch:
+                        id: gh_sched_master_sw
+                        align: CENTER
+                        width: 28
+                        height: 14
+                        clickable: false
+                        bg_color: 0x353534
+                        bg_opa: COVER
+                        border_width: 0
+                        radius: 7
+                        indicator:
+                          bg_opa: TRANSP
+                          checked:
+                            bg_color: 0x4caf50
+                            bg_opa: COVER
+                        knob:
+                          bg_color: 0xe5e2e1
+                          bg_opa: COVER
+        # --- Slot rows (3 per page) ---
+        - obj:
+            id: gh_sched_row1
+            x: 8
+            y: 55
+            width: 304
+            height: 43
+            hidden: true
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  id: gh_sched_row1_when
+                  x: 8
+                  y: 5
+                  text: "--:--"
+                  text_font: montserrat_12
+                  text_color: 0xe5e2e1
+              - label:
+                  id: gh_sched_row1_today
+                  x: 64
+                  y: 7
+                  text: ""
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+              - label:
+                  id: gh_sched_row1_detail
+                  x: 8
+                  y: 26
+                  text: ""
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              # The tappable end of the row (68 x 41); the pill inside is only drawn.
+              - button:
+                  id: gh_sched_row1_btn
+                  x: 232
+                  y: 0
+                  width: 68
+                  height: 41
+                  bg_opa: TRANSP
+                  border_width: 0
+                  shadow_width: 0
+                  pad_all: 0
+                  scrollable: false
+                  on_click:
+                    - garden_schedule.toggle_slot:
+                        id: gh_schedule
+                        index: !lambda "return id(gh_sched_page) * 3 + 0;"
+                    - script.execute: gh_sched_refresh
+                  widgets:
+                    - switch:
+                        id: gh_sched_row1_sw
+                        align: CENTER
+                        width: 28
+                        height: 14
+                        clickable: false
+                        bg_color: 0x353534
+                        bg_opa: COVER
+                        border_width: 0
+                        radius: 7
+                        indicator:
+                          bg_opa: TRANSP
+                          checked:
+                            bg_color: 0x4caf50
+                            bg_opa: COVER
+                        knob:
+                          bg_color: 0xe5e2e1
+                          bg_opa: COVER
+        - obj:
+            id: gh_sched_row2
+            x: 8
+            y: 101
+            width: 304
+            height: 43
+            hidden: true
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  id: gh_sched_row2_when
+                  x: 8
+                  y: 5
+                  text: "--:--"
+                  text_font: montserrat_12
+                  text_color: 0xe5e2e1
+              - label:
+                  id: gh_sched_row2_today
+                  x: 64
+                  y: 7
+                  text: ""
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+              - label:
+                  id: gh_sched_row2_detail
+                  x: 8
+                  y: 26
+                  text: ""
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              # The tappable end of the row (68 x 41); the pill inside is only drawn.
+              - button:
+                  id: gh_sched_row2_btn
+                  x: 232
+                  y: 0
+                  width: 68
+                  height: 41
+                  bg_opa: TRANSP
+                  border_width: 0
+                  shadow_width: 0
+                  pad_all: 0
+                  scrollable: false
+                  on_click:
+                    - garden_schedule.toggle_slot:
+                        id: gh_schedule
+                        index: !lambda "return id(gh_sched_page) * 3 + 1;"
+                    - script.execute: gh_sched_refresh
+                  widgets:
+                    - switch:
+                        id: gh_sched_row2_sw
+                        align: CENTER
+                        width: 28
+                        height: 14
+                        clickable: false
+                        bg_color: 0x353534
+                        bg_opa: COVER
+                        border_width: 0
+                        radius: 7
+                        indicator:
+                          bg_opa: TRANSP
+                          checked:
+                            bg_color: 0x4caf50
+                            bg_opa: COVER
+                        knob:
+                          bg_color: 0xe5e2e1
+                          bg_opa: COVER
+        - obj:
+            id: gh_sched_row3
+            x: 8
+            y: 147
+            width: 304
+            height: 43
+            hidden: true
+            bg_color: 0x1c1b1b
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0x3f4a3c
+            radius: 2
+            pad_all: 0
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  id: gh_sched_row3_when
+                  x: 8
+                  y: 5
+                  text: "--:--"
+                  text_font: montserrat_12
+                  text_color: 0xe5e2e1
+              - label:
+                  id: gh_sched_row3_today
+                  x: 64
+                  y: 7
+                  text: ""
+                  text_font: montserrat_10
+                  text_color: 0xbecab9
+              - label:
+                  id: gh_sched_row3_detail
+                  x: 8
+                  y: 26
+                  text: ""
+                  text_font: montserrat_8
+                  text_color: 0xbecab9
+              # The tappable end of the row (68 x 41); the pill inside is only drawn.
+              - button:
+                  id: gh_sched_row3_btn
+                  x: 232
+                  y: 0
+                  width: 68
+                  height: 41
+                  bg_opa: TRANSP
+                  border_width: 0
+                  shadow_width: 0
+                  pad_all: 0
+                  scrollable: false
+                  on_click:
+                    - garden_schedule.toggle_slot:
+                        id: gh_schedule
+                        index: !lambda "return id(gh_sched_page) * 3 + 2;"
+                    - script.execute: gh_sched_refresh
+                  widgets:
+                    - switch:
+                        id: gh_sched_row3_sw
+                        align: CENTER
+                        width: 28
+                        height: 14
+                        clickable: false
+                        bg_color: 0x353534
+                        bg_opa: COVER
+                        border_width: 0
+                        radius: 7
+                        indicator:
+                          bg_opa: TRANSP
+                          checked:
+                            bg_color: 0x4caf50
+                            bg_opa: COVER
+                        knob:
+                          bg_color: 0xe5e2e1
+                          bg_opa: COVER
+
+globals:
+  # first slot row of the page = page * 3 / the hub's last drawn view (0 = redraw at the next poll)
+  - id: gh_sched_page
+    type: size_t
+    initial_value: "0"
+    restore_value: false
+  - id: gh_sched_seen
+    type: uint32_t
+    initial_value: "0"
+    restore_value: false
+
+script:
+  - id: gh_sched_refresh
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: "return id(gh_schedule)->slot_count() == 0;"
+          then:
+            - lvgl.widget.show: sched_empty_label
+          else:
+            - lvgl.widget.hide: sched_empty_label
+      - lvgl.widget.update:
+          id: gh_sched_master_sw
+          state:
+            checked: !lambda "return id(gh_schedules_on).state;"
+      - lvgl.label.update:
+          id: gh_sched_next_label
+          text: !lambda "return \"Next: \" + id(gh_schedule)->next_run_short();"
+      - lvgl.label.update:
+          id: gh_home_next_label
+          text: !lambda "return id(gh_schedule)->next_run_short();"
+      - lvgl.label.update:
+          id: gh_sched_pager_label
+          text: !lambda "return id(gh_schedule)->page_label(id(gh_sched_page), 3);"
+      - if:
+          condition:
+            lambda: "return id(gh_schedule)->page_total(3) > 1;"
+          then:
+            - lvgl.widget.show: [gh_sched_pager_label, gh_sched_btn_prev, gh_sched_btn_next]
+          else:
+            - lvgl.widget.hide: [gh_sched_pager_label, gh_sched_btn_prev, gh_sched_btn_next]
+      - script.execute: gh_sched_row1_refresh
+      - script.execute: gh_sched_row2_refresh
+      - script.execute: gh_sched_row3_refresh
+  - id: gh_sched_row1_refresh
+    then:
+      - if:
+          condition:
+            lambda: "return id(gh_sched_page) * 3 + 0 < id(gh_schedule)->slot_count();"
+          then:
+            - lvgl.widget.show: gh_sched_row1
+            - lvgl.label.update:
+                id: gh_sched_row1_when
+                text: !lambda "return id(gh_schedule)->row_when(id(gh_sched_page) * 3 + 0);"
+            - lvgl.label.update:
+                id: gh_sched_row1_today
+                text: !lambda "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 0);"
+            - lvgl.label.update:
+                id: gh_sched_row1_detail
+                text: !lambda "return id(gh_schedule)->row_detail(id(gh_sched_page) * 3 + 0);"
+            - lvgl.widget.update:
+                id: gh_sched_row1_sw
+                state:
+                  checked: !lambda "return id(gh_schedule)->row_enabled(id(gh_sched_page) * 3 + 0);"
+            - if:
+                condition:
+                  lambda: "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 0) == \"done\";"
+                then:
+                  - lvgl.label.update:
+                      id: gh_sched_row1_today
+                      text_color: 0x78dc77
+                else:
+                  - if:
+                      condition:
+                        lambda: "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 0) == \"missed\";"
+                      then:
+                        - lvgl.label.update:
+                            id: gh_sched_row1_today
+                            text_color: 0xffb870
+                      else:
+                        - lvgl.label.update:
+                            id: gh_sched_row1_today
+                            text_color: 0xbecab9
+          else:
+            - lvgl.widget.hide: gh_sched_row1
+  - id: gh_sched_row2_refresh
+    then:
+      - if:
+          condition:
+            lambda: "return id(gh_sched_page) * 3 + 1 < id(gh_schedule)->slot_count();"
+          then:
+            - lvgl.widget.show: gh_sched_row2
+            - lvgl.label.update:
+                id: gh_sched_row2_when
+                text: !lambda "return id(gh_schedule)->row_when(id(gh_sched_page) * 3 + 1);"
+            - lvgl.label.update:
+                id: gh_sched_row2_today
+                text: !lambda "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 1);"
+            - lvgl.label.update:
+                id: gh_sched_row2_detail
+                text: !lambda "return id(gh_schedule)->row_detail(id(gh_sched_page) * 3 + 1);"
+            - lvgl.widget.update:
+                id: gh_sched_row2_sw
+                state:
+                  checked: !lambda "return id(gh_schedule)->row_enabled(id(gh_sched_page) * 3 + 1);"
+            - if:
+                condition:
+                  lambda: "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 1) == \"done\";"
+                then:
+                  - lvgl.label.update:
+                      id: gh_sched_row2_today
+                      text_color: 0x78dc77
+                else:
+                  - if:
+                      condition:
+                        lambda: "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 1) == \"missed\";"
+                      then:
+                        - lvgl.label.update:
+                            id: gh_sched_row2_today
+                            text_color: 0xffb870
+                      else:
+                        - lvgl.label.update:
+                            id: gh_sched_row2_today
+                            text_color: 0xbecab9
+          else:
+            - lvgl.widget.hide: gh_sched_row2
+  - id: gh_sched_row3_refresh
+    then:
+      - if:
+          condition:
+            lambda: "return id(gh_sched_page) * 3 + 2 < id(gh_schedule)->slot_count();"
+          then:
+            - lvgl.widget.show: gh_sched_row3
+            - lvgl.label.update:
+                id: gh_sched_row3_when
+                text: !lambda "return id(gh_schedule)->row_when(id(gh_sched_page) * 3 + 2);"
+            - lvgl.label.update:
+                id: gh_sched_row3_today
+                text: !lambda "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 2);"
+            - lvgl.label.update:
+                id: gh_sched_row3_detail
+                text: !lambda "return id(gh_schedule)->row_detail(id(gh_sched_page) * 3 + 2);"
+            - lvgl.widget.update:
+                id: gh_sched_row3_sw
+                state:
+                  checked: !lambda "return id(gh_schedule)->row_enabled(id(gh_sched_page) * 3 + 2);"
+            - if:
+                condition:
+                  lambda: "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 2) == \"done\";"
+                then:
+                  - lvgl.label.update:
+                      id: gh_sched_row3_today
+                      text_color: 0x78dc77
+                else:
+                  - if:
+                      condition:
+                        lambda: "return id(gh_schedule)->row_today(id(gh_sched_page) * 3 + 2) == \"missed\";"
+                      then:
+                        - lvgl.label.update:
+                            id: gh_sched_row3_today
+                            text_color: 0xffb870
+                      else:
+                        - lvgl.label.update:
+                            id: gh_sched_row3_today
+                            text_color: 0xbecab9
+          else:
+            - lvgl.widget.hide: gh_sched_row3
+
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: "return id(gh_schedule)->changed_since(id(gh_sched_seen));"
+          then:
+            - script.execute: gh_sched_refresh

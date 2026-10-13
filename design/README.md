@@ -29,7 +29,7 @@ GardenPilot is the on-device UI for a greenhouse and lawn irrigation controller:
 - `green` / `green-fill` mean **active water or the current page**: Watering text, RUN buttons, the running bed, the active nav button, greenhouse soil bar. Text on `green-fill` is `on-green`.
 - `blue` / `blue-fill` mean **water-as-resource and the queue**: lawn bar, humidity icon, RUN QUEUE, WATER NOW, a queued bed. Text on `blue-fill` is `on-blue`.
 - `error-fill` with `on-error` is reserved for **STOP**. Nothing else is red.
-- `amber` / `amber-fill` are reserved for warnings and a paused bed; no built screen uses them yet.
+- `amber` / `amber-fill` are reserved for warnings and a paused bed; the Schedules page uses `amber` text for a missed slot.
 - `border` (1px) outlines cards and draws dividers. It is decorative (1.85:1 on `card`). State is always shown with a fill colour plus a word, never by the outline alone.
 - Contrast: every text pair above passes 4.5:1 (`on-green` 4.58, `on-blue` 4.57 are the tightest).
 
@@ -68,6 +68,7 @@ Five stroke icons (house, leaf, drop, gear, thermo) on a 24-unit grid, 2.2 strok
 - **Setup - Service - Valves** (`valve_test_page`): built (D18). Beds 1-3 only (no Lawn/Pump, no per-row CLOSE), TEST per bed (10 s max from the tap, ~8 s open), STOP, EXIT SERVICE.
 - **Setup - Network** (`network_page`): built (D11). Status line, WI-FI / HOME ASSISTANT / IP / ESPHOME / UPTIME rows, BACK, RESTART.
 - **Confirm dialog** (`gp_confirm`, top layer): built (D14). Dim layer (`bg` at 65 %), card, CANCEL ghost + one action button: `error-fill` for stop actions only, `green-fill` for other confirmations. ASCII-only texts.
+- **Schedules** (`schedules_page`): built (task 026, WATER tab, view only). Header "Schedules" (PREV / NEXT with "1/3" at the right when more than 3 slots), master row (`GREENHOUSE`, next run, switch pill), 3 slot rows of 43 px (start time `value`, today's word `done` green / `missed` amber, days - zones - multiplier as `caption`, switch pill; the tappable end is 68x41, the pill is only drawn), nav with WATER active. First built use of `amber` (a missed slot). Ids `gh_sched_*`, `sched_*`.
 - **Lawn** (`lawn_page`): concept. Headline soil bar, status card with AUTO-MODE `Switch`, WATER NOW / HOME. No backing entities exist yet.
 
 Component notes keep the LVGL ids (`gh_btn_run_bed1`, `home_clock_label`…) so a design change can be traced to the YAML that implements it.

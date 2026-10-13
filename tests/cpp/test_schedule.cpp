@@ -4,6 +4,7 @@
 #include <string>
 
 #include "garden_schedule/schedule_core.h"
+#include "garden_schedule/schedule_format.h"
 namespace gs = esphome::garden_schedule;
 
 namespace {
@@ -629,4 +630,116 @@ TEST_CASE("a_stopped_slot_does_not_fire_again_today_but_fires_tomorrow") {
   CHECK(fx.at(MON, 12, 0, 0).fires.empty());
   fx.at(MON + 1, 5, 59, 59);
   CHECK(fx.at(MON + 1, 6, 0, 0).fires.size() == 1);
+}
+
+// ---- data for the screens (task 026): pure texts, today word, pager and the view hash ----
+
+namespace {
+
+bool ascii(const std::string &s) {
+  for (char c : s) {
+    if (c < 0x20 || c > 0x7E)
+      return false;
+  }
+  return true;
+}
+
+gs::SlotView view(unsigned hour = 6, unsigned minute = 0, uint8_t days = gs::ALL_DAYS, uint32_t zones = 0x5, uint8_t pct = 150) {
+  gs::SlotView v;
+  v.number = 1;
+  v.enabled = true;
+  v.start_minute = static_cast<uint16_t>(hour * 60 + minute);
+  v.days_mask = days;
+  v.zone_mask = zones;
+  v.pct = pct;
+  return v;
+}
+
+}  // namespace
+
+TEST_CASE("schedule_texts") {
+  CHECK(gs::days_text(0x7F) == "Daily");
+  CHECK(gs::days_text(0x1F) == "Mon-Fri");
+  CHECK(gs::days_text(0x60) == "Sat Sun");
+  CHECK(gs::days_text(MON_WED_FRI) == "Mon Wed Fri");
+  CHECK(gs::days_text(0x00) == "Never");
+  CHECK(gs::days_text(0x80) == "Never");  // bit 7 is not a day
+  CHECK(gs::days_text(0x01) == "Mon");
+  CHECK(gs::days_text(0x0F) == "Mon-Thu");
+  CHECK(gs::days_text(0x1B) == "Mon Tue Thu Fri");
+  CHECK(gs::days_text(0x77) == "Mon-Wed Fri-Sun");
+  CHECK(gs::zones_text(0x7, 3) == "All");
+  CHECK(gs::zones_text(0x5, 3) == "B1 B3");
+  CHECK(gs::zones_text(0x2, 3) == "B2");
+  CHECK(gs::zones_text(0x3F, 6) == "All");
+  CHECK(gs::zones_text(0x1F, 6) == "B1 B2 B3 B4 B5");
+  CHECK(gs::zones_text(0x7F, 8) == "7 zones");  // more than 6 listed zones: a count
+  CHECK(gs::zones_text(0x0, 3) == "None");
+  CHECK(gs::detail_text(view(6, 0, 0x1F, 0x5), 3) == "Mon-Fri  B1 B3  150%");
+  CHECK(gs::row_text(view(6, 0, 0x1F, 0x5), 3) == "06:00  Mon-Fri  B1 B3  150%");
+  CHECK(gs::row_text(view(18, 5, 0x7F, 0x7, 100), 3) == "18:05  Daily  All  100%");
+  CHECK(std::string(gs::today_word(gs::Today::NONE)).empty());
+  CHECK(std::string(gs::today_word(gs::Today::RUNNING)) == "running");
+  CHECK(std::string(gs::today_word(gs::Today::DONE)) == "done");
+  CHECK(std::string(gs::today_word(gs::Today::MISSED)) == "missed");
+  CHECK(std::string(gs::today_word(gs::Today::SKIPPED)) == "skipped");
+  CHECK(std::string(gs::today_word(gs::Today::STOPPED)) == "stopped");
+  const int32_t today = MON;
+  CHECK(gs::next_short(true, today, 6 * 60, today) == "06:00");
+  CHECK(gs::next_short(true, today + 1, 6 * 60, today) == "Tue 06:00");
+  CHECK(gs::next_short(true, today + 6, 23 * 60 + 59, today) == "Sun 23:59");
+  CHECK(gs::next_short(false, 0, 0, today) == "--:--");
+  // the worst case still fits one caption line (44 chars) and the whole row text stays below ROW_MAX
+  const gs::SlotView worst = view(23, 59, 0x5B, 0x3F & ~0x20u, 200);
+  CHECK(ascii(gs::row_text(worst, 6)) && gs::row_text(worst, 6).size() < gs::ROW_MAX);
+  CHECK(gs::detail_text(worst, 32).size() <= 44);
+  for (unsigned mask = 0; mask < 256; mask++) {
+    const std::string d = gs::days_text(static_cast<uint8_t>(mask));
+    CHECK(ascii(d) && !d.empty() && d.size() <= 19);
+  }
+}
+
+TEST_CASE("schedule_pager") {
+  CHECK(gs::page_count(0, 3) == 1);
+  CHECK(gs::page_count(3, 3) == 1);
+  CHECK(gs::page_count(4, 3) == 2);
+  CHECK(gs::page_count(8, 3) == 3);
+  CHECK(gs::step_page(0, 3, 8, 1) == 1);
+  CHECK(gs::step_page(2, 3, 8, 1) == 0);   // wraps
+  CHECK(gs::step_page(0, 3, 8, -1) == 2);  // wraps
+  CHECK(gs::step_page(5, 3, 2, 1) == 0);   // a stale page is folded back
+  CHECK(gs::pager_text(0, 3, 8) == "1/3");
+  CHECK(gs::pager_text(2, 3, 8) == "3/3");
+  CHECK(gs::pager_text(0, 3, 0) == "1/1");
+}
+
+TEST_CASE("schedule_view_hash") {
+  std::vector<gs::SlotView> base{view(6, 0), view(7, 30, 0x1F, 0x1, 100)};
+  const uint32_t h = gs::view_hash(base, true, "Tue 06:00");
+  CHECK(h != 0u);
+  CHECK(gs::view_hash(base, true, "Tue 06:00") == h);  // deterministic
+  auto changed = [&](auto edit) {
+    std::vector<gs::SlotView> v = base;
+    edit(v);
+    return gs::view_hash(v, true, "Tue 06:00") != h;
+  };
+  CHECK(changed([](std::vector<gs::SlotView> &v) { v[1].enabled = false; }));
+  CHECK(changed([](std::vector<gs::SlotView> &v) { v[1].start_minute += 1; }));
+  CHECK(changed([](std::vector<gs::SlotView> &v) { v[1].days_mask = 0x7F; }));
+  CHECK(changed([](std::vector<gs::SlotView> &v) { v[1].zone_mask = 0x3; }));
+  CHECK(changed([](std::vector<gs::SlotView> &v) { v[0].pct = 120; }));
+  CHECK(changed([](std::vector<gs::SlotView> &v) { v[0].today = gs::Today::DONE; }));
+  CHECK(changed([](std::vector<gs::SlotView> &v) { v.pop_back(); }));
+  CHECK(gs::view_hash(base, false, "Tue 06:00") != h);  // master
+  CHECK(gs::view_hash(base, true, "--:--") != h);       // next run
+  CHECK(!changed([](std::vector<gs::SlotView> &) {}));
+  CHECK(gs::view_hash({}, true, "--:--") != 0u);
+}
+
+TEST_CASE("scheduler_today_accessor") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0);
+  CHECK(!fx.s.clock_valid());
+  fx.at(MON, 5, 0, 0);
+  CHECK(fx.s.today() == MON);
 }

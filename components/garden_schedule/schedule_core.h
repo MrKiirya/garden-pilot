@@ -226,6 +226,8 @@ class Scheduler {
     this->states_[slot].pending = pending;
   }
   bool clock_valid() const { return this->have_prev_; }
+  /// Local day number of the last valid tick (0 before the first one).
+  int32_t today() const { return this->prev_.local.day; }
 
   /// Evaluates one clock reading against the slot configuration (slot index = position in `cfg`).
   void tick(const Tick &t, const SlotConfig *cfg, size_t n, Events &out) {

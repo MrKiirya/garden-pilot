@@ -100,16 +100,6 @@ inline std::string home_status(const GroupSummary &s) {
   return "Idle";
 }
 
-/// Home "next": "--:--" or "MM:SS" of the queued time
-inline std::string home_next(const GroupSummary &s) {
-  if (s.queue_time == 0 && s.queue_length == 0)
-    return "--:--";
-  char buf[16];
-  std::snprintf(buf, sizeof(buf), "%02u:%02u", static_cast<unsigned>((s.queue_time % 3600U) / 60U),
-                static_cast<unsigned>(s.queue_time % 60U));
-  return buf;
-}
-
 /// Home Assistant status text: "Idle" / "Watering B1 B3" / "Locked"
 inline std::string ha_status(const GroupSummary &s) {
   if (s.watchdog_tripped)

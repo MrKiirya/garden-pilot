@@ -17,6 +17,8 @@ TOKENIZED_PAGES = [
     "packages/sim/page_board.yaml",
     "packages/sim/sensors_lvgl.yaml",
     "packages/lvgl/page_setup.yaml",
+    "packages/lvgl/page_schedules.yaml",
+    "packages/greenhouse/lvgl_schedules.yaml",
     "packages/lvgl/page_network.yaml",
     "packages/lvgl/dialog_confirm.yaml",
     "packages/lvgl/network_wifi_status.yaml",

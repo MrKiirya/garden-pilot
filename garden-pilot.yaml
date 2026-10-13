@@ -50,6 +50,7 @@ packages:
   lvgl_page_home: !include packages/lvgl/page_home.yaml
   lvgl_page_touch_test: !include packages/lvgl/page_touch_test.yaml
   lvgl_page_lawn: !include packages/lvgl/page_lawn.yaml
+  lvgl_page_schedules: !include packages/lvgl/page_schedules.yaml
   # Confirm dialog (top layer), Setup and Network pages. The Network page needs core_diagnostics + the dialog.
   lvgl_dialog_confirm: !include packages/lvgl/dialog_confirm.yaml
   # Screensaver overlay after N idle minutes (substitution screensaver_timeout, default 5min); needs the dialog and
@@ -108,6 +109,8 @@ packages:
   gh_schedule_slot_2: !include
     file: packages/greenhouse/schedule_slot.yaml
     vars: {slot: "2", start: "07:00:00"}
+  # Schedules page rows (WATER tab) and the Home "next" label; needs lvgl_page_schedules and gh_schedule.
+  gh_lvgl_schedules: !include packages/greenhouse/lvgl_schedules.yaml
 
   # Optional: touch dot / coord updates on press. Comment out to disable (overlay script stays no-op).
   touch_dot_test: !include packages/touch_dot_test.yaml
