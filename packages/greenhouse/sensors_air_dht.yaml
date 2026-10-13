@@ -26,7 +26,7 @@ sensor:
               id: gh_greenhouse_t_label
               text: !lambda |-
                 char buf[32];
-                sprintf(buf, "Air: %.1f C", x);
+                sprintf(buf, "%.1fC", x);
                 return std::string(buf);
     humidity:
       id: gh_air_humidity
@@ -44,5 +44,5 @@ sensor:
               id: gh_greenhouse_rh_label
               text: !lambda |-
                 char buf[32];
-                sprintf(buf, "RH: %.0f %%", x);
+                sprintf(buf, "%.0f%%", x);
                 return std::string(buf);

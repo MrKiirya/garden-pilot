@@ -7,10 +7,12 @@
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import gp, switch
+from esphome.components import gp, sensor, switch
 
 DEPENDENCIES = ["gp"]
 MULTI_CONF = True
+
+CONF_SOIL_SENSOR_ID = "soil_sensor_id"
 
 CONFIG_SCHEMA = (
     switch.switch_schema(gp.GpZoneSwitch, default_restore_mode="ALWAYS_OFF")
@@ -18,6 +20,8 @@ CONFIG_SCHEMA = (
         {
             cv.Required(gp.CONF_GROUP): cv.use_id(gp.GpGroup),
             cv.Required(gp.CONF_POSITION): cv.int_range(min=1, max=16),
+            # soil moisture of the zone: reports only, shown on its card
+            cv.Optional(CONF_SOIL_SENSOR_ID): cv.use_id(sensor.Sensor),
         }
     )
     .extend(cv.COMPONENT_SCHEMA)
@@ -29,3 +33,7 @@ async def to_code(config):
     await cg.register_component(var, config)
     cg.add(var.set_group(await cg.get_variable(config[gp.CONF_GROUP])))
     cg.add(var.set_zone(config[gp.CONF_POSITION] - 1))
+    if CONF_SOIL_SENSOR_ID in config:
+        group = await cg.get_variable(config[gp.CONF_GROUP])
+        soil = await cg.get_variable(config[CONF_SOIL_SENSOR_ID])
+        cg.add(group.set_zone_soil(config[gp.CONF_POSITION] - 1, soil))

@@ -243,7 +243,8 @@ def test_device_only_packages_not_in_sim() -> None:
 
 
 TOKENIZED_TEXT_FILES = [SETUP, NETWORK, DIALOG, WIFI, BOOT, "packages/greenhouse/lvgl_valve_test.yaml",
-                        "packages/lvgl/screensaver.yaml", "packages/greenhouse/screensaver_status.yaml"]
+                        "packages/lvgl/screensaver.yaml", "packages/greenhouse/screensaver_status.yaml",
+                        GH_PAGE, "packages/lvgl/card_bed.yaml", "packages/lvgl/card_bed_refresh.yaml"]
 
 
 @pytest.mark.parametrize("rel", TOKENIZED_TEXT_FILES)

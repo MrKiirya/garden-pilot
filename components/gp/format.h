@@ -11,6 +11,7 @@
 #include <string>
 
 #include "zone_model.h"
+#include "format_screens.h"
 
 namespace esphome::gp::fmt {
 
@@ -36,60 +37,6 @@ inline std::string bed_list(const GroupSummary &s) {
   return out;
 }
 }  // namespace detail
-
-/// "Watchdog: locked" / "Running: B1 B3" / "Irrigation: idle"
-inline std::string status_line(const GroupSummary &s) {
-  if (s.watchdog_tripped)
-    return "Watchdog: locked";
-  if (s.active_count > 0)
-    return "Running:" + detail::bed_list(s);
-  return "Irrigation: idle";
-}
-
-/// "AA:on  Q:2"
-inline std::string modes_line(const GroupSummary &s) {
-  char buf[32];
-  std::snprintf(buf, sizeof(buf), "AA:%s  Q:%u", s.auto_advance ? "on" : "off", static_cast<unsigned>(s.queue_length));
-  return buf;
-}
-
-/// "Dur: B1 5  B2 5  B3 5 min" (run durations in minutes)
-inline std::string durations_line(const GroupModel &m) {
-  std::string out = "Dur:";
-  const size_t count = m.summary().zone_count;
-  for (size_t i = 0; i < count; i++) {
-    char one[24];
-    std::snprintf(one, sizeof(one), "%sB%u %.0f", i == 0 ? " " : "  ", static_cast<unsigned>(i + 1),
-                  static_cast<double>(m.zone(i).run_duration) / 60.0);
-    if (out.size() + std::char_traits<char>::length(one) + 4 >= LABEL_MAX)
-      break;
-    out += one;
-  }
-  return out + " min";
-}
-
-/// "Zone left: 00:01:05" (the smallest time left of the active zones)
-inline std::string zone_left_line(const GroupSummary &s) {
-  return "Zone left: " + (s.has_zone_left ? detail::hms(s.zone_left) : std::string("--:--:--"));
-}
-
-/// "Total left: 01:02:05" (the group's current operation)
-inline std::string total_left_line(const GroupSummary &s) {
-  return "Total left: " + (s.has_total_left ? detail::hms(s.total_left) : std::string("--:--:--"));
-}
-
-/// "Queue: (empty)" / "Queue: 00:02:05 next B2" / "Queue: 00:02:05"
-inline std::string queue_line(const GroupSummary &s) {
-  if (s.queue_time == 0 && s.queue_length == 0)
-    return "Queue: (empty)";
-  std::string out = "Queue: " + detail::hms(s.queue_time);
-  if (s.next_zone >= 0) {
-    char one[16];
-    std::snprintf(one, sizeof(one), " next B%u", static_cast<unsigned>(s.next_zone + 1));
-    out += one;
-  }
-  return out;
-}
 
 /// Home status: "Alarm" / "Watering" / "Idle"
 inline std::string home_status(const GroupSummary &s) {

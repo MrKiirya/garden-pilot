@@ -1,15 +1,86 @@
-# Greenhouse labels from the gp_* read model (components/gp/README.md): the greenhouse page and the Home card. Needs
-# gh_gp (group gp_greenhouse), gh_lvgl_page and lvgl_page_home, plus core_api for the Home Assistant icon.
-# A 1 s poller (LVGL is never updated from a gp callback or trigger: they can fire before
-# LVGL is ready). The label texts
-# come from gp::fmt (components/gp/format.h), so every lambda is one line. The labels are only redrawn when the model's
-# revision changed since the previous poll.
+# Greenhouse labels from the gp_* read model (components/gp/README.md): the bed cards of the greenhouse page and the
+# Home card. Needs gh_gp (group gp_greenhouse), gh_lvgl_page and lvgl_page_home, plus core_api for the Home
+# Assistant icon. A 1 s poller (LVGL is never updated from a gp callback or trigger: they can fire before LVGL is
+# ready). The first run places and sizes the cards (the zone count is known by then), later runs only fill them.
+# Card texts come from gp::fmt (components/gp/format_screens.h), so every lambda is one line. Labels are only
+# redrawn when the model's revision changed since the previous poll.
 
 globals:
   - id: gp_gh_seen
     type: uint32_t
     initial_value: "0"
     restore_value: false
+  # the cards have been placed (slots past the zone count hidden, compact grid for 4-6 beds)
+  - id: gp_gh_laid_out
+    type: bool
+    initial_value: "false"
+    restore_value: false
+
+# One update script per card slot (and one for the bed detail page copy), see packages/lvgl/card_bed_refresh.yaml.
+script:
+  - !include
+    file: ../lvgl/card_bed_refresh.yaml
+    vars:
+      p: gh
+      group: gp_greenhouse
+      slot: "1"
+      count: "id(gp_greenhouse)->summary().zone_count"
+      idx: "0"
+      zone: "0"
+  - !include
+    file: ../lvgl/card_bed_refresh.yaml
+    vars:
+      p: gh
+      group: gp_greenhouse
+      slot: "2"
+      count: "id(gp_greenhouse)->summary().zone_count"
+      idx: "1"
+      zone: "1"
+  - !include
+    file: ../lvgl/card_bed_refresh.yaml
+    vars:
+      p: gh
+      group: gp_greenhouse
+      slot: "3"
+      count: "id(gp_greenhouse)->summary().zone_count"
+      idx: "2"
+      zone: "2"
+  - !include
+    file: ../lvgl/card_bed_refresh.yaml
+    vars:
+      p: gh
+      group: gp_greenhouse
+      slot: "4"
+      count: "id(gp_greenhouse)->summary().zone_count"
+      idx: "3"
+      zone: "3"
+  - !include
+    file: ../lvgl/card_bed_refresh.yaml
+    vars:
+      p: gh
+      group: gp_greenhouse
+      slot: "5"
+      count: "id(gp_greenhouse)->summary().zone_count"
+      idx: "4"
+      zone: "4"
+  - !include
+    file: ../lvgl/card_bed_refresh.yaml
+    vars:
+      p: gh
+      group: gp_greenhouse
+      slot: "6"
+      count: "id(gp_greenhouse)->summary().zone_count"
+      idx: "5"
+      zone: "5"
+  - !include
+    file: ../lvgl/card_bed_refresh.yaml
+    vars:
+      p: gh
+      group: gp_greenhouse
+      slot: "detail"
+      count: "1"
+      idx: "0"
+      zone: "id(gh_detail_zone)"
 
 interval:
   - interval: 1s
@@ -18,24 +89,56 @@ interval:
           condition:
             lambda: "return id(gp_greenhouse)->changed_since(id(gp_gh_seen));"
           then:
-            - lvgl.label.update:
-                id: gh_greenhouse_irr_main
-                text: !lambda "return gp::fmt::status_line(id(gp_greenhouse)->summary());"
-            - lvgl.label.update:
-                id: gh_greenhouse_irr_modes
-                text: !lambda "return gp::fmt::modes_line(id(gp_greenhouse)->summary());"
-            - lvgl.label.update:
-                id: gh_greenhouse_run_dur_hint
-                text: !lambda "return gp::fmt::durations_line(id(gp_greenhouse)->model());"
-            - lvgl.label.update:
-                id: gh_greenhouse_t_left_zone
-                text: !lambda "return gp::fmt::zone_left_line(id(gp_greenhouse)->summary());"
-            - lvgl.label.update:
-                id: gh_greenhouse_t_left_total
-                text: !lambda "return gp::fmt::total_left_line(id(gp_greenhouse)->summary());"
-            - lvgl.label.update:
-                id: gh_greenhouse_queue_hint
-                text: !lambda "return gp::fmt::queue_line(id(gp_greenhouse)->summary());"
+            - if:
+                condition:
+                  lambda: "return !id(gp_gh_laid_out);"
+                then:
+                  - script.execute:
+                      id: gh_card1_update
+                      layout: true
+                  - script.execute:
+                      id: gh_card2_update
+                      layout: true
+                  - script.execute:
+                      id: gh_card3_update
+                      layout: true
+                  - script.execute:
+                      id: gh_card4_update
+                      layout: true
+                  - script.execute:
+                      id: gh_card5_update
+                      layout: true
+                  - script.execute:
+                      id: gh_card6_update
+                      layout: true
+                  - script.execute:
+                      id: gh_carddetail_update
+                      layout: true
+                  - globals.set:
+                      id: gp_gh_laid_out
+                      value: "true"
+                else:
+                  - script.execute:
+                      id: gh_card1_update
+                      layout: false
+                  - script.execute:
+                      id: gh_card2_update
+                      layout: false
+                  - script.execute:
+                      id: gh_card3_update
+                      layout: false
+                  - script.execute:
+                      id: gh_card4_update
+                      layout: false
+                  - script.execute:
+                      id: gh_card5_update
+                      layout: false
+                  - script.execute:
+                      id: gh_card6_update
+                      layout: false
+                  - script.execute:
+                      id: gh_carddetail_update
+                      layout: false
             - lvgl.label.update:
                 id: gh_home_irr_status
                 text: !lambda "return gp::fmt::home_status(id(gp_greenhouse)->summary());"

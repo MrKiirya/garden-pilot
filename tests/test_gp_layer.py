@@ -23,6 +23,8 @@ CORE_GP_API = "packages/core/gp_api.yaml"
 GH_GP = "packages/greenhouse/gp.yaml"
 CALLERS = [
     "packages/greenhouse/lvgl_page.yaml",
+    "packages/lvgl/card_bed.yaml",
+    "packages/lvgl/card_bed_refresh.yaml",
     "packages/greenhouse/gp_lvgl_status.yaml",
     "packages/greenhouse/lvgl_valve_test.yaml",
     "packages/greenhouse/screensaver_status.yaml",
@@ -86,9 +88,9 @@ def test_callers_use_gp() -> None:
         assert all(k.startswith("gp.") for k in keys), (rel, keys)
         assert not re.search(r"id\(gh_zones|gh_zones|board_relay|sprinkler", code), rel
         for target in (d["gp.run_zone"] for d in _walk(data) if "gp.run_zone" in d):
-            assert target["id"] == "gp_greenhouse", rel
+            assert target["id"] in ("gp_greenhouse", "${group}"), rel  # the card template takes the group as a var
         reads = re.findall(r"id\((gp_\w+)\)", code)
-        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_service_mode", "gp_confirm_result"}, (rel, reads)
+        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_gh_laid_out", "gp_service_mode", "gp_confirm_result"}, (rel, reads)
 
 
 @pytest.mark.unit
@@ -217,7 +219,7 @@ def test_stop_and_deferred_start_are_documented_and_wired() -> None:
 
 @pytest.mark.unit
 def test_pure_headers() -> None:
-    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h", "deferred_start.h"):
+    for name in ("zone_model.h", "alerts.h", "format.h", "format_screens.h", "layout.h", "history.h", "engine.h", "deferred_start.h"):
         text = (COMPONENT / name).read_text(encoding="utf-8")
         assert "esphome/" not in re.sub(r"namespace esphome::", "", text), f"{name} must stay free of ESPHome includes"
         assert not re.search(r'#include\s+"esphome/', text), name

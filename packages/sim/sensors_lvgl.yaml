@@ -21,7 +21,7 @@ interval:
                 id: gh_greenhouse_t_label
                 text: !lambda |-
                   char buf[32];
-                  snprintf(buf, sizeof(buf), "Air: %.1f C", id(gh_air_temperature).state);
+                  snprintf(buf, sizeof(buf), "%.1fC", id(gh_air_temperature).state);
                   return std::string(buf);
       - if:
           condition:
@@ -37,7 +37,7 @@ interval:
                 id: gh_greenhouse_rh_label
                 text: !lambda |-
                   char buf[32];
-                  snprintf(buf, sizeof(buf), "RH: %.0f %%", id(gh_air_humidity).state);
+                  snprintf(buf, sizeof(buf), "%.0f%%", id(gh_air_humidity).state);
                   return std::string(buf);
       - if:
           condition:
@@ -56,5 +56,5 @@ interval:
                 id: gh_greenhouse_soil_hint
                 text: !lambda |-
                   char buf[40];
-                  snprintf(buf, sizeof(buf), "Soil: %.0f %%", id(gh_soil_moisture_pct).state);
+                  snprintf(buf, sizeof(buf), "%.0f%%", id(gh_soil_moisture_pct).state);
                   return std::string(buf);

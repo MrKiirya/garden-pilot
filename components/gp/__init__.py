@@ -13,7 +13,7 @@ from esphome.components import time as time_
 from esphome.const import CONF_ID, CONF_NAME, CONF_TIME_ID, CONF_TRIGGER_ID
 from esphome.core import CORE
 
-AUTO_LOAD = ["switch", "time"]
+AUTO_LOAD = ["sensor", "switch", "time"]
 CODEOWNERS = []
 
 CONF_GROUPS = "groups"
