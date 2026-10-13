@@ -324,14 +324,14 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   fit helper; available widgets come from the enabled packages, their order is set in SETUP and stored on the
   device.
 - Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
-  layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
-  LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the
+  layer, `gp_confirm`) follow the tokens, and so does `schedules_page` (WATER tab, task 026: master row, three slot rows per page
+  with PREV / NEXT, view only). `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
+  LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → schedules (`lawn_page` stays included but has no entry point until the lawn task or the Home widgets give it one), SETUP → setup (its DISPLAY tile opens the
   touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). STOP on the Greenhouse page and RESTART on the Network page ask
   through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
   only, so UI texts are ASCII (`-`, `...`). Version, uptime, Wi-Fi and the restart button are `internal: true`.
-- Known UI defects: the Home "NEXT" label shows the remaining queue time (hours dropped), not the next scheduled
-  run. Task 019 provides the data ("Greenhouse next run" / "next run text" and `next_run()` / `day_runs()` on the
-  schedule hub); the label and the now/next + timeline widget are stage 9 screen tasks.
+- The Home "NEXT" label shows the next scheduled run (`06:00` today, `Tue 06:00`, `--:--`), written by the Schedules
+  page package from the schedule hub (task 026). The now/next + timeline widget is a stage 9 screen task.
 - The Home clock updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
   ready (same pattern as the `number.on_value` gotcha in `CLAUDE.md`). Since task 004 this code lives in
   `packages/lvgl/page_home.yaml` (`!extend ha_time`), so `packages/core/` no longer depends on the Home page.
@@ -371,7 +371,7 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
    at build time. On top of the stage 8 `gp_*` layer: bed card slots and Home widgets (§8, decided in §10.2).
 10. **Time without HA:** SNTP fallback (done, task 016, `packages/core/time_sntp.yaml`, §4.1a); RTC chip if needed
     (follow-up) so schedules work offline.
-11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the WATER tab editor
+11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the WATER tab view is done (task 026), its time editor
     and the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens)
     with the heating widget, alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`

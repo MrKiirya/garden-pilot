@@ -327,6 +327,43 @@ This is about 3x the usual task size (see Open questions 1); the parts are order
 
 <!-- Filled in by implementer -->
 ## Implementation notes
+Part B only (Schedules page, `garden_schedule.toggle_slot`, Home NEXT). Parts A and C are other tasks; the acceptance
+list above belongs to the combined spec, so it is not ticked here. Part B result:
+
+- Decided (default, author to confirm): open questions 2 (WATER opens the Schedules page, `lawn_page` stays included and
+  unreachable, `page_lawn.yaml` untouched), 9 (3 slot rows per page + PREV / NEXT), 11 (only `gp::fmt::home_next` removed
+  with its two checks; the other debug formatters are Part A's).
+- New: `packages/lvgl/page_schedules.yaml` (generic shell, empty state, nav with WATER active, ids `sched_*`),
+  `packages/greenhouse/lvgl_schedules.yaml` (`id: !extend schedules_page`: master row, 3 slot rows, pager in the header, one
+  refresh script `gh_sched_refresh` + three row scripts, 1 s poller guarded by `changed_since`; also writes
+  `gh_home_next_label`), `components/garden_schedule/schedule_format.h` (pure texts, pager, view hash),
+  `tests/test_screens_schedules.py`. Hub: `slot_count`, `master_on`, `slot_view`, `row_*`, `next_run_short`,
+  `changed_since`, `page_*`, `toggle_slot` + action `garden_schedule.toggle_slot`. `Scheduler::today()` added (one line).
+- Entry files and the four `examples/*.yaml` got `lvgl_page_schedules` (after `lvgl_page_lawn`, because Home / Setup now
+  target `schedules_page`) and `gh_lvgl_schedules` (after the last slot). `tests/test_examples.py::_rank` knows the new key.
+- Deviations: the row text is split over three labels (time 12 px, today word 10 px, `days  zones  pct` caption 8 px)
+  because the full line does not fit 304 px in the worst case; `row_text()` (the whole line) is still the tested format.
+  The today word also has `running` and `stopped` (the spec lists done / missed / skipped / empty). Days: runs of 3+ are
+  ranges (`Mon-Wed Fri-Sun`), zones above 6 are a count. The pager sits in the header (not a row) because the page has no
+  room for it under the 3 rows. A tap redraws at once: the click handler runs `gh_sched_refresh` directly (LVGL context), the
+  poller covers changes from HA / the clock; `row_enabled` reads the slot switch, not the 1 s copy in `cfg_`.
+  The toggle pill is a non-clickable LVGL `switch` inside a transparent 68x41 button (tap target >= 20 px).
+- Page-id helpers in `tests/test_screens.py` now skip non-string (`!extend`) page ids; `lvgl_schedules.yaml` is in
+  `CALLERS`, `TOKENIZED_PAGES` and `TOKENIZED_TEXT_FILES`. Config rows `no_schedules_lvgl` and `sim_no_schedules` added.
+  `test_sim_ui.py`: WATER tap, `schedules.png`, pixel checks of rows 2 (card) and 3 (hidden); unit check of the geometry.
+- `!include {file, vars}` as a widget / script list item was not needed (the three rows are generated text), so it was not
+  verified. Lambda support checked in the installed ESPHome 2026.9.1: `lvgl.widget.update state: checked:` accepts
+  `!lambda` (`esphome/components/lvgl/widgets/__init__.py`, `CONF_STATE` handling), `lvgl.widget.show/hide` take lists.
+- Ran on this Windows host: `uv run pytest -m unit` and `script/test` (844 passed, 20 skipped; only the known Windows
+  failures), `script/test-cpp` with a pip-installed zig as `CXX` (82 cases ok, incl. `schedule_texts`, `schedule_pager`,
+  `schedule_view_hash`), `GP_SECRETS=example script/config garden-pilot.yaml` and the new `no_schedules_lvgl` row.
+  `script/lint`: only `new-lines` (CRLF checkout of the Windows working copy) on files that were already CRLF.
+- NOT run: ESP32 compile and the host build (no compiler / ESP-IDF here) so the new glue in `garden_schedule.h`
+  (`ToggleSlotAction`, accessors) is unproven by a compiler beyond review; `garden-pilot-sim.yaml` config and the sim rows
+  (no `sdl2-config`); the `sim-ui` screenshot test (no Xvfb); the emulator by hand. The switch pill styling (indicator
+  shown only when checked) and row layout need a look in the emulator / on the display.
+- Not verified on hardware: rendering, first-tap hits on the 68x41 toggle ends, PREV / NEXT with more than 3 slots,
+  heap after opening the page.
 ## Follow-ups
 - Schedule -> gp "missed" history entries; time editor on the WATER tab; lawn card/history reuse (`p: lw`,
   `group: gp_lawn`).
