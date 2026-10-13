@@ -93,6 +93,32 @@ switch:
         output: true
     restore_mode: RESTORE_DEFAULT_OFF
 
+  # TEST BRANCH: lawn pump + zones on the extension board CH3-CH5 (shift-register bits 2-4; bit order assumed
+  # from CH1 = bit 0, CH2 = bit 1 - verify on the board).
+  - platform: gpio
+    id: board_relay_4
+    internal: true
+    pin:
+      sn74hc595: board_relay_sr
+      number: 2
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_5
+    internal: true
+    pin:
+      sn74hc595: board_relay_sr
+      number: 3
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    id: board_relay_6
+    internal: true
+    pin:
+      sn74hc595: board_relay_sr
+      number: 4
+    restore_mode: RESTORE_DEFAULT_OFF
+
 substitutions:
   # Shared SPI bus (display + touch).
   spi_clk_pin: GPIO18

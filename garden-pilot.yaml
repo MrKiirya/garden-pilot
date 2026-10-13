@@ -11,6 +11,11 @@ substitutions:
   # Your timezone (IANA name, e.g. Europe/Berlin). Default is UTC. With it set, Home Assistant no longer overrides
   # the zone and the clock is right after a reboot without Home Assistant.
   # timezone: Europe/Berlin
+  # TEST BRANCH: the author's garden (examples/my-garden.yaml): greenhouse beds all at once, limits for a ~3 h run.
+  gh_max_parallel: "all"
+  gh_max_on_time: 210min
+  gh_bed_run_max: "200"
+  gh_bed_run_initial: "180"
 
 esphome:
   name: garden-pilot
@@ -116,17 +121,17 @@ packages:
   # Uncomment the irrigation block, one zone block per zone (consecutive from 1) and lawn_gp; they must stay after
   # core_gp / core_gp_api. The pump and zone relays must differ from the bed relays above. Keep
   # (zones) x lawn_zone_run_max under lawn_pump_max_on_time, see packages/lawn/irrigation.yaml.
-  # lawn_irrigation: !include
-  #   file: packages/lawn/irrigation.yaml
-  #   vars: {pump_relay: "4"}
-  # lawn_zone_1: !include
-  #   file: packages/lawn/zone.yaml
-  #   vars: {zone: "1", zone_name: "Lawn", relay: "5"}
-  # lawn_zone_2: !include
-  #   file: packages/lawn/zone.yaml
-  #   vars: {zone: "2", zone_name: "Flowers", relay: "6"}
-  # lawn_gp: !include
-  #   file: packages/lawn/gp.yaml
+  lawn_irrigation: !include
+    file: packages/lawn/irrigation.yaml
+    vars: {pump_relay: "4"}
+  lawn_zone_1: !include
+    file: packages/lawn/zone.yaml
+    vars: {zone: "1", zone_name: "Lawn", relay: "5"}
+  lawn_zone_2: !include
+    file: packages/lawn/zone.yaml
+    vars: {zone: "2", zone_name: "Flowers", relay: "6"}
+  lawn_gp: !include
+    file: packages/lawn/gp.yaml
 
   # Optional: touch dot / coord updates on press. Comment out to disable (overlay script stays no-op).
   touch_dot_test: !include packages/touch_dot_test.yaml
