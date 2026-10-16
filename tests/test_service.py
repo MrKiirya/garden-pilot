@@ -27,7 +27,8 @@ def _seconds(value: object) -> float:
 
 
 def _scripts() -> dict[str, dict]:
-    return {s["id"]: s for s in _load(FILE)["script"]}
+    # `!extend` items (the header clock action, task 029) carry a tagged dict as id: skip them
+    return {s["id"]: s for s in _load(FILE)["script"] if isinstance(s["id"], str)}
 
 
 def _actions(node: object, key: str) -> list:

@@ -396,3 +396,34 @@ TEST_CASE("run_source") {
   CHECK(!m.zone(1).last_start_uptime.has_value());
 }
 
+
+TEST_CASE("saver_date_formats") {
+  // ESPTime: day_of_week 1 = Sunday .. 7 = Saturday.
+  CHECK(gp::fmt::saver_date(true, 6, 16, 10) == "Friday - 16 Oct");
+  CHECK(gp::fmt::saver_date(true, 1, 6, 1) == "Sunday - 6 Jan");
+  CHECK(gp::fmt::saver_date(true, 7, 31, 12) == "Saturday - 31 Dec");
+}
+
+TEST_CASE("saver_date_fits_the_label") {
+  // longest: Wednesday - 30 Sep
+  const std::string longest = gp::fmt::saver_date(true, 4, 30, 9);
+  CHECK(longest == "Wednesday - 30 Sep");
+  for (int dow = 1; dow <= 7; dow++) {
+    for (int month = 1; month <= 12; month++) {
+      const std::string s = gp::fmt::saver_date(true, dow, 28, month);
+      CHECK(!s.empty());
+      CHECK(s.size() < gp::fmt::LABEL_MAX);
+      CHECK(printable_ascii(s));
+    }
+  }
+}
+
+TEST_CASE("saver_date_rejects_invalid") {
+  CHECK(gp::fmt::saver_date(false, 6, 16, 10).empty());
+  CHECK(gp::fmt::saver_date(true, 0, 16, 10).empty());
+  CHECK(gp::fmt::saver_date(true, 8, 16, 10).empty());
+  CHECK(gp::fmt::saver_date(true, 6, 16, 0).empty());
+  CHECK(gp::fmt::saver_date(true, 6, 16, 13).empty());
+  CHECK(gp::fmt::saver_date(true, 6, 0, 10).empty());
+  CHECK(gp::fmt::saver_date(true, 6, 32, 10).empty());
+}

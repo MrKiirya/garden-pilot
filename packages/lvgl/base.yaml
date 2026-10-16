@@ -1,4 +1,27 @@
 # Shared LVGL setup (no pages). Pages live in packages/lvgl/page_*.yaml.
+#
+# Header clock (design rule: the current time is at the right of every header): the text is computed once here and
+# every page with a header appends ONE lvgl.label.update to gp_header_clock_update with
+#   script: [{id: !extend gp_header_clock_update, then: [lvgl.label.update: {id: <page>_clock_label, text: ...}]}]
+# LVGL is written only from this interval (never from a time trigger), so a clock that is not valid yet is harmless.
+
+globals:
+  - id: gp_header_clock_text
+    type: std::string
+    restore_value: false
+    initial_value: '"--:--"'
+
+script:
+  - id: gp_header_clock_update
+    mode: restart
+    then:
+      - lambda: |-
+          id(gp_header_clock_text) = id(ha_time).now().is_valid() ? id(ha_time).now().strftime("%H:%M") : "--:--";
+
+interval:
+  - interval: 2s
+    then:
+      - script.execute: gp_header_clock_update
 
 lvgl:
   displays:

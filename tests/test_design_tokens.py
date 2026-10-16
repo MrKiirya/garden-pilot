@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from conftest import REPO_ROOT
+from conftest import REPO_ROOT, load_esphome_yaml
 
 pytestmark = pytest.mark.unit
 
@@ -28,8 +28,8 @@ TOKENIZED_PAGES = [
     "packages/greenhouse/screensaver_status.yaml",
     "packages/greenhouse/lvgl_history.yaml",
 ]
-# Built-in sizes of the four base tokens; the `clock` token is the custom font gp_font_clock (screensaver only).
-TOKEN_FONTS = {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14", "gp_font_clock"}
+# Built-in sizes of the type scale C tokens (caption 10, label 12, value 14, value-lg 16, button-md 10, button-sm 8); the `clock` token is the custom font gp_font_clock (screensaver only).
+TOKEN_FONTS = {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16", "gp_font_clock"}
 CLOCK_FONT_FILE = "packages/lvgl/screensaver.yaml"
 LVGL_FONT = re.compile(r"\b(?:montserrat_\d+|gp_font_clock)\b")
 LVGL_COLOR = re.compile(r"\b0x([0-9a-fA-F]{6})\b")
@@ -59,12 +59,76 @@ def test_page_uses_only_token_fonts(page: str) -> None:
         assert "gp_font_clock" not in used, f"{page}: gp_font_clock is for the screensaver only"
 
 
-def test_clock_token() -> None:
+def _styles() -> dict:
     tokens = json.loads((REPO_ROOT / "design/tokens.json").read_text(encoding="utf-8"))
-    styles = {s["name"]: s for g in tokens["type"]["groups"] for s in g["styles"]}
+    return {s["name"]: s for g in tokens["type"]["groups"] for s in g["styles"]}
+
+
+def test_type_scale_c() -> None:
+    styles = _styles()
+    got = {n: (styles[n]["fontSize"], styles[n]["lineHeight"], styles[n]["fontWeight"])
+           for n in ("caption", "label", "value", "value-lg", "button-md", "button-sm")}
+    assert got == {
+        "caption": ("10px", "11px", 600),
+        "label": ("12px", "13px", 600),
+        "value": ("14px", "15px", 700),
+        "value-lg": ("16px", "17px", 700),
+        "button-md": ("10px", "11px", 700),
+        "button-sm": ("8px", "9px", 700),
+    }
+
+
+def test_heat_colours() -> None:
+    tokens = json.loads((REPO_ROOT / "design/tokens.json").read_text(encoding="utf-8"))
+    colors = {c["name"]: c["value"].lower() for c in tokens["color"]["tokens"]}
+    assert (colors["heat"], colors["heat-fill"], colors["on-heat"]) == ("#ff7a59", "#e0582b", "#2b0a00")
+
+
+def _labels(node, in_button=False):
+    """Yield (in_button, props) for every label widget, tracking action-button ancestors.
+
+    A `button` is an action button (label roles button-md / button-sm) when it is at most 32 px tall: 20 px in-card,
+    26 px transport, 32 px nav. Taller buttons (the Setup tiles, 52 px) are cards and use the text roles.
+    """
+    if isinstance(node, dict):
+        for key, val in node.items():
+            if key == "label" and isinstance(val, dict):
+                yield in_button, val
+            if isinstance(val, (dict, list)):
+                action = key == "button" and isinstance(val, dict) and val.get("height", 0) <= 32
+                yield from _labels(val, in_button or action)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _labels(v, in_button)
+
+
+@pytest.mark.parametrize("page", TOKENIZED_PAGES)
+def test_page_font_roles(page: str) -> None:
+    data = load_esphome_yaml(REPO_ROOT / page)
+    for in_button, props in _labels(data):
+        font = props.get("text_font")
+        if font is None or font == "gp_font_clock":
+            continue
+        size = int(font.removeprefix("montserrat_"))
+        text = props.get("text")
+        is_symbol = isinstance(text, str) and bool(text) and ord(text[0]) >= 0xE000  # LVGL symbol (\uF...)
+        what = props.get("id") or text
+        if is_symbol:
+            assert size in (12, 14), f"{page}: symbol {what!r} uses {font}"
+        elif in_button:
+            assert size in (8, 10), f"{page}: button label {what!r} uses {font}"
+        else:
+            assert size in (10, 12, 14, 16), f"{page}: label {what!r} uses {font}"
+
+
+def test_clock_token() -> None:
+    styles = _styles()
     clock = styles["clock"]
     assert (clock["fontSize"], clock["lineHeight"], clock["fontWeight"]) == ("40px", "44px", 700)
     assert clock["glyphs"] == "0123456789:-"
     assert {"montserrat_" + s["fontSize"].rstrip("px") for n, s in styles.items() if n != "clock"} == {
+        f for f in TOKEN_FONTS if f.startswith("montserrat_")
+    }
+    assert {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16"} == {
         f for f in TOKEN_FONTS if f.startswith("montserrat_")
     }
