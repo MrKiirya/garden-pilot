@@ -312,7 +312,7 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   stay closed. It shows Home on Wi-Fi connect (`wifi: on_connect`, device only) or after `boot_offline_timeout`
   (30 s; 3 s in the emulator, which has no Wi-Fi). It never touches an actuator. Home Assistant is not awaited.
 - **Valve test and service mode** (`valve_test_page`, D18; Setup > SERVICE): TEST opens one greenhouse valve (beds 1-3)
-  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the lane opens the valve ~2 s after the tap (switching delay, unchanged by task 014), so it is open ~8 s and the countdown stops near 2 s; since task 014 TEST runs `garden_zones.run_zone` on the group `gh_zones`, a bed locked by the watchdog is refused and its row stays "closed"); every start
+  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the valve opens at once when the group is idle (the start stops the group first only when something runs: stopping an idle lane costs ~2 s of engine delay), so it is open up to the full limit; since task 014 TEST runs `garden_zones.run_zone` on the group `gh_zones`, a bed locked by the watchdog is refused and its row stays "closed"); every start
   shuts down the previous valve first. While the page is open `gp_service_mode` is on: the queue is cleared and any
   run not started by the test (Home Assistant, queue) is shut down within 1 s with a WARN log. Service mode ends by
   EXIT SERVICE, by leaving the page, after 10 minutes without a test, or by a reboot (not restored). Blocking Home
@@ -331,7 +331,7 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   device.
 - Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
   layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
-  LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the
+  LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, SCHEDULE (was WATER) → lawn, SETUP → setup (its DISPLAY tile opens the
   touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). STOP on the Greenhouse page and RESTART on the Network page ask
   through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
   only, so UI texts are ASCII (`-`, `...`). Version, uptime, Wi-Fi and the restart button are `internal: true`.

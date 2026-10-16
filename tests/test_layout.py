@@ -907,7 +907,8 @@ def test_sim_board_page() -> None:
     top = data["lvgl"]["top_layer"]["widgets"]
     assert [w["button"]["id"] for w in top] == ["nav_btn_sim"]
     assert top[0]["button"]["on_click"] == [{"lvgl.page.show": "sim_board_page"}]
-    assert set(re.findall(r"text_font: (\w+)", code)) <= {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16"}
+    assert set(re.findall(r"text_font: (\w+)", code)) <= {
+        "montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16", "gp_font_button_md", "gp_font_button_sm"}
     for name in SIM_DISPLAY_FREE:  # no lvgl.* in any on_value of a number/switch (anywhere in packages/sim)
         for entity in (_sim_pkg(name).get("number") or []) + (_sim_pkg(name).get("switch") or []):
             assert "lvgl" not in _actions_text(entity.get("on_value")), entity["id"]

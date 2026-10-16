@@ -32,7 +32,7 @@ lvgl:
             - label:
                 align: CENTER
                 text: "SIM"
-                text_font: montserrat_8
+                text_font: gp_font_button_sm
                 text_color: 0xbecab9
   pages:
     - id: sim_board_page
@@ -443,7 +443,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "HOME"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xbecab9
 
 interval:
