@@ -93,4 +93,8 @@ inline std::string saver_date(bool valid, int day_of_week, int day_of_month, int
   return buf;
 }
 
+/// ESPHome version text without the config hash / build date: everything up to the first space
+/// ("2026.9.1 (config hash 0x1a2b3c4d)" -> "2026.9.1"), so it fits one line of the Network page.
+inline std::string version_short(const std::string &version) { return version.substr(0, version.find(' ')); }
+
 }  // namespace esphome::gp::fmt

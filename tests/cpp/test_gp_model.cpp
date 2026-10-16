@@ -427,3 +427,11 @@ TEST_CASE("saver_date_rejects_invalid") {
   CHECK(gp::fmt::saver_date(true, 6, 0, 10).empty());
   CHECK(gp::fmt::saver_date(true, 6, 32, 10).empty());
 }
+
+TEST_CASE("version_short_strips_the_config_hash") {
+  CHECK(gp::fmt::version_short("2026.9.1 (config hash 0x1a2b3c4d)") == "2026.9.1");
+  CHECK(gp::fmt::version_short("2026.9.1") == "2026.9.1");
+  CHECK(gp::fmt::version_short("2026.10.0b1 Oct 17 2026, 10:00:00") == "2026.10.0b1");
+  CHECK(gp::fmt::version_short("") == "");
+  CHECK(gp::fmt::version_short(" leading") == "");
+}

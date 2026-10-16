@@ -29,7 +29,10 @@ TOKENIZED_PAGES = [
     "packages/greenhouse/lvgl_history.yaml",
 ]
 # Built-in sizes of the type scale C tokens (caption 10, label 12, value 14, value-lg 16, button-md 10, button-sm 8); the `clock` token is the custom font gp_font_clock (screensaver only).
-TOKEN_FONTS = {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16", "gp_font_clock"}
+TOKEN_FONTS = {"montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16", "gp_font_clock",
+               "gp_font_button_md", "gp_font_button_sm"}
+BUTTON_FONTS = {"gp_font_button_md": 10, "gp_font_button_sm": 8}  # custom Bold fonts of the button-md / button-sm tokens
+BASE = "packages/lvgl/base.yaml"
 CLOCK_FONT_FILE = "packages/lvgl/screensaver.yaml"
 LVGL_FONT = re.compile(r"\b(?:montserrat_\d+|gp_font_clock)\b")
 LVGL_COLOR = re.compile(r"\b0x([0-9a-fA-F]{6})\b")
@@ -109,6 +112,9 @@ def test_page_font_roles(page: str) -> None:
         font = props.get("text_font")
         if font is None or font == "gp_font_clock":
             continue
+        if font in BUTTON_FONTS:
+            assert in_button, f"{page}: {font} is for button labels only ({props.get('text')!r})"
+            continue
         size = int(font.removeprefix("montserrat_"))
         text = props.get("text")
         is_symbol = isinstance(text, str) and bool(text) and ord(text[0]) >= 0xE000  # LVGL symbol (\uF...)
@@ -116,7 +122,7 @@ def test_page_font_roles(page: str) -> None:
         if is_symbol:
             assert size in (12, 14), f"{page}: symbol {what!r} uses {font}"
         elif in_button:
-            assert size in (8, 10), f"{page}: button label {what!r} uses {font}"
+            raise AssertionError(f"{page}: button label {what!r} must use gp_font_button_md / gp_font_button_sm, not {font}")
         else:
             assert size in (10, 12, 14, 16), f"{page}: label {what!r} uses {font}"
 
@@ -126,9 +132,38 @@ def test_clock_token() -> None:
     clock = styles["clock"]
     assert (clock["fontSize"], clock["lineHeight"], clock["fontWeight"]) == ("40px", "44px", 700)
     assert clock["glyphs"] == "0123456789:-"
-    assert {"montserrat_" + s["fontSize"].rstrip("px") for n, s in styles.items() if n != "clock"} == {
+    custom = {"clock", "button-md", "button-sm"}
+    assert {"montserrat_" + s["fontSize"].rstrip("px") for n, s in styles.items() if n not in custom} == {
         f for f in TOKEN_FONTS if f.startswith("montserrat_")
     }
-    assert {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16"} == {
+    assert {"montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16"} == {
         f for f in TOKEN_FONTS if f.startswith("montserrat_")
     }
+
+
+def test_button_fonts_match_tokens() -> None:
+    styles = _styles()
+    fonts = {f["id"]: f for f in load_esphome_yaml(REPO_ROOT / BASE)["font"]}
+    assert set(fonts) == set(BUTTON_FONTS)
+    for token, fid in (("button-md", "gp_font_button_md"), ("button-sm", "gp_font_button_sm")):
+        font, style = fonts[fid], styles[token]
+        assert style["font"] == fid
+        assert font["size"] == BUTTON_FONTS[fid] == int(style["fontSize"].rstrip("px"))
+        assert font["glyphs"] == style["glyphs"]
+        assert font["file"] == "${gp_root}/packages/lvgl/fonts/Montserrat-Bold.ttf"
+        assert font.get("bpp", 4) in (2, 4)
+        assert len(set(style["glyphs"])) == len(style["glyphs"]) < 60, "keep the baked fonts small"
+
+
+@pytest.mark.parametrize("page", TOKENIZED_PAGES)
+def test_button_glyphs_cover_button_texts(page: str) -> None:
+    glyphs = set(_styles()["button-md"]["glyphs"]) & set(_styles()["button-sm"]["glyphs"])
+    for in_button, props in _labels(load_esphome_yaml(REPO_ROOT / page)):
+        text = props.get("text")
+        if in_button and props.get("text_font") in BUTTON_FONTS:
+            assert set(text) <= glyphs, f"{page}: {text!r} has glyphs missing from the button fonts"
+
+
+def test_montserrat_8_is_gone() -> None:
+    for path in (REPO_ROOT / "packages").rglob("*.yaml"):
+        assert "montserrat_8" not in path.read_text(encoding="utf-8"), path

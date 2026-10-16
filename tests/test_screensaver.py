@@ -39,9 +39,9 @@ def test_font_matches_token() -> None:
     header = (REPO_ROOT / SAVER).read_text(encoding="utf-8")
     assert hashlib.sha256(path.read_bytes()).hexdigest() in header, "the TTF checksum must be in the header comment"
     for yaml_path in _yaml_files("packages"):
-        if yaml_path != REPO_ROOT / SAVER:
+        if yaml_path not in (REPO_ROOT / SAVER, REPO_ROOT / "packages/lvgl/base.yaml"):
             data = load_esphome_yaml(yaml_path)
-            assert not (isinstance(data, dict) and "font" in data), f"only the screensaver may declare a font: {yaml_path}"
+            assert not (isinstance(data, dict) and "font" in data), f"only the screensaver and base may declare a font: {yaml_path}"
     for yaml_path in _yaml_files("packages"):
         if yaml_path != REPO_ROOT / SAVER:
             assert "gp_font_clock" not in yaml_path.read_text(encoding="utf-8")

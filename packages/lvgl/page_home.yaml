@@ -227,7 +227,7 @@ lvgl:
             text_font: montserrat_12
             text_color: 0xe5e2e1
 
-        # --- Bottom nav (ref h 54 -> 39 px) ---
+        # --- Bottom nav (DASH active; design NavBar) ---
         - obj:
             x: 0
             y: 201
@@ -252,17 +252,17 @@ lvgl:
             radius: 3
             scrollable: false
             widgets:
+              - image:
+                  src: gp_icon_house
+                  align: TOP_MID
+                  y: 4
+                  image_recolor: 0x003c0b
+                  image_recolor_opa: COVER
               - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF015"
-                  text_font: montserrat_14
-                  text_color: 0x003c0b
-              - label:
-                  align: CENTER
-                  y: 9
+                  align: TOP_MID
+                  y: 18
                   text: "DASH"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0x003c0b
             on_click:
               - lvgl.page.show: home_page
@@ -277,17 +277,17 @@ lvgl:
             radius: 3
             scrollable: false
             widgets:
+              - image:
+                  src: gp_icon_leaf
+                  align: TOP_MID
+                  y: 4
+                  image_recolor: 0xbecab9
+                  image_recolor_opa: COVER
               - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF06C"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
+                  align: TOP_MID
+                  y: 18
                   text: "ZONES"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
             on_click:
               - lvgl.page.show: greenhouse_page
@@ -302,17 +302,17 @@ lvgl:
             radius: 3
             scrollable: false
             widgets:
+              - image:
+                  src: gp_icon_drop
+                  align: TOP_MID
+                  y: 4
+                  image_recolor: 0xbecab9
+                  image_recolor_opa: COVER
               - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF043"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "WATER"
-                  text_font: montserrat_8
+                  align: TOP_MID
+                  y: 18
+                  text: "SCHEDULE"
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
             on_click:
               - lvgl.page.show: schedules_page
@@ -327,17 +327,17 @@ lvgl:
             radius: 3
             scrollable: false
             widgets:
+              - image:
+                  src: gp_icon_gear
+                  align: TOP_MID
+                  y: 4
+                  image_recolor: 0xbecab9
+                  image_recolor_opa: COVER
               - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF013"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
+                  align: TOP_MID
+                  y: 18
                   text: "SETUP"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
             on_click:
               - lvgl.page.show: setup_page

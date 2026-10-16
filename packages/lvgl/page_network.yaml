@@ -62,6 +62,7 @@ lvgl:
             id: network_wifi_value
             x: 124
             width: 188
+            height: 15
             long_mode: DOT
             y: 55
             text: "--"
@@ -77,6 +78,7 @@ lvgl:
             id: network_api_value
             x: 124
             width: 188
+            height: 15
             long_mode: DOT
             y: 73
             text: "--"
@@ -92,6 +94,7 @@ lvgl:
             id: network_ip_value
             x: 124
             width: 188
+            height: 15
             long_mode: DOT
             y: 91
             text: "--"
@@ -107,6 +110,7 @@ lvgl:
             id: network_esphome_value
             x: 124
             width: 188
+            height: 15
             long_mode: DOT
             y: 109
             text: "--"
@@ -122,6 +126,7 @@ lvgl:
             id: network_uptime_value
             x: 124
             width: 188
+            height: 15
             long_mode: DOT
             y: 127
             text: "--"
@@ -145,7 +150,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "BACK"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xbecab9
         - button:
             id: network_btn_restart
@@ -181,7 +186,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "RESTART"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xbecab9
 
 interval:
@@ -203,7 +208,9 @@ interval:
       - lvgl.label.update:
           id: network_esphome_value
           text: !lambda |-
-            return id(gp_esphome_version).has_state() ? id(gp_esphome_version).state : std::string("--");
+            if (!id(gp_esphome_version).has_state())
+              return std::string("--");
+            return gp::fmt::version_short(id(gp_esphome_version).state);
       - lvgl.label.update:
           id: network_uptime_value
           text: !lambda |-

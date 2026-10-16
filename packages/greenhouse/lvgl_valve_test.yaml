@@ -7,10 +7,10 @@
 # - `valve_test_max_time` is the longest a test valve stays open. It MUST NOT exceed 10 s (tests/test_service.py).
 #   It is enforced twice: `duration` of gp.run_zone and the independent `gp_valve_test_guard` script that stops
 #   everything after the same time (holds even if the duration were ignored).
-# - Timing: the guard counts from the tap, but the lane opens the valve about 2 s later (switching delay after
-#   the shutdown; measured again in the emulator for task 014), so a test valve is really open about 8 s and the
-#   "OPEN - N s" countdown stops near 2 s.
-# - One valve at a time: every start stops the group first.
+# - Timing: the guard counts from the tap and the valve opens at once when the group is idle (about 2 s later only
+#   when another valve had to be stopped first: the engine's stop and selection delays), so a test valve is open
+#   up to the full limit.
+# - One valve at a time: a start stops the group first when something is running.
 # - Service mode (`gp_service_mode`, not restored: a reboot always leaves it) is on while the page is open. On entry
 #   everything is stopped and the queue cleared. A 1 s poller stops any run that was not started by the test
 #   (Home Assistant, queue) with a WARN log. Service mode ends by EXIT SERVICE, by leaving the page, after 10 min of
@@ -57,7 +57,13 @@ script:
           condition:
             lambda: "return id(gp_service_mode);"
           then:
-            - gp.stop_all: gp_greenhouse
+            # One valve at a time: stop first only when something runs. Stopping an idle group puts the engine
+            # into its STOPPING state (1 s) plus the selection delay (1 s) and delays the valve by about 2 s.
+            - if:
+                condition:
+                  lambda: "return id(gp_greenhouse)->summary().running;"
+                then:
+                  - gp.stop_all: gp_greenhouse
             # The guard starts before the valve opens, so the open time can only be shorter than the limit.
             - script.execute: gp_valve_test_guard
             - gp.run_zone:
@@ -242,7 +248,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "TEST"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0x003c0b
         - obj:
             x: 162
@@ -290,7 +296,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "TEST"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0x003c0b
         - obj:
             x: 8
@@ -338,7 +344,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "TEST"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0x003c0b
         - button:
             id: valve_test_btn_stop
@@ -359,7 +365,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "STOP"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xffdad6
         - button:
             id: valve_test_btn_exit
@@ -380,5 +386,5 @@ lvgl:
               - label:
                   align: CENTER
                   text: "EXIT SERVICE"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xe5e2e1

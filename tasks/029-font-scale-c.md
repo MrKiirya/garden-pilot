@@ -226,3 +226,48 @@ page; 5 amber SERVICE marker replaced by the clock (hint line stays amber, safet
 - Ask the designer to add `button-md` / `button-sm` to the design system so the next sync keeps them.
 - Screensaver status line "next 18:00" part still needs the schedule next-run.
 - Screenshots of Home / Setup / Network / valve test / screensaver / SIM board for the PR (needs Xvfb).
+
+## Rig feedback (2026-10-17)
+The author flashed 029 on the device. Fixes, in priority order; each has its own acceptance criteria.
+
+1. **Bolder button labels.** LVGL's built-in Montserrat has one weight, so button labels get glyph-limited custom fonts
+   baked from the vendored `Montserrat-Bold.ttf` (same mechanism as `gp_font_clock`): `gp_font_button_md` (10 px,
+   transport buttons) and `gp_font_button_sm` (8 px, nav labels, in-card TEST, SIM). Declared in `packages/lvgl/base.yaml`
+   (in every LVGL config); the tokens `button-md` / `button-sm` carry `font` + `glyphs`.
+   - [x] `test_button_fonts_match_tokens`: font ids, sizes and glyphs equal the tokens; TTF is the vendored file.
+   - [x] Every label inside an action button (<= 32 px) on the tokenized pages uses `gp_font_button_md` (10) or `gp_font_button_sm` (8); `montserrat_8` is no longer used anywhere.
+   - [x] Glyph set covers every button text (test reads the texts).
+2. **Network ESPHome version overlap.** The version text carries the config hash.
+   - [x] `gp::fmt::version_short` keeps the text up to the first space (C++ test); the page label uses it (one-line lambda); value labels have a fixed one-line height.
+3. **Valve test opens at once.** Cause: `gp_valve_test_start` always ran `gp.stop_all` first; `shutdown()` on an idle lane
+   enters STOPPING (1 s timer), then `run_valve` waits for IDLE and the manual selection delay (1 s): about 2 s.
+   Fix: stop first only when something is running (`summary().running`); an idle group starts the valve immediately.
+   No change to the 10 s limit, the guard script, service mode or the engine.
+   - [x] `tests/test_service.py`: `gp.stop_all` before the start is conditional on a running group, still before `gp.run_zone` and the guard; limit and guard asserts unchanged.
+   - [x] CLAUDE.md / SPEC / file header: the valve opens at once when idle (about 2 s only when another valve had to be stopped first).
+4. **Bottom nav = design NavBar.** Band y 201 h 39 `status`, 1 px `border` top line; buttons y 204, h 32, x/w 4/76, 84/76, 164/76,
+   244/72; icon 12 px, gap 2, label below; active `green-fill` + `on-green`, inactive `status` + `text-dim`; labels DASH, ZONES,
+   SCHEDULE, SETUP; icons house, leaf, drop, gear. The leaf (U+F06C) is not in LVGL's symbol set, so all four icons are
+   real images: `design/icons/*.svg` rendered once to 12x12 PNG (white stroke, alpha; `resvg`, not a build dependency)
+   and vendored in `packages/lvgl/icons/`, loaded with ESPHome `image:` (RGB565 + alpha channel) and recoloured per state by
+   `image_recolor`. Applies to Home and Setup (the only pages with the nav; the SIM button is not a nav).
+   - [x] Test: both navs have the four buttons with the geometry, labels, icons (`image` widgets with ids of the vendored PNGs) and colours above; PNGs are 12x12.
+   - [x] No `\uF06C` / `\uF043` / `\uF015` / `\uF013` left in the navs.
+
+### Rig feedback: implementation notes
+- Fonts: `gp_font_button_md` / `gp_font_button_sm` in `packages/lvgl/base.yaml` (41 glyphs: A-Z, 0-9, space and `+-./:%`, bpp 4, same
+  vendored Bold TTF); `montserrat_8` is gone from the whole repo. Flash estimate: two fonts ~1.5 KB + ~1 KB, four 12x12 icons
+  RGB565+alpha 3 bytes/px = 1.7 KB, minus built-in `montserrat_8` (~3 KB): net about +1 KB. Measure in the Docker compile.
+- Icons: rendered once with `resvg` (`uv run --no-project --with resvg-py`, white stroke so `image_recolor` gives the state
+  colour) from `design/icons/*.svg`; 2.2/24 stroke at 12 px is ~1.1 px, as in the design. No SVG support is needed at build
+  time (ESPHome would need cairosvg). `image_recolor` on the LVGL 9 `image` widget is accepted by `esphome config`; the
+  look (thin strokes, RGB565 alpha edges) must be judged on the panel.
+- Nav: label ids stay `*nav_btn_water`; its target is still `lawn_page` (the schedules page is not on this branch).
+- Valve test: the delay was the unconditional `gp.stop_all` before `gp.run_zone` (idle `shutdown()` -> STOPPING 1 s, then the 1 s
+  selection delay). Now conditional on `summary().running`. When another valve runs the old ~2 s remains (engine untouched).
+  The 10 s limit, `gp_valve_test_guard`, service mode and the inhibit are unchanged. Not run on hardware.
+- Network: `gp::fmt::version_short` (cut at the first space); value labels got `height: 15` so a long value cannot wrap into the next row.
+- Test changes: `test_page_font_roles` now requires the custom fonts for labels in action buttons; `test_gp_root_default` counts
+  `base.yaml` (fonts) and checks `image` file paths; `test_screensaver` allows fonts in `base.yaml`; `test_layout` font set.
+- Results: `uv run pytest -m unit` only the known Windows failures; `script/test` 857 passed, 6 failed (the known ones);
+  `script/test-cpp` (zig) 82 cases ok; `script/lint` ok. NOT run: ESP32 compile, sim-ui screenshots, hardware.

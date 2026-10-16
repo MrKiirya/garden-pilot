@@ -43,7 +43,7 @@ One family, Montserrat (LVGL's built-in bitmap fonts), type scale C: four built-
 - `label` 12px/600: status text, header clock, titles.
 - `value` 14px/700: sensor readings, bed durations.
 - `value-lg` 16px/700: the one headline reading of a page, the boot title.
-- Buttons keep their own smaller labels (repo-only tokens until the design system has them): `button-md` 10px/700 for transport buttons (STOP, RUN QUEUE, HOME, BACK), `button-sm` 8px/700 for in-card buttons (RUN, +Q, TEST) and nav labels (DASH, ZONES...).
+- Buttons keep their own smaller labels (repo-only tokens until the design system has them): `button-md` 10px/700 for transport buttons (STOP, RUN QUEUE, HOME, BACK), `button-sm` 8px/700 for in-card buttons (RUN, +Q, TEST) and nav labels (DASH, ZONES, SCHEDULE, SETUP). On the device they are glyph-limited custom Bold fonts (`gp_font_button_md` / `gp_font_button_sm`, baked from the vendored Montserrat Bold: upper case, digits, a few symbols), because LVGL's built-in Montserrat has one weight.
 - `clock` 40px/44px/700: the screensaver clock only, digits, colon and dash only (custom font `gp_font_clock` from the vendored Montserrat Bold TTF, a few KB); don't use it elsewhere.
 
 Don't introduce other sizes (a new one needs the author's approval): each one is an extra font baked into the firmware.
@@ -51,7 +51,7 @@ Don't introduce other sizes (a new one needs the author's approval): each one is
 ## Layout
 
 - Header band `header-h` 22px: title at x=6 (Home, in `green`) or x=8 (detail pages, in `text`), divider underneath. **The current time is always at the right of every header** (`label`, `<page>_clock_label`, y=4, x=-6 on Home and -8 elsewhere from the right edge, fed by one shared poller); header actions sit left of it. Boot, the confirm dialog and the screensaver have no header clock.
-- Home: two zone cards 152/153 wide, `space-1` 3px apart, `space-3` 6px from the edge; bottom `NavBar` at y=201, `nav-h` 39px.
+- Home: two zone cards 152/153 wide, `space-1` 3px apart, `space-3` 6px from the edge; bottom `NavBar` at y=201, `nav-h` 39px (`status` band, 1px `border` top line); four buttons at y=204, h 32, x/w 4/76, 84/76, 164/76, 244/72 with a 12px icon, gap 2, then the 8px label: DASH (house), ZONES (leaf), SCHEDULE (drop), SETUP (gear); active = `green-fill` + `on-green`, inactive = `status` + `text-dim`. On the device the icons are the `design/icons/*.svg` rendered once to 12x12 PNG (`packages/lvgl/icons/`) and recoloured per state.
 - Detail pages: `space-4` 8px margins; a stats strip (three `Stat`s at x = 8, 111, 214), a divider, the main block (bed cards / headline bar), a divider, then the **transport row** of `btn-h-md` 26px buttons along the bottom.
 - In the transport row the main action is the widest button; STOP sits leftmost; HOME is a ghost button at the right.
 - In-card buttons are `btn-h-sm` 20px; nothing tappable is smaller.
