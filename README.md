@@ -99,7 +99,7 @@ and Greenhouse like the real sensors.
 - **Screenshots without a desktop:** `script/sim-ui start` runs the emulator on a private Xvfb display (no window on
   your screen), `script/sim-ui shot home` saves `.esphome/shots/home.png` (320x240), `script/sim-ui tap 280 220` taps
   a display pixel, `script/sim-ui stop` ends the session. Combine with `script/sim-ctl` to see how a sensor value
-  changes a screen (Home refreshes its labels every 30 s). Needs Xvfb and xdotool (in the devcontainer image); exit
+  changes a screen (Home refreshes its labels every second). Needs Xvfb and xdotool (in the devcontainer image); exit
   code 3 means a session runs or port 6053 is busy.
 
 - **Where:** in the SDL devcontainer config (above; on rootless Podman, X11 host) or on a desktop host with SDL2

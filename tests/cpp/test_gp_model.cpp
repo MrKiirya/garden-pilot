@@ -434,4 +434,6 @@ TEST_CASE("version_short_strips_the_config_hash") {
   CHECK(gp::fmt::version_short("2026.10.0b1 Oct 17 2026, 10:00:00") == "2026.10.0b1");
   CHECK(gp::fmt::version_short("") == "");
   CHECK(gp::fmt::version_short(" leading") == "");
+  CHECK(gp::fmt::version_short_or_dash(false, "2026.9.1 (x)") == "--");
+  CHECK(gp::fmt::version_short_or_dash(true, "2026.9.1 (x)") == "2026.9.1");
 }

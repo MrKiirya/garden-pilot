@@ -61,7 +61,10 @@ script:
             # into its STOPPING state (1 s) plus the selection delay (1 s) and delays the valve by about 2 s.
             - if:
                 condition:
-                  lambda: "return id(gp_greenhouse)->summary().running;"
+                  or:
+                    - lambda: "return id(gp_greenhouse)->summary().running;"
+                    # summary() lags up to 250 ms: a second tap right after the first must still stop the first valve
+                    - script.is_running: gp_valve_test_guard
                 then:
                   - gp.stop_all: gp_greenhouse
             # The guard starts before the valve opens, so the open time can only be shorter than the limit.
