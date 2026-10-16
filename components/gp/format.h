@@ -143,4 +143,17 @@ inline std::string saver_bed(const GroupSummary &s) {
   return buf;
 }
 
+/// Screensaver date line, e.g. "Friday - 16 Oct" (ASCII only: the built-in fonts have no middle dot).
+/// ESPTime fields: `day_of_week` 1 = Sunday .. 7, `day_of_month` 1..31, `month` 1..12. "" when invalid or out of range.
+inline std::string saver_date(bool valid, int day_of_week, int day_of_month, int month) {
+  static const char *const DAYS[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+  static const char *const MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  if (!valid || day_of_week < 1 || day_of_week > 7 || day_of_month < 1 || day_of_month > 31 || month < 1 || month > 12)
+    return "";
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%s - %d %s", DAYS[day_of_week - 1], day_of_month, MONTHS[month - 1]);
+  return buf;
+}
+
 }  // namespace esphome::gp::fmt

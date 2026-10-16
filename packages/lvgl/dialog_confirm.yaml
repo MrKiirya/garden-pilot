@@ -63,7 +63,7 @@ lvgl:
                 x: 42
                 y: 74
                 text: "Confirm"
-                text_font: montserrat_12
+                text_font: montserrat_14
                 text_color: 0xe5e2e1
             - label:
                 id: gp_confirm_body
@@ -72,7 +72,7 @@ lvgl:
                 width: 236
                 text: ""
                 long_mode: WRAP
-                text_font: montserrat_10
+                text_font: montserrat_12
                 text_color: 0xbecab9
             - button:
                 id: gp_confirm_cancel

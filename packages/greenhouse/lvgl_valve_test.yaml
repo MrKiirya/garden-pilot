@@ -67,6 +67,13 @@ script:
                 source: service
             - script.execute: gp_service_session
 
+  # Header clock: one action on the shared poller (packages/lvgl/base.yaml).
+  - id: !extend gp_header_clock_update
+    then:
+      - lvgl.label.update:
+          id: valve_test_clock_label
+          text: !lambda "return id(gp_header_clock_text);"
+
   # Second, independent enforcement of the limit.
   - id: gp_valve_test_guard
     mode: restart
@@ -161,16 +168,17 @@ lvgl:
         - label:
             x: 8
             y: 4
-            text: "Service - Valves"
-            text_font: montserrat_10
+            text: "Setup - Service - Valves"
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - label:
+            id: valve_test_clock_label
             align: TOP_RIGHT
             x: -8
             y: 4
-            text: "SERVICE"
-            text_font: montserrat_10
-            text_color: 0xffb870
+            text: "--:--"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
         - obj:
             x: 0
             y: 22
@@ -185,8 +193,8 @@ lvgl:
         - label:
             x: 8
             y: 28
-            text: "Opens one valve, max ${valve_test_max_time}. Other watering is stopped."
-            text_font: montserrat_8
+            text: "Opens one valve, max ${valve_test_max_time}. Other watering stops."
+            text_font: montserrat_10
             text_color: 0xffb870
         - obj:
             x: 8
@@ -206,14 +214,14 @@ lvgl:
             x: 14
             y: 50
             text: "Bed 1"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - label:
             id: valve_test_bed1_status
             x: 14
             y: 68
             text: "closed"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - button:
             id: valve_test_bed1_btn
@@ -254,14 +262,14 @@ lvgl:
             x: 168
             y: 50
             text: "Bed 2"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - label:
             id: valve_test_bed2_status
             x: 168
             y: 68
             text: "closed"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - button:
             id: valve_test_bed2_btn
@@ -302,14 +310,14 @@ lvgl:
             x: 14
             y: 100
             text: "Bed 3"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - label:
             id: valve_test_bed3_status
             x: 14
             y: 118
             text: "closed"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - button:
             id: valve_test_bed3_btn

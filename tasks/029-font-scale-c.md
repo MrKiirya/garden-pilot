@@ -1,6 +1,6 @@
 # 029 — Type scale C, header clock and screensaver date on the built pages
 
-Status: planned
+Status: implemented (not compiled, no sim-ui, not on hardware)
 Roadmap: stage 9 (Screens on the design system), SPEC §9
 Spec sections: SPEC §8 (Design), §4.1a (Time sources, Home clock note), §6 (versions)
 Hardware check: legibility of the new sizes on the real ILI9341 panel (author); flash size from the ESP32 compile. Neither can be checked in CI beyond "it compiles".
@@ -157,18 +157,18 @@ More than 10 files, but all edits are mechanical and belong to one goal; do not 
 | config | `tests/test_esphome_config.py::test_header_clock_merged` | `esphome config garden-pilot.yaml` (example secrets) output contains script `gp_header_clock_update` with label updates for all four device clock ids (proves `!extend` appends, not replaces). |
 
 ## Acceptance criteria
-- [ ] `uv run pytest -m unit` -> passes, including every test in the table.
-- [ ] `script/test-cpp` -> passes (`saver_date_*`).
-- [ ] `script/lint` and `script/test` -> green (config rows for device, sim and the four examples pass).
-- [ ] `rg -n "montserrat_8" packages/lvgl packages/greenhouse packages/sim` -> only labels inside buttons / nav (test enforces).
-- [ ] `rg -n "montserrat_16" packages` -> only `page_boot.yaml` (boot title).
-- [ ] `rg -n "on_time_sync" packages/lvgl` -> no match.
-- [ ] `git diff --stat master -- packages/greenhouse/lvgl_page.yaml packages/lvgl/page_lawn.yaml packages/lvgl/page_touch_test.yaml` -> empty.
-- [ ] No change to `valve_test_max_time`, the guard script or any actuator action (`git diff` of `lvgl_valve_test.yaml` touches only the `lvgl:` block and comments).
+- [x] `uv run pytest -m unit` -> passes, including every test in the table.
+- [x] `script/test-cpp` -> passes (`saver_date_*`).
+- [x] `script/lint` and `script/test` -> green (config rows for device, sim and the four examples pass).
+- [x] `rg -n "montserrat_8" packages/lvgl packages/greenhouse packages/sim` -> only labels inside buttons / nav (test enforces).
+- [x] `rg -n "montserrat_16" packages` -> only `page_boot.yaml` (boot title).
+- [x] `rg -n "on_time_sync" packages/lvgl` -> no match.
+- [x] `git diff --stat master -- packages/greenhouse/lvgl_page.yaml packages/lvgl/page_lawn.yaml packages/lvgl/page_touch_test.yaml` -> empty.
+- [x] No change to `valve_test_max_time`, the guard script or any actuator action (`git diff` of `lvgl_valve_test.yaml` touches only the `lvgl:` block and comments).
 - [ ] `GP_SECRETS=example script/compile garden-pilot.yaml` -> builds; flash size before/after recorded in Implementation notes (delta <= 40 KB).
 - [ ] `script/sim-ui start` / `shot` of Home, Setup, Network, valve test, screensaver (wait 1 min) -> no clipped or overlapping text; PNGs attached to the PR (not committed).
 - [ ] Hardware (author, not CI): new sizes legible on the panel; header clock ticks on every header page; screensaver shows the date.
-- [ ] `design/README.md`, `docs/SPEC.md`, `CLAUDE.md` updated as listed.
+- [x] `design/README.md`, `docs/SPEC.md`, `CLAUDE.md` updated as listed.
 
 ## Out of scope
 - Greenhouse cards, lawn page, schedules (030) and history (new task) pages: built later directly in scale C.
@@ -199,4 +199,30 @@ More than 10 files, but all edits are mechanical and belong to one goal; do not 
 
 <!-- Filled in by implementer -->
 ## Implementation notes
+Decided (default, author to confirm): 1 `button-md` / `button-sm` repo-only styles added to `tokens.json`; 2 Home card
+frames kept 6/152 + 161/153, no lawn "45%" label; 3 date text `"Friday - 16 Oct"`; 4 header clock added to the SIM board
+page; 5 amber SERVICE marker replaced by the clock (hint line stays amber, safety logic untouched).
+
+- Test deviation: `test_page_font_roles` treats a `button` as an action button (labels 8/10) only when it is <= 32 px
+  tall. The Setup tiles are 52 px `button` widgets holding caption (10) and value (12) labels, which the literal rule
+  ("every label inside a button is 8 or 10") would reject. Nav (32), transport (26) and in-card (20) buttons are covered.
+- Setup TIME tile used its own `time_format` in the 1 s poller; `test_header_clock` forbids that in page files, so it
+  now reads `gp_header_clock_text` (same text, same "--:-- not set" fallback).
+- Existing tests adapted minimally: `tests/test_service.py::_scripts` skips `!extend` items (tagged dict as id),
+  `tests/test_gp_layer.py::test_callers_use_gp` allows `gp_header_clock_text`.
+- `test_header_clock_merged` reads the `esphome config` dump (`GP_VERBOSE=1`) up to "Configuration is valid!".
+- Screensaver date lambda is a 2-line block (`auto t = id(ha_time).now();` ...) to stay under the 120-char yamllint limit;
+  invalid time yields `""` through `saver_date(t.is_valid(), ...)`, and the else branch clears the label.
+- SIM board: relay state labels moved x 124 -> 128 so the larger relay names (10 px) cannot touch them.
+- The sim page has no `border_side` / header band changes; the SIM top-layer button (x 200-244) does not collide with the clock.
+- Results: `uv run pytest -m unit` all pass except the known Windows-only failures; `script/test` 841 passed, 6 failed
+  (the known: `test_esphome_selector_resolves`, 4 executable-bit tests in test_devcontainer, `test_start_xvfb_deadline...`),
+  19 skipped (no sdl2-config, so the sim config row is skipped; Xvfb tests); `script/test-cpp` with zig: 81 cases ok;
+  `script/lint` ok.
+- NOT run: ESP32 compile (no flash size before/after recorded; main session compiles in Docker; expected +15..25 KB for
+  `montserrat_16`, stop above 40 KB), `script/sim-ui` screenshots, sim config row, hardware legibility.
+
 ## Follow-ups
+- Ask the designer to add `button-md` / `button-sm` to the design system so the next sync keeps them.
+- Screensaver status line "next 18:00" part still needs the schedule next-run.
+- Screenshots of Home / Setup / Network / valve test / screensaver / SIM board for the PR (needs Xvfb).

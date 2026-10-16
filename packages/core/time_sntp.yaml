@@ -1,7 +1,7 @@
 # Clock fallback without Home Assistant: NTP over Wi-Fi (SNTP).
 # `sntp` and `time: homeassistant` (time.yaml) write the same system clock, so features read `ha_time` only and
 # never `sntp_time` (that id is for logs and lambdas while debugging). An SNTP sync does not fire the
-# `on_time_sync` of `ha_time`, so readers must poll (the Home clock lags at most 30 s).
+# `on_time_sync` of `ha_time`, so readers must poll (the header clock lags at most 2 s).
 # Needs Wi-Fi with internet access or a LAN NTP server. Override the servers from the entry file, e.g.
 # `sntp_server_1: ntp.example.lan` under `substitutions:`. With a manual IP setup the device needs DNS
 # (`dns1`/`dns2`) or IP-only server entries.

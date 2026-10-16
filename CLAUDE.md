@@ -43,7 +43,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/core/time.yaml`, `time_sntp.yaml`, `time_host.yaml` | `time: homeassistant` (device) or `time: host` (emulator), both id `ha_time`, no triggers; `time_sntp.yaml` (device only, optional) adds `sntp` as the fallback (id `sntp_time`, servers via `sntp_server_N`). |
 | `packages/display_touch.yaml` | SPI, `mipi_spi` ILI9341 display, XPT2046 touch, `touch_ui` / `touch_dot_overlay` scripts. |
 | `packages/display_sdl.yaml` | Emulator only: SDL display + mouse touch with the same ids and scripts as `display_touch.yaml` (keep in sync). |
-| `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`. |
+| `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`; also the shared header clock (`gp_header_clock_text`, script `gp_header_clock_update`, 2 s interval). |
 | `packages/lvgl/page_*.yaml` | One LVGL page per file under `lvgl: pages:`. |
 | `packages/lvgl/screensaver.yaml` | Idle screensaver overlay on the top layer + the `clock` font token (`gp_font_clock`); status line from `packages/greenhouse/screensaver_status.yaml`. |
 | `packages/lvgl/fonts/` | Vendored TTF (Montserrat Bold) + `OFL.txt` for the glyph-limited custom font. |
@@ -130,6 +130,7 @@ without `core_ota`, `core_network`, `lvgl_network_wifi`, the greenhouse sensors 
 - `xdotool click` is too short for LVGL to register a touch: use press, move, release with pauses (`script/sim-ui tap`). SDL `headless: true` disables the SDL touchscreen, so screenshots are X-level grabs under Xvfb instead.
 - A template entity must not reuse the generated id `<group>_watchdog` (the group's watchdog component) or `<group>_lane_<n>`.
 - LVGL reads `gp` only from `interval:` pollers (guard with `changed_since`), never from a gp trigger, `on_value` or API action; label texts come from `gp::fmt::*` so lambdas stay one line. The hub id is `gp_hub` (an id may not equal an integration name).
+- **Header clock (task 029):** a page header shows the time with one `<page>_clock_label` (TOP_RIGHT, y 4, `montserrat_12`) and ONE `lvgl.label.update` appended to the shared script with `script: [{id: !extend gp_header_clock_update, then: [...]}]` (text `id(gp_header_clock_text)`); `packages/lvgl/base.yaml` owns the global, the script and the 2 s interval. No per-page time formatting, no `on_time_sync`. Built-in LVGL fonts in use: `montserrat_8` (nav / in-card button labels), 10 (caption, transport buttons), 12 (label), 14 (value), 16 (value-lg, boot title) + `gp_font_clock`; legacy pages (greenhouse, lawn, touch test) stay on the LVGL default until rebuilt.
 - Logger actions (`logger.log`) default to DEBUG: pass `level: INFO` to see them at the committed log level.
 - **Valve test limit:** `valve_test_max_time` in `packages/greenhouse/lvgl_valve_test.yaml` must stay <= 10 s
   (`tests/test_service.py`); it is enforced by the `duration` of `gp.run_zone` and by the separate `gp_valve_test_guard` script. Service
