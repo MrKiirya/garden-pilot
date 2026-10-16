@@ -266,6 +266,11 @@ def test_screen_text_is_ascii(rel: str) -> None:
     assert not bad, f"{rel}: non-ASCII characters {bad!r}"
 
 
+def _button_glyphs() -> set[str]:
+    fonts = {f["id"]: f for f in _load("packages/lvgl/base.yaml")["font"]}
+    return set(fonts["gp_font_button_md"]["glyphs"])
+
+
 @pytest.mark.parametrize("rel", [GH_PAGE, NETWORK])
 def test_confirm_call_texts_are_ascii(rel: str) -> None:
     calls = [d["script.execute"] for d in _walk(_load(rel)) if isinstance(d.get("script.execute"), dict)
@@ -275,6 +280,8 @@ def test_confirm_call_texts_are_ascii(rel: str) -> None:
         for key in ("title", "body", "action"):
             assert call[key].isascii() and call[key].isprintable(), f"{rel}: non-ASCII {key}: {call[key]!r}"
             assert len(call[key]) > 0
+        glyphs = _button_glyphs()
+        assert set(call["action"]) <= glyphs, f"{rel}: action {call['action']!r} has glyphs missing from gp_font_button_md"
 
 
 
