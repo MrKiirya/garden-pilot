@@ -313,3 +313,63 @@ def test_boot_wifi_device_only() -> None:
     assert sim["substitutions"]["boot_offline_timeout"] == "3s"
     dev = load_esphome_yaml(REPO_ROOT / "garden-pilot.yaml")
     assert "boot_offline_timeout" not in dev["substitutions"]
+
+
+# --- Header clock (task 029): one shared poller in base.yaml, one label.update per page ----------------------------
+BASE = "packages/lvgl/base.yaml"
+CLOCK_PAGES = {
+    "home": HOME,
+    "setup": SETUP,
+    "network": NETWORK,
+    "valve_test": "packages/greenhouse/lvgl_valve_test.yaml",
+    "sim_board": "packages/sim/page_board.yaml",
+}
+
+
+def _ids_of(node: object) -> list[str]:
+    return [p["id"] for _t, p in _widgets(node) if isinstance(p.get("id"), str)]
+
+
+@pytest.mark.parametrize("name", CLOCK_PAGES)
+def test_header_clock(name: str) -> None:
+    rel = CLOCK_PAGES[name]
+    data = _load(rel)
+    wid = f"{name}_clock_label"
+    assert _ids_of(data["lvgl"]).count(wid) == 1, f"{rel}: exactly one {wid}"
+    label = _by_id(data["lvgl"], wid)
+    assert label["align"] == "TOP_RIGHT" and label["y"] == 4
+    assert label["x"] == (-6 if name == "home" else -8)
+    assert label["text_font"] == "montserrat_12" and label["text"] == "--:--"
+    assert label["text_color"] == 0xE5E2E1
+    scripts = [s for s in data["script"] if isinstance(s["id"], dict) and s["id"]["value"] == "gp_header_clock_update"]
+    assert len(scripts) == 1 and scripts[0]["id"]["__tag__"] == "extend"
+    steps = scripts[0]["then"]
+    updates = [d["lvgl.label.update"] for d in _walk(steps) if "lvgl.label.update" in d]
+    assert len(steps) == 1 and len(updates) == 1
+    assert updates[0]["id"] == wid
+    assert "id(gp_header_clock_text)" in updates[0]["text"]["value"]
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    code = _strip_comments(text)
+    assert not re.search(r"time_format|strftime|on_time_sync", code), rel
+
+
+def test_header_clock_poller() -> None:
+    data = _load(BASE)
+    glob = {g["id"]: g for g in data["globals"]}["gp_header_clock_text"]
+    assert glob["type"] == "std::string" and glob["restore_value"] is False
+    script = {s["id"]: s for s in data["script"]}["gp_header_clock_update"]
+    assert script["mode"] == "restart"
+    assert len([d for d in _walk(script["then"]) if "lambda" in d]) == 1
+    intervals = [i for i in data["interval"] if {"script.execute": "gp_header_clock_update"} in i["then"]]
+    assert len(intervals) == 1 and int(str(intervals[0]["interval"]).rstrip("s")) <= 5
+    for path in _yaml_files("packages"):
+        code = _strip_comments(path.read_text(encoding="utf-8"))
+        if "gp_header_clock_text" in code and "strftime" in code:
+            assert str(path.relative_to(REPO_ROOT)).replace("\\", "/") == BASE
+    assert "strftime" in _strip_comments((REPO_ROOT / BASE).read_text(encoding="utf-8"))
+    assert "time" not in _load(HOME), "page_home.yaml has no time: block"
+
+
+def test_untouched_legacy_pages() -> None:
+    for rel in (GH_PAGE, "packages/lvgl/page_lawn.yaml", "packages/lvgl/page_touch_test.yaml"):
+        assert "text_font" not in (REPO_ROOT / rel).read_text(encoding="utf-8"), rel

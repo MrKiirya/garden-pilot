@@ -142,3 +142,20 @@ def test_screensaver_is_the_top_layer_foreground_in_the_emulator() -> None:
     assert "packages/sim/page_board.yaml" in other, "the SIM button is a top-layer widget that could cover the overlay"
     text = _strip_comments((REPO_ROOT / SAVER).read_text(encoding="utf-8"))
     assert text.index("lv_obj_move_foreground(id(gp_screensaver_layer))") < text.index("lvgl.widget.show: gp_screensaver_layer")
+
+
+def test_date_line() -> None:
+    data = _load(SAVER)
+    date = _by_id(data["lvgl"], "gp_screensaver_date")
+    assert (date["align"], date["y"], date["text_font"], date["text"]) == ("TOP_MID", 116, "montserrat_14", "")
+    assert _by_id(data["lvgl"], "gp_screensaver_clock")["y"] == 62
+    assert _by_id(data["lvgl"], "gp_screensaver_status")["y"] == 142
+    assert _by_id(data["lvgl"], "gp_screensaver_bed_label")["y"] == 163
+    wake = next(p for _t, p in _widgets(data["lvgl"]) if p.get("text") == "Touch to wake")
+    assert wake["y"] == 220
+    clock = {s["id"]: s for s in data["script"]}["gp_screensaver_update_clock"]
+    updates = [d["lvgl.label.update"] for d in _walk(clock["then"]) if "lvgl.label.update" in d]
+    dates = [u for u in updates if u["id"] == "gp_screensaver_date"]
+    texts = [u["text"] for u in dates]
+    assert "" in texts, "the date is cleared while the clock is not valid"
+    assert any(isinstance(t, dict) and "gp::fmt::saver_date" in t["value"] for t in texts)
