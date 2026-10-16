@@ -3,7 +3,7 @@
 > Snapshot of the live design system kept in claude.ai artifacts (author's account):
 > design system <https://claude.ai/artifact/GYaHhiazSZFFokttp417Vg> and the screens canvas
 > <https://claude.ai/artifact/7v8AHEhtX6ou1kKJroEwvP> (pages "Screens" and "Drafts" D01–D25).
-> Synced: 2026-10-01. The firmware depends on `tokens.json` (colours, font sizes, geometry) and `icons/`;
+> Synced: 2026-10-16. The firmware depends on `tokens.json` (colours, font sizes, geometry) and `icons/`;
 > when tokens change in the design system, update them here in a PR.
 > Mentions of `GardenPilot.<Component>` below refer to the React preview components in the artifact.
 
@@ -28,6 +28,7 @@ GardenPilot is the on-device UI for a greenhouse and lawn irrigation controller:
 - `text` for values and labels, `text-dim` for captions, inactive navigation and anything with **no live data yet** (the lawn card shows `Idle` in `text-dim` on purpose).
 - `green` / `green-fill` mean **active water or the current page**: Watering text, RUN buttons, the running bed, the active nav button, greenhouse soil bar. Text on `green-fill` is `on-green`.
 - `blue` / `blue-fill` mean **water-as-resource and the queue**: lawn bar, humidity icon, RUN QUEUE, WATER NOW, a queued bed. Text on `blue-fill` is `on-blue`.
+- `heat` / `heat-fill` with `on-heat` are reserved for bed heating; no built screen uses them yet.
 - `error-fill` with `on-error` is reserved for **STOP**. Nothing else is red.
 - `amber` / `amber-fill` are reserved for warnings and a paused bed; the Schedules page uses `amber` text for a missed slot.
 - `border` (1px) outlines cards and draws dividers. It is decorative (1.85:1 on `card`). State is always shown with a fill colour plus a word, never by the outline alone.
@@ -35,20 +36,21 @@ GardenPilot is the on-device UI for a greenhouse and lawn irrigation controller:
 
 ## Type
 
-One family, Montserrat (LVGL's built-in bitmap fonts), four built-in sizes plus one custom clock size (five tokens):
+One family, Montserrat (LVGL's built-in bitmap fonts), type scale C: four built-in text sizes, two button sizes and one custom clock size:
 
-- `caption` 8px/400: captions, nav labels.
-- `label` 10px/600: status text, clock, button labels, titles.
-- `value` 12px/700: sensor readings, bed durations.
-- `value-lg` 14px/700: the one headline reading of a page.
+- `caption` 10px/600: uppercase captions.
+- `label` 12px/600: status text, header clock, titles.
+- `value` 14px/700: sensor readings, bed durations.
+- `value-lg` 16px/700: the one headline reading of a page, the boot title.
+- Buttons keep their own smaller labels (repo-only tokens until the design system has them): `button-md` 10px/700 for transport buttons (STOP, RUN QUEUE, HOME, BACK), `button-sm` 8px/700 for in-card buttons (RUN, +Q, TEST) and nav labels (DASH, ZONES, SCHEDULE, SETUP). On the device they are glyph-limited custom Bold fonts (`gp_font_button_md` / `gp_font_button_sm`, baked from the vendored Montserrat Bold: upper case, digits, a few symbols), because LVGL's built-in Montserrat has one weight.
 - `clock` 40px/44px/700: the screensaver clock only, digits, colon and dash only (custom font `gp_font_clock` from the vendored Montserrat Bold TTF, a few KB); don't use it elsewhere.
 
 Don't introduce other sizes (a new one needs the author's approval): each one is an extra font baked into the firmware.
 
 ## Layout
 
-- Header band `header-h` 22px: title at x=6 (Home, in `green`) or x=8 (detail pages, in `text`), clock right, divider underneath.
-- Home: two zone cards 152/153 wide, `space-1` 3px apart, `space-3` 6px from the edge; bottom `NavBar` at y=201, `nav-h` 39px.
+- Header band `header-h` 22px: title at x=6 (Home, in `green`) or x=8 (detail pages, in `text`), divider underneath. **The current time is always at the right of every header** (`label`, `<page>_clock_label`, y=4, x=-6 on Home and -8 elsewhere from the right edge, fed by one shared poller); header actions sit left of it. Boot, the confirm dialog and the screensaver have no header clock.
+- Home: two zone cards 152/153 wide, `space-1` 3px apart, `space-3` 6px from the edge; bottom `NavBar` at y=201, `nav-h` 39px (`status` band, 1px `border` top line); four buttons at y=204, h 32, x/w 4/76, 84/76, 164/76, 244/72 with a 12px icon, gap 2, then the 8px label: DASH (house), ZONES (leaf), SCHEDULE (drop), SETUP (gear); active = `green-fill` + `on-green`, inactive = `status` + `text-dim`. On the device the icons are the `design/icons/*.svg` rendered once to 12x12 PNG (`packages/lvgl/icons/`) and recoloured per state.
 - Detail pages: `space-4` 8px margins; a stats strip (three `Stat`s at x = 8, 111, 214), a divider, the main block (bed cards / headline bar), a divider, then the **transport row** of `btn-h-md` 26px buttons along the bottom.
 - In the transport row the main action is the widest button; STOP sits leftmost; HOME is a ghost button at the right.
 - In-card buttons are `btn-h-sm` 20px; nothing tappable is smaller.
@@ -64,10 +66,11 @@ Five stroke icons (house, leaf, drop, gear, thermo) on a 24-unit grid, 2.2 strok
 - **Greenhouse** (`greenhouse_page`): proposal. Stats strip, three `BedCard`s with state edges, status line, STOP / RUN QUEUE / HOME.
 - **Boot** (`boot_page`): built (D17). Title, "Connecting to Wi-Fi...", spinner (replaces the draft's progress bar), "Valves closed - offline mode in 30s", ESPHome version.
 - **Setup** (`setup_page`): built (D10). 2x3 tile grid (NETWORK, TIME, DISPLAY, SERVICE active; CYCLE, SENSORS "Soon"), nav with SETUP active.
-- **Setup - Service - Valves** (`valve_test_page`): built (D18). Beds 1-3 only (no Lawn/Pump, no per-row CLOSE), TEST per bed (10 s max from the tap, ~8 s open), STOP, EXIT SERVICE.
+- **Setup - Service - Valves** (`valve_test_page`): built (D18). Title "Setup - Service - Valves", header clock at the right (the amber hint line marks service mode). Beds 1-3 only (no Lawn/Pump, no per-row CLOSE), TEST per bed (10 s max from the tap, ~8 s open), STOP, EXIT SERVICE.
 - **Setup - Network** (`network_page`): built (D11). Status line, WI-FI / HOME ASSISTANT / IP / ESPHOME / UPTIME rows, BACK, RESTART.
 - **Confirm dialog** (`gp_confirm`, top layer): built (D14). Dim layer (`bg` at 65 %), card, CANCEL ghost + one action button: `error-fill` for stop actions only, `green-fill` for other confirmations. ASCII-only texts.
 - **Schedules** (`schedules_page`): built (task 026, WATER tab, view only). Header "Schedules" (PREV / NEXT with "1/3" at the right when more than 3 slots), master row (`GREENHOUSE`, next run, switch pill), 3 slot rows of 43 px (start time `value`, today's word `done` green / `missed` amber, days - zones - multiplier as `caption`, switch pill; the tappable end is 68x41, the pill is only drawn), nav with WATER active. First built use of `amber` (a missed slot). Ids `gh_sched_*`, `sched_*`.
+- **Screensaver** (top layer): built (D23). Clock (`clock`), date line in `value` ("Friday - 16 Oct"; the built-in fonts have no middle dot), status line, running-bed dot, "Touch to wake".
 - **Lawn** (`lawn_page`): concept. Headline soil bar, status card with AUTO-MODE `Switch`, WATER NOW / HOME. No backing entities exist yet.
 
 Component notes keep the LVGL ids (`gh_btn_run_bed1`, `home_clock_label`…) so a design change can be traced to the YAML that implements it.

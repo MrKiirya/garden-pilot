@@ -23,6 +23,12 @@ BOOT_WIFI = "packages/lvgl/boot_wifi.yaml"
 HOME = "packages/lvgl/page_home.yaml"
 GH_PAGE = "packages/greenhouse/lvgl_page.yaml"
 NAV_NAMES = ["dash", "zones", "water", "setup"]
+NAV_SPEC = {  # name: (x, width, label, icon id, icon file)
+    "dash": (4, 76, "DASH", "gp_icon_house", "house"),
+    "zones": (84, 76, "ZONES", "gp_icon_leaf", "leaf"),
+    "water": (164, 76, "SCHEDULE", "gp_icon_drop", "drop"),
+    "setup": (244, 72, "SETUP", "gp_icon_gear", "gear"),
+}
 SYMBOLS = {"", "", "", "", "", ""}  # LVGL symbols used in text
 
 
@@ -314,3 +320,108 @@ def test_boot_wifi_device_only() -> None:
     assert sim["substitutions"]["boot_offline_timeout"] == "3s"
     dev = load_esphome_yaml(REPO_ROOT / "garden-pilot.yaml")
     assert "boot_offline_timeout" not in dev["substitutions"]
+
+
+# --- Header clock (task 029): one shared poller in base.yaml, one label.update per page ----------------------------
+BASE = "packages/lvgl/base.yaml"
+CLOCK_PAGES = {
+    "home": HOME,
+    "setup": SETUP,
+    "network": NETWORK,
+    "valve_test": "packages/greenhouse/lvgl_valve_test.yaml",
+    "sim_board": "packages/sim/page_board.yaml",
+}
+
+
+def _ids_of(node: object) -> list[str]:
+    return [p["id"] for _t, p in _widgets(node) if isinstance(p.get("id"), str)]
+
+
+@pytest.mark.parametrize("name", CLOCK_PAGES)
+def test_header_clock(name: str) -> None:
+    rel = CLOCK_PAGES[name]
+    data = _load(rel)
+    wid = f"{name}_clock_label"
+    assert _ids_of(data["lvgl"]).count(wid) == 1, f"{rel}: exactly one {wid}"
+    label = _by_id(data["lvgl"], wid)
+    assert label["align"] == "TOP_RIGHT" and label["y"] == 4
+    assert label["x"] == (-6 if name == "home" else -8)
+    assert label["text_font"] == "montserrat_12" and label["text"] == "--:--"
+    assert label["text_color"] == 0xE5E2E1
+    scripts = [s for s in data["script"] if isinstance(s["id"], dict) and s["id"]["value"] == "gp_header_clock_update"]
+    assert len(scripts) == 1 and scripts[0]["id"]["__tag__"] == "extend"
+    steps = scripts[0]["then"]
+    updates = [d["lvgl.label.update"] for d in _walk(steps) if "lvgl.label.update" in d]
+    assert len(steps) == 1 and len(updates) == 1
+    assert updates[0]["id"] == wid
+    assert "id(gp_header_clock_text)" in updates[0]["text"]["value"]
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    code = _strip_comments(text)
+    assert not re.search(r"time_format|strftime|on_time_sync", code), rel
+
+
+def test_header_clock_poller() -> None:
+    data = _load(BASE)
+    glob = {g["id"]: g for g in data["globals"]}["gp_header_clock_text"]
+    assert glob["type"] == "std::string" and glob["restore_value"] is False
+    script = {s["id"]: s for s in data["script"]}["gp_header_clock_update"]
+    assert script["mode"] == "restart"
+    assert len([d for d in _walk(script["then"]) if "lambda" in d]) == 1
+    intervals = [i for i in data["interval"] if {"script.execute": "gp_header_clock_update"} in i["then"]]
+    assert len(intervals) == 1 and int(str(intervals[0]["interval"]).rstrip("s")) <= 5
+    for path in _yaml_files("packages"):
+        code = _strip_comments(path.read_text(encoding="utf-8"))
+        if "gp_header_clock_text" in code and "strftime" in code:
+            assert str(path.relative_to(REPO_ROOT)).replace("\\", "/") == BASE
+    assert "strftime" in _strip_comments((REPO_ROOT / BASE).read_text(encoding="utf-8"))
+    assert "time" not in _load(HOME), "page_home.yaml has no time: block"
+
+
+def test_untouched_legacy_pages() -> None:
+    for rel in (GH_PAGE, "packages/lvgl/page_lawn.yaml", "packages/lvgl/page_touch_test.yaml"):
+        assert "text_font" not in (REPO_ROOT / rel).read_text(encoding="utf-8"), rel
+
+
+@pytest.mark.parametrize(("rel", "page_id", "prefix", "active"), [
+    (HOME, "home_page", "nav_btn_", "dash"),
+    (SETUP, "setup_page", "setup_nav_btn_", "setup"),
+])
+def test_nav_matches_design_navbar(rel: str, page_id: str, prefix: str, active: str) -> None:
+    """Design NavBar: band y 201 h 39 `status` + 1 px `border` top; buttons y 204 h 32; icon 12 px, gap 2, label."""
+    page = _page(rel, page_id)
+    band = next(p for t, p in _widgets(page) if t == "obj" and p.get("y") == 201)
+    assert (band["x"], band["width"], band["height"]) == (0, 320, 39)
+    assert (band["bg_color"], band["border_width"], band["border_color"]) == (0x201F1F, 1, 0x3F4A3C)
+    assert band["border_side"] == ["TOP"]
+    for name, (x, width, label, icon_id, icon_file) in NAV_SPEC.items():
+        btn = _by_id(page, f"{prefix}{name}")
+        assert (btn["x"], btn["y"], btn["width"], btn["height"]) == (x, 204, width, 32)
+        on = name == active
+        assert btn["bg_color"] == (0x4CAF50 if on else 0x201F1F)
+        ink = 0x003C0B if on else 0xBECAB9
+        image = next(p for t, p in _widgets(btn) if t == "image")
+        assert image["src"] == icon_id
+        assert (image["align"], image["y"]) == ("TOP_MID", 4)
+        assert image["image_recolor"] == ink and image["image_recolor_opa"] == "COVER"
+        text = next(p for t, p in _widgets(btn) if t == "label")
+        assert (text["text"], text["text_color"], text["text_font"]) == (label, ink, "gp_font_button_sm")
+        assert (text["align"], text["y"]) == ("TOP_MID", 18), "icon 12 px at y 4, gap 2, label below"
+        assert not any(ord(c) >= 0xE000 for c in text["text"])
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    assert not re.search(r"[\\]uF0(?:15|6C|43|13)", text, re.IGNORECASE), "nav icons are images, not LVGL symbols"
+
+
+def test_nav_icons_are_vendored_images() -> None:
+    from PIL import Image
+
+    images = {i["id"]: i for i in _load("packages/lvgl/base.yaml")["image"]}
+    assert set(images) == {v[3] for v in NAV_SPEC.values()}
+    for _x, _w, _label, icon_id, icon_file in NAV_SPEC.values():
+        item = images[icon_id]
+        assert item["file"] == f"${{gp_root}}/packages/lvgl/icons/{icon_file}.png"
+        assert item["type"] == "RGB565" and item["transparency"] == "alpha_channel"
+        png = REPO_ROOT / "packages/lvgl/icons" / f"{icon_file}.png"
+        with Image.open(png) as im:
+            assert im.size == (12, 12) and im.mode == "RGBA"
+            assert im.getchannel("A").getbbox() is not None, "empty icon"
+        assert (REPO_ROOT / "design/icons" / f"{icon_file}.svg").is_file(), "source SVG"
