@@ -86,12 +86,12 @@ packages:
   core_gp_api: !include packages/core/gp_api.yaml
   gh_gp: !include packages/greenhouse/gp.yaml
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
-  gh_lvgl_history: !include packages/greenhouse/lvgl_history.yaml
   gh_gp_lvgl: !include packages/greenhouse/gp_lvgl_status.yaml
   gh_screensaver_status: !include packages/greenhouse/screensaver_status.yaml
   gh_valve_test: !include packages/greenhouse/lvgl_valve_test.yaml
 
-  # Device-side watering schedules (hub + 2 slots of the greenhouse). Add slots 3..8 with more includes of
+  # Device-side watering schedules (hub + 4 slots of the greenhouse; the screen shows these 4). Add slots 5..8 (Home
+  # Assistant only) with more includes of
   # schedule_slot.yaml (vars slot, start); remove them all to run without schedules. Override
   # gh_schedule_catch_up_window (default 60min) in `substitutions:` if needed.
   gh_schedule: !include packages/greenhouse/schedule.yaml
@@ -101,6 +101,12 @@ packages:
   gh_schedule_slot_2: !include
     file: packages/greenhouse/schedule_slot.yaml
     vars: {slot: "2", start: "07:00:00"}
+  gh_schedule_slot_3: !include
+    file: packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "3", start: "18:00:00"}
+  gh_schedule_slot_4: !include
+    file: packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "4", start: "19:00:00"}
   # Schedules page rows (WATER tab) and the Home "next" label; needs lvgl_page_schedules and gh_schedule.
   gh_lvgl_schedules: !include packages/greenhouse/lvgl_schedules.yaml
 

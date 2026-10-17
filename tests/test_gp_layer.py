@@ -26,7 +26,7 @@ CALLERS = [
     "packages/greenhouse/gp_lvgl_status.yaml",
     "packages/greenhouse/lvgl_valve_test.yaml",
     "packages/greenhouse/screensaver_status.yaml",
-    "packages/greenhouse/lvgl_history.yaml",
+    "packages/greenhouse/lvgl_schedules.yaml",
 ]
 ENGINE_FILES = {
     "packages/greenhouse/irrigation.yaml",
@@ -34,9 +34,6 @@ ENGINE_FILES = {
     "packages/greenhouse/bed.yaml",
     "packages/greenhouse/bed_soil_skip.yaml",
     GH_GP,
-    "packages/lawn/irrigation.yaml",
-    "packages/lawn/zone.yaml",
-    "packages/lawn/gp.yaml",
     "packages/sim/fault.yaml",
 }
 API_ACTIONS = ["gp_run_zone", "gp_enqueue_zone", "gp_start_queue", "gp_full_cycle", "gp_stop_all", "gp_reset_watchdog"]
@@ -78,7 +75,7 @@ def test_no_engine_outside_adapter() -> None:
         assert not re.search(r"^sprinkler:|\bsprinkler\.\w+|gh_sprinkler", code, re.MULTILINE), rel
         if rel in ENGINE_FILES:
             continue
-        assert not re.search(r"garden_zones\.|id\(gh_zones\)|\bgh_zones\b|\blawn_zones\b", code), f"{rel} names the engine"
+        assert not re.search(r"garden_zones\.|id\(gh_zones\)|\bgh_zones\b", code), f"{rel} names the engine"
 
 
 @pytest.mark.unit
@@ -92,7 +89,8 @@ def test_callers_use_gp() -> None:
         for target in (d["gp.run_zone"] for d in _walk(data) if "gp.run_zone" in d):
             assert target["id"] == "gp_greenhouse", rel
         reads = re.findall(r"id\((gp_\w+)\)", code)
-        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_hist_seen", "gp_service_mode", "gp_confirm_result"}, (rel, reads)
+        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_service_mode", "gp_confirm_result",
+                     "gp_header_clock_text"}, (rel, reads)
 
 
 @pytest.mark.unit
@@ -114,7 +112,7 @@ def test_lvgl_only_from_pollers() -> None:
     """LVGL is never touched from a gp trigger, an on_value / on_state callback or an API action (it can fire before
     LVGL is ready; see CLAUDE.md)."""
     # sensors_air_dht.yaml / sensors_soil.yaml predate this rule (on_value updating LVGL): follow-up in the task notes
-    irrigation_files = {"irrigation.yaml", "irrigation_pump.yaml", "bed.yaml", "zone.yaml", "bed_soil.yaml", "bed_soil_skip.yaml", "gp.yaml", "gp_api.yaml"}
+    irrigation_files = {"irrigation.yaml", "irrigation_pump.yaml", "bed.yaml", "bed_soil.yaml", "bed_soil_skip.yaml", "gp.yaml", "gp_api.yaml"}
     for path in _yaml_files("packages"):
         data = load_esphome_yaml(path)
         for d in _walk(data):
@@ -221,7 +219,7 @@ def test_stop_and_deferred_start_are_documented_and_wired() -> None:
 
 @pytest.mark.unit
 def test_pure_headers() -> None:
-    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h", "deferred_start.h", "format_history.h"):
+    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h", "deferred_start.h"):
         text = (COMPONENT / name).read_text(encoding="utf-8")
         assert "esphome/" not in re.sub(r"namespace esphome::", "", text), f"{name} must stay free of ESPHome includes"
         assert not re.search(r'#include\s+"esphome/', text), name

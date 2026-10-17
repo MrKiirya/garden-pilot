@@ -1,0 +1,65 @@
+# One row of the Schedule list (design D08): a clickable card with the start time, the group + zones label, a caption
+# (days and run time), the coloured status word and a chevron. Included once per row by lvgl_schedules.yaml with
+#   vars: {n: "1", i: "0", y: "26"}   n = row number 1..4 (ids), i = n - 1 (hub slot index), y = top of the card.
+# The row starts hidden; gh_sched_row${n}_refresh (lvgl_schedules_row_refresh.yaml) fills and shows it.
+
+obj:
+  id: gh_sched_row${n}
+  x: 8
+  y: ${y}
+  width: 304
+  height: 36
+  hidden: true
+  clickable: true
+  bg_color: 0x1c1b1b
+  bg_opa: COVER
+  border_width: 1
+  border_color: 0x3f4a3c
+  radius: 2
+  pad_all: 0
+  shadow_width: 0
+  scrollable: false
+  on_click:
+    - lambda: "id(gh_schedule)->begin_edit(${i});"
+    - script.execute: gh_sed_refresh
+    - lvgl.page.show: gh_sched_edit_page
+  widgets:
+    - label:
+        id: gh_sched_row${n}_time
+        x: 5
+        y: 4
+        text: "--:--"
+        text_font: montserrat_14
+        text_color: 0xbecab9
+    - label:
+        id: gh_sched_row${n}_label
+        x: 55
+        y: 4
+        width: 180
+        long_mode: DOT
+        text: ""
+        text_font: montserrat_12
+        text_color: 0xbecab9
+    - label:
+        id: gh_sched_row${n}_caption
+        x: 55
+        y: 19
+        width: 180
+        long_mode: DOT
+        text: ""
+        text_font: montserrat_10
+        text_color: 0xbecab9
+    - label:
+        id: gh_sched_row${n}_status
+        x: 239
+        y: 12
+        text: ""
+        text_font: montserrat_10
+        text_color: 0xbecab9
+    - label:
+        id: gh_sched_row${n}_chev
+        x: 287
+        y: 10
+        text: "\uF054"
+        text_font: montserrat_12
+        text_color: 0xbecab9

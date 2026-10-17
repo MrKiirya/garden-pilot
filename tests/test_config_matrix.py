@@ -22,8 +22,7 @@ GP_API = ["core_gp", "core_gp_api", "gh_gp"]
 BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API]
 SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP]
 SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP]
-SCHEDULE = ["gh_schedule", "gh_schedule_slot_1", "gh_schedule_slot_2"]
-LAWN = ["lawn_irrigation", "lawn_zone_1", "lawn_zone_2", "lawn_gp"]  # commented-out blocks of garden-pilot.yaml
+SCHEDULE = ["gh_schedule", "gh_schedule_slot_1", "gh_schedule_slot_2", "gh_schedule_slot_3", "gh_schedule_slot_4"]
 SIM = "hardware/sim.yaml"
 SIM_ENTRY = "garden-pilot-sim.yaml"
 SIM_API_ONLY = [
@@ -100,19 +99,6 @@ VARIANTS: dict[str, Variant] = {
     # the Schedules page without any schedule package (task 026): the shell shows "No schedules configured"
     "no_schedules_lvgl": Variant("without", [*SCHEDULE, "gh_lvgl_schedules"]),
     "sim_no_schedules": Variant("without", [*SCHEDULE, "gh_lvgl_schedules"], source=SIM_ENTRY),
-    # lawn (task 024): a pump group next to the greenhouse, alone, and with limits that must be rejected
-    "lawn_with_greenhouse_headless": Variant(
-        "keep", [*CORE, "gh_irrigation", "gh_bed_1", "core_gp", "core_gp_api", "gh_gp", *LAWN], enable=tuple(LAWN)
-    ),
-    "lawn_only_headless": Variant("keep", [*CORE, "core_gp", "core_gp_api", *LAWN], enable=tuple(LAWN)),
-    "lawn_max_on_time_too_short": Variant(
-        "keep", [*CORE, "core_gp", "core_gp_api", *LAWN], enable=tuple(LAWN), subst=("lawn_max_on_time", "30min"),
-        fails_with=("max_value", "max_on_time"),
-    ),
-    "lawn_pump_max_on_time_too_short": Variant(
-        "keep", [*CORE, "core_gp", "core_gp_api", *LAWN], enable=tuple(LAWN), subst=("lawn_pump_max_on_time", "30min"),
-        fails_with=("pump_max_on_time", "below max_on_time"),
-    ),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
     "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1", *GP], hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),

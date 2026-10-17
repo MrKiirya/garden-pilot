@@ -217,6 +217,7 @@ TEST_CASE("dst_fall_back_no_double") {
   CHECK(fx.raw(MON, 2 * 60 + 29, 59, 1000 + 3599, 6000 + 3599000).fires.empty());
   CHECK(fx.raw(MON, 2 * 60 + 30, 0, 1000 + 3600, 6000 + 3600000).fires.empty());
   CHECK(fx.s.state(0).last_fired_day == MON);
+  CHECK(fx.s.state(0).last_fired_minute == 2 * 60 + 30);  // one run: the (day, minute) mark blocks the repeat
 }
 
 TEST_CASE("boot_catch_up_inside_window") {
@@ -276,7 +277,7 @@ TEST_CASE("boot_missed_outside_window") {
 TEST_CASE("boot_already_fired_today") {
   Fx fx;
   fx.cfg[0] = slot(6, 0);
-  fx.s.restore(0, MON, 0);
+  fx.s.restore(0, MON, 6 * 60, 0);
   gs::Events e = fx.at(MON, 6, 20, 0);
   CHECK(e.fires.empty());
   CHECK(e.missed.empty());
@@ -312,7 +313,7 @@ TEST_CASE("sync_jump_backward") {
 TEST_CASE("future_mark_cleared") {
   Fx fx;
   fx.cfg[0] = slot(6, 0);
-  fx.s.restore(0, MON + 30, 0x3);
+  fx.s.restore(0, MON + 30, 6 * 60, 0x3);
   gs::Events e = fx.at(MON, 5, 0, 0);
   CHECK(e.future_cleared);
   CHECK(e.state_changed);
@@ -323,7 +324,7 @@ TEST_CASE("future_mark_cleared") {
   // tomorrow's mark (clock a day ahead when it fired) is kept
   Fx keep;
   keep.cfg[0] = slot(6, 0);
-  keep.s.restore(0, MON + 1, 0);
+  keep.s.restore(0, MON + 1, 6 * 60, 0);
   CHECK(!keep.at(MON, 5, 0, 0).future_cleared);
 }
 
@@ -359,15 +360,183 @@ TEST_CASE("mono_wraps") {
 }
 
 TEST_CASE("edit_after_fire") {
+  // the run mark is keyed by (day, start minute): moving a fired slot to a later time runs it again the same day
   Fx fx;
   fx.cfg[0] = slot(6, 0);
   fx.at(MON, 5, 59, 59);
   CHECK(fx.at(MON, 6, 0, 0).fires.size() == 1);
   fx.cfg[0].start_minute = 8 * 60;
   fx.at(MON, 7, 59, 59);
-  CHECK(fx.at(MON, 8, 0, 0).fires.empty());
+  gs::Events e = fx.at(MON, 8, 0, 0);
+  REQUIRE(e.fires.size() == 1);
+  CHECK(e.fires[0].zone_mask == 0x3u);
+  CHECK(fx.s.state(0).last_fired_minute == 8 * 60);
+  CHECK(fx.at(MON, 8, 0, 5).fires.empty());
   fx.at(MON + 1, 7, 59, 59);
   CHECK(fx.at(MON + 1, 8, 0, 0).fires.size() == 1);
+}
+
+TEST_CASE("moved_later_after_run_fires") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0);
+  fx.at(MON, 5, 59, 59);
+  CHECK(fx.at(MON, 6, 0, 0).fires.size() == 1);
+  fx.cfg[0].start_minute = 18 * 60;
+  CHECK(fx.at(MON, 12, 0, 0, true).fires.empty());
+  fx.at(MON, 17, 59, 59);
+  CHECK(fx.at(MON, 18, 0, 0).fires.size() == 1);  // the same local day
+  CHECK(fx.at(MON, 18, 0, 5).fires.empty());
+  fx.at(MON + 1, 17, 59, 59);
+  CHECK(fx.at(MON + 1, 18, 0, 0).fires.size() == 1);  // next day: once, not twice
+  CHECK(fx.at(MON + 1, 18, 0, 5).fires.empty());
+}
+
+TEST_CASE("stop_then_moved_fires") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0, 0x7);
+  fx.at(MON, 5, 59, 59);
+  CHECK(fx.at(MON, 6, 0, 0).fires.size() == 1);
+  fx.s.zone_done(0);
+  fx.s.stop_pending();
+  CHECK(fx.s.state(0).result == gs::Result::STOPPED);
+  fx.at(MON, 9, 0, 0);
+  fx.cfg[0].start_minute = 9 * 60 + 5;  // now + 5 min
+  fx.at(MON, 9, 4, 59);
+  gs::Events e = fx.at(MON, 9, 5, 0);
+  REQUIRE(e.fires.size() == 1);
+  CHECK(e.fires[0].zone_mask == 0x7u);  // the full mask, not the remainder
+  CHECK(fx.s.state(0).pending == 0x7u);
+  CHECK(fx.s.state(0).result == gs::Result::RAN);
+}
+
+TEST_CASE("unchanged_time_no_second_run") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0);
+  fx.at(MON, 5, 59, 59);
+  CHECK(fx.at(MON, 6, 0, 0).fires.size() == 1);
+  fx.cfg[0].enabled = false;
+  fx.at(MON, 6, 0, 10);
+  fx.cfg[0].enabled = true;
+  fx.cfg[0].start_minute = 6 * 60;  // saved again with the same start
+  for (unsigned minutes = 1; minutes < 17 * 60; minutes += 11)
+    CHECK(fx.at(MON, 6 + minutes / 60, minutes % 60, 20).fires.empty());
+  CHECK(fx.at(MON, 23, 59, 59).fires.empty());
+}
+
+TEST_CASE("moved_to_a_passed_time_does_not_fire") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0);
+  fx.at(MON, 5, 59, 59);
+  fx.at(MON, 6, 0, 0);
+  fx.at(MON, 10, 0, 0);
+  fx.cfg[0].start_minute = 8 * 60;  // earlier than now: no crossing
+  CHECK(fx.at(MON, 10, 0, 1).fires.empty());
+  CHECK(fx.at(MON, 10, 30, 0).fires.empty());
+}
+
+TEST_CASE("moved_while_pending_drops_old_zones") {
+  Fx fx;
+  fx.cfg[0] = slot(8, 0, 0x3);  // moved from 06:00 to 08:00 while the device was off
+  fx.s.restore(0, MON, 6 * 60, 0x2);  // fired at 06:00 with zones {1,2}, zone 1 done
+  gs::Events e = fx.at(MON, 8, 30, 0);
+  REQUIRE(e.dropped.size() == 1);
+  CHECK(e.dropped[0] == 0);
+  REQUIRE(e.fires.size() == 1);
+  CHECK(e.fires[0].catch_up);
+  CHECK(e.fires[0].zone_mask == 0x3u);  // the new start is evaluated like an unfired slot: the full mask
+  CHECK(fx.s.state(0).last_fired_minute == 8 * 60);
+  // moved to a start still ahead: the old zones are dropped, nothing fires yet, the new start crosses later
+  Fx ahead;
+  ahead.cfg[0] = slot(18, 0, 0x3);
+  ahead.s.restore(0, MON, 6 * 60, 0x2);
+  gs::Events a = ahead.at(MON, 9, 0, 0);
+  CHECK(a.dropped.size() == 1);
+  CHECK(a.fires.empty());
+  CHECK(ahead.s.state(0).pending == 0u);
+  ahead.at(MON, 17, 59, 59);
+  CHECK(ahead.at(MON, 18, 0, 0).fires.size() == 1);
+  // moved to a passed time outside the window: missed, the old zones are dropped
+  Fx late;
+  late.cfg[0] = slot(8, 0, 0x3);
+  late.s.restore(0, MON, 6 * 60, 0x2);
+  gs::Events l = late.at(MON, 12, 0, 0);
+  CHECK(l.dropped.size() == 1);
+  CHECK(l.fires.empty());
+  REQUIRE(l.missed.size() == 1);
+  CHECK(l.missed[0].zone_mask == 0x3u);
+  // the start did not change: pending zones resume as before
+  Fx same;
+  same.cfg[0] = slot(6, 0, 0x3);
+  same.s.restore(0, MON, 6 * 60, 0x2);
+  gs::Events s2 = same.at(MON, 6, 20, 0);
+  CHECK(s2.dropped.empty());
+  REQUIRE(s2.fires.size() == 1);
+  CHECK(s2.fires[0].zone_mask == 0x2u);
+}
+
+TEST_CASE("v1_mark_matches_any_minute") {
+  Fx fx;
+  fx.cfg[0] = slot(8, 0);
+  fx.s.restore(0, MON, gs::ANY_MINUTE, 0);  // a mark written before the start was part of it
+  CHECK(fx.at(MON, 8, 30, 0).fires.empty());  // blocks today at any start (no catch-up either)
+  CHECK(fx.at(MON, 8, 31, 0).missed.empty());
+  fx.cfg[0].start_minute = 20 * 60;
+  fx.at(MON, 19, 59, 59);
+  CHECK(fx.at(MON, 20, 0, 0).fires.empty());
+  fx.at(MON + 1, 19, 59, 59);
+  CHECK(fx.at(MON + 1, 20, 0, 0).fires.size() == 1);  // the next day it runs; the new mark has the minute
+  CHECK(fx.s.state(0).last_fired_minute == 20 * 60);
+  // pending zones of a v1 mark still resume (the start cannot be compared)
+  Fx pend;
+  pend.cfg[0] = slot(6, 0, 0x3);
+  pend.s.restore(0, MON, gs::ANY_MINUTE, 0x2);
+  gs::Events e = pend.at(MON, 6, 20, 0);
+  REQUIRE(e.fires.size() == 1);
+  CHECK(e.fires[0].zone_mask == 0x2u);
+}
+
+TEST_CASE("moved_later_while_earlier_run_is_pending") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0, 0x7);
+  fx.at(MON, 5, 59, 59);
+  fx.at(MON, 6, 0, 0);
+  fx.s.zone_done(0);  // zone 1 finished, zones 2 and 3 are still watering / queued
+  CHECK(fx.s.state(0).pending == 0x6u);
+  fx.cfg[0].start_minute = 6 * 60 + 5;
+  fx.at(MON, 6, 4, 59);
+  gs::Events e = fx.at(MON, 6, 5, 0);
+  REQUIRE(e.fires.size() == 1);
+  CHECK(e.fires[0].zone_mask == 0x7u);  // the full mask: gp skips the zones that are still queued or running
+  CHECK(fx.s.state(0).pending == 0x7u);
+}
+
+TEST_CASE("moved_slot_in_next_run_and_day_runs") {
+  Fx fx;
+  fx.cfg[0] = slot(6, 0);
+  fx.at(MON, 5, 59, 59);
+  fx.at(MON, 6, 0, 0);
+  fx.at(MON, 9, 0, 0);
+  auto next = fx.s.next_run(fx.cfg, fx.n);
+  REQUIRE(next.has_value());
+  CHECK(next->day == MON + 1);  // fired today at 06:00
+  std::vector<gs::DayRun> runs = fx.s.day_runs(0, fx.cfg, fx.n);
+  REQUIRE(runs.size() == 1);
+  CHECK(runs[0].state == gs::DayRunState::FIRED);
+  fx.cfg[0].start_minute = 18 * 60;  // moved later: it is ahead again today
+  next = fx.s.next_run(fx.cfg, fx.n);
+  REQUIRE(next.has_value());
+  CHECK(next->day == MON);
+  CHECK(next->start_minute == 18 * 60);
+  runs = fx.s.day_runs(0, fx.cfg, fx.n);
+  REQUIRE(runs.size() == 1);
+  CHECK(runs[0].state == gs::DayRunState::PENDING);
+  fx.at(MON, 17, 59, 59);
+  fx.at(MON, 18, 0, 0);
+  runs = fx.s.day_runs(0, fx.cfg, fx.n);
+  CHECK(runs[0].state == gs::DayRunState::FIRED);
+  next = fx.s.next_run(fx.cfg, fx.n);
+  REQUIRE(next.has_value());
+  CHECK(next->day == MON + 1);
 }
 
 TEST_CASE("multiplier_hook") {
@@ -462,7 +631,7 @@ TEST_CASE("restart_reruns_only_pending_zones") {
   // power cut after zone 1 completed: restart inside the window runs zones 2 and 3 only
   Fx fx;
   fx.cfg[0] = slot(6, 0, 0x7);
-  fx.s.restore(0, MON, 0x6);
+  fx.s.restore(0, MON, 6 * 60, 0x6);
   gs::Events e = fx.at(MON, 6, 25, 0);
   REQUIRE(e.fires.size() == 1);
   CHECK(e.fires[0].catch_up);
@@ -480,7 +649,7 @@ TEST_CASE("restart_reruns_only_pending_zones") {
 TEST_CASE("restart_after_window_drops_pending") {
   Fx fx;
   fx.cfg[0] = slot(6, 0, 0x7);
-  fx.s.restore(0, MON, 0x4);
+  fx.s.restore(0, MON, 6 * 60, 0x4);
   gs::Events e = fx.at(MON, 8, 0, 0);
   CHECK(e.fires.empty());
   REQUIRE(e.missed.size() == 1);
@@ -490,7 +659,7 @@ TEST_CASE("restart_after_window_drops_pending") {
   // a mark from yesterday never resumes
   Fx old;
   old.cfg[0] = slot(6, 0, 0x7);
-  old.s.restore(0, MON - 1, 0x4);
+  old.s.restore(0, MON - 1, 6 * 60, 0x4);
   gs::Events o = old.at(MON, 6, 10, 0);
   REQUIRE(o.fires.size() == 1);
   CHECK(o.fires[0].zone_mask == 0x7u);  // today's slot is a fresh run
@@ -552,7 +721,7 @@ TEST_CASE("unfired_slot_is_still_caught_up_after_a_later_jump") {
 TEST_CASE("resume_only_on_first_valid_tick_even_with_master_off_at_boot") {
   Fx fx;
   fx.cfg[0] = slot(6, 0, 0x7);
-  fx.s.restore(0, MON, 0x6);
+  fx.s.restore(0, MON, 6 * 60, 0x6);
   fx.s.set_master(false);
   fx.at(MON, 6, 10, 0);
   fx.s.set_master(true);
@@ -587,7 +756,7 @@ TEST_CASE("stop_settles_the_slot_and_nothing_resumes_after_a_restart") {
   rebooted.n = 2;
   rebooted.cfg[0] = slot(6, 0, 0x7);
   rebooted.cfg[1] = slot(6, 30, 0x3);
-  rebooted.s.restore(0, MON, fx.s.state(0).pending);
+  rebooted.s.restore(0, MON, 6 * 60, fx.s.state(0).pending);
   gs::Events e = rebooted.at(MON, 6, 10, 0);
   CHECK(e.fires.empty());
   CHECK(e.missed.empty());
@@ -615,7 +784,7 @@ TEST_CASE("a_power_cut_without_a_stop_still_resumes_the_pending_zones") {
   fx.s.zone_done(0);
   Fx rebooted;
   rebooted.cfg[0] = slot(6, 0, 0x7);
-  rebooted.s.restore(0, MON, fx.s.state(0).pending);
+  rebooted.s.restore(0, MON, 6 * 60, fx.s.state(0).pending);
   gs::Events e = rebooted.at(MON, 6, 10, 0);
   REQUIRE(e.fires.size() == 1);
   CHECK(e.fires[0].zone_mask == 0x6u);
@@ -658,7 +827,7 @@ gs::SlotView view(unsigned hour = 6, unsigned minute = 0, uint8_t days = gs::ALL
 }  // namespace
 
 TEST_CASE("schedule_texts") {
-  CHECK(gs::days_text(0x7F) == "Daily");
+  CHECK(gs::days_text(0x7F) == "Every day");
   CHECK(gs::days_text(0x1F) == "Mon-Fri");
   CHECK(gs::days_text(0x60) == "Sat Sun");
   CHECK(gs::days_text(MON_WED_FRI) == "Mon Wed Fri");
@@ -668,16 +837,6 @@ TEST_CASE("schedule_texts") {
   CHECK(gs::days_text(0x0F) == "Mon-Thu");
   CHECK(gs::days_text(0x1B) == "Mon Tue Thu Fri");
   CHECK(gs::days_text(0x77) == "Mon-Wed Fri-Sun");
-  CHECK(gs::zones_text(0x7, 3) == "All");
-  CHECK(gs::zones_text(0x5, 3) == "B1 B3");
-  CHECK(gs::zones_text(0x2, 3) == "B2");
-  CHECK(gs::zones_text(0x3F, 6) == "All");
-  CHECK(gs::zones_text(0x1F, 6) == "B1 B2 B3 B4 B5");
-  CHECK(gs::zones_text(0x7F, 8) == "7 zones");  // more than 6 listed zones: a count
-  CHECK(gs::zones_text(0x0, 3) == "None");
-  CHECK(gs::detail_text(view(6, 0, 0x1F, 0x5), 3) == "Mon-Fri  B1 B3  150%");
-  CHECK(gs::row_text(view(6, 0, 0x1F, 0x5), 3) == "06:00  Mon-Fri  B1 B3  150%");
-  CHECK(gs::row_text(view(18, 5, 0x7F, 0x7, 100), 3) == "18:05  Daily  All  100%");
   CHECK(std::string(gs::today_word(gs::Today::NONE)).empty());
   CHECK(std::string(gs::today_word(gs::Today::RUNNING)) == "running");
   CHECK(std::string(gs::today_word(gs::Today::DONE)) == "done");
@@ -689,28 +848,10 @@ TEST_CASE("schedule_texts") {
   CHECK(gs::next_short(true, today + 1, 6 * 60, today) == "Tue 06:00");
   CHECK(gs::next_short(true, today + 6, 23 * 60 + 59, today) == "Sun 23:59");
   CHECK(gs::next_short(false, 0, 0, today) == "--:--");
-  // the worst case still fits one caption line (44 chars) and the whole row text stays below ROW_MAX
-  const gs::SlotView worst = view(23, 59, 0x5B, 0x3F & ~0x20u, 200);
-  CHECK(ascii(gs::row_text(worst, 6)) && gs::row_text(worst, 6).size() < gs::ROW_MAX);
-  CHECK(gs::detail_text(worst, 32).size() <= 44);
   for (unsigned mask = 0; mask < 256; mask++) {
     const std::string d = gs::days_text(static_cast<uint8_t>(mask));
     CHECK(ascii(d) && !d.empty() && d.size() <= 19);
   }
-}
-
-TEST_CASE("schedule_pager") {
-  CHECK(gs::page_count(0, 3) == 1);
-  CHECK(gs::page_count(3, 3) == 1);
-  CHECK(gs::page_count(4, 3) == 2);
-  CHECK(gs::page_count(8, 3) == 3);
-  CHECK(gs::step_page(0, 3, 8, 1) == 1);
-  CHECK(gs::step_page(2, 3, 8, 1) == 0);   // wraps
-  CHECK(gs::step_page(0, 3, 8, -1) == 2);  // wraps
-  CHECK(gs::step_page(5, 3, 2, 1) == 0);   // a stale page is folded back
-  CHECK(gs::pager_text(0, 3, 8) == "1/3");
-  CHECK(gs::pager_text(2, 3, 8) == "3/3");
-  CHECK(gs::pager_text(0, 3, 0) == "1/1");
 }
 
 TEST_CASE("schedule_view_hash") {
@@ -732,6 +873,7 @@ TEST_CASE("schedule_view_hash") {
   CHECK(changed([](std::vector<gs::SlotView> &v) { v.pop_back(); }));
   CHECK(gs::view_hash(base, false, "Tue 06:00") != h);  // master
   CHECK(gs::view_hash(base, true, "--:--") != h);       // next run
+  CHECK(gs::view_hash(base, true, "Tue 06:00", 300) != h);  // the zone durations of the captions
   CHECK(!changed([](std::vector<gs::SlotView> &) {}));
   CHECK(gs::view_hash({}, true, "--:--") != 0u);
 }

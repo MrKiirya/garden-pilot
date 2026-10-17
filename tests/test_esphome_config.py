@@ -94,5 +94,6 @@ def test_header_clock_merged() -> None:
         return []
 
     assert sorted(updated(scripts[0]["then"])) == [
-        "home_clock_label", "network_clock_label", "setup_clock_label", "valve_test_clock_label",
+        "gh_sed_clock_label", "home_clock_label", "network_clock_label", "sched_clock_label", "setup_clock_label",
+        "valve_test_clock_label",
     ]
