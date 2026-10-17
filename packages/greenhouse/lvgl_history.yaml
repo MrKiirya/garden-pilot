@@ -239,6 +239,7 @@ lvgl:
             widgets:
               - label:
                   id: gh_hist_back_label
+                  align: CENTER
                   text: "BACK"
                   text_font: gp_font_button_md
                   text_color: 0xbecab9
@@ -260,6 +261,7 @@ lvgl:
               flex_flow: ROW
               flex_align_main: CENTER
               flex_align_cross: CENTER
+              flex_align_track: CENTER
               pad_column: 4
             on_click:
               - globals.set:
@@ -294,6 +296,7 @@ lvgl:
               flex_flow: ROW
               flex_align_main: CENTER
               flex_align_cross: CENTER
+              flex_align_track: CENTER
               pad_column: 4
             on_click:
               - globals.set:

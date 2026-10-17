@@ -125,8 +125,7 @@ lvgl:
             widgets:
               - switch:
                   id: gh_sed_switch
-                  x: 26
-                  y: 4
+                  align: CENTER
                   width: 28
                   height: 14
                   clickable: false
