@@ -294,7 +294,6 @@ TEST_CASE("format_lines") {
   CHECK(gp::fmt::modes_line(idle_summary) == "AA:off  Q:0");
   CHECK(gp::fmt::queue_line(idle_summary) == "Queue: (empty)");
   CHECK(gp::fmt::home_status(idle_summary) == "Idle");
-  CHECK(gp::fmt::home_next(idle_summary) == "--:--");
   CHECK(gp::fmt::zone_left_line(idle_summary) == "Zone left: --:--:--");
   CHECK(gp::fmt::total_left_line(idle_summary) == "Total left: --:--:--");
   CHECK(gp::fmt::saver_bed(idle_summary).empty());
@@ -326,7 +325,6 @@ TEST_CASE("format_lines") {
   CHECK(gp::fmt::modes_line(s) == "AA:on  Q:1");
   CHECK(gp::fmt::queue_line(s) == "Queue: 00:02:05 next B2");
   CHECK(gp::fmt::home_status(s) == "Watering");
-  CHECK(gp::fmt::home_next(s) == "02:05");
   CHECK(gp::fmt::zone_left_line(s) == "Zone left: 00:01:05");  // the smallest of the active zones
   CHECK(gp::fmt::total_left_line(s) == "Total left: 01:02:05");
   CHECK(gp::fmt::saver_bed(s) == "Bed 1+");
@@ -398,3 +396,42 @@ TEST_CASE("run_source") {
   CHECK(!m.zone(1).last_start_uptime.has_value());
 }
 
+
+TEST_CASE("saver_date_formats") {
+  // ESPTime: day_of_week 1 = Sunday .. 7 = Saturday.
+  CHECK(gp::fmt::saver_date(true, 6, 16, 10) == "Friday - 16 Oct");
+  CHECK(gp::fmt::saver_date(true, 1, 6, 1) == "Sunday - 6 Jan");
+  CHECK(gp::fmt::saver_date(true, 7, 31, 12) == "Saturday - 31 Dec");
+}
+
+TEST_CASE("saver_date_fits_the_label") {
+  // longest: Wednesday - 30 Sep
+  const std::string longest = gp::fmt::saver_date(true, 4, 30, 9);
+  CHECK(longest == "Wednesday - 30 Sep");
+  for (int dow = 1; dow <= 7; dow++) {
+    for (int month = 1; month <= 12; month++) {
+      const std::string s = gp::fmt::saver_date(true, dow, 28, month);
+      CHECK(!s.empty());
+      CHECK(s.size() < gp::fmt::LABEL_MAX);
+      CHECK(printable_ascii(s));
+    }
+  }
+}
+
+TEST_CASE("saver_date_rejects_invalid") {
+  CHECK(gp::fmt::saver_date(false, 6, 16, 10).empty());
+  CHECK(gp::fmt::saver_date(true, 0, 16, 10).empty());
+  CHECK(gp::fmt::saver_date(true, 8, 16, 10).empty());
+  CHECK(gp::fmt::saver_date(true, 6, 16, 0).empty());
+  CHECK(gp::fmt::saver_date(true, 6, 16, 13).empty());
+  CHECK(gp::fmt::saver_date(true, 6, 0, 10).empty());
+  CHECK(gp::fmt::saver_date(true, 6, 32, 10).empty());
+}
+
+TEST_CASE("version_short_strips_the_config_hash") {
+  CHECK(gp::fmt::version_short("2026.9.1 (config hash 0x1a2b3c4d)") == "2026.9.1");
+  CHECK(gp::fmt::version_short("2026.9.1") == "2026.9.1");
+  CHECK(gp::fmt::version_short("2026.10.0b1 Oct 17 2026, 10:00:00") == "2026.10.0b1");
+  CHECK(gp::fmt::version_short("") == "");
+  CHECK(gp::fmt::version_short(" leading") == "");
+}

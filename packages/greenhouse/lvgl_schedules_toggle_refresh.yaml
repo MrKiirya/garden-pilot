@@ -1,0 +1,22 @@
+# Refresh script of one editor toggle (vars as in lvgl_schedules_toggle.yaml): draws the button selected (green-fill +
+# on-green) or ghost from the draft, and hides a bed button past the group's zone count.
+
+id: gh_sed_${kind}${n}_refresh
+then:
+  - if:
+      condition:
+        lambda: "return id(gh_schedule)->edit_${kind}_visible(${i});"
+      then:
+        - lvgl.widget.show: gh_sed_btn_${kind}${n}
+        - lvgl.widget.update:
+            id: gh_sed_btn_${kind}${n}
+            bg_color: !lambda "return id(gh_schedule)->edit_${kind}_on(${i})
+              ? lv_color_hex(0x4caf50) : lv_color_hex(0x131313);"
+            border_color: !lambda "return id(gh_schedule)->edit_${kind}_on(${i})
+              ? lv_color_hex(0x4caf50) : lv_color_hex(0xbecab9);"
+        - lvgl.label.update:
+            id: gh_sed_lbl_${kind}${n}
+            text_color: !lambda "return id(gh_schedule)->edit_${kind}_on(${i})
+              ? lv_color_hex(0x003c0b) : lv_color_hex(0xbecab9);"
+      else:
+        - lvgl.widget.hide: gh_sed_btn_${kind}${n}

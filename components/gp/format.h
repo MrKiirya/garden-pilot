@@ -100,16 +100,6 @@ inline std::string home_status(const GroupSummary &s) {
   return "Idle";
 }
 
-/// Home "next": "--:--" or "MM:SS" of the queued time
-inline std::string home_next(const GroupSummary &s) {
-  if (s.queue_time == 0 && s.queue_length == 0)
-    return "--:--";
-  char buf[16];
-  std::snprintf(buf, sizeof(buf), "%02u:%02u", static_cast<unsigned>((s.queue_time % 3600U) / 60U),
-                static_cast<unsigned>(s.queue_time % 60U));
-  return buf;
-}
-
 /// Home Assistant status text: "Idle" / "Watering B1 B3" / "Locked"
 inline std::string ha_status(const GroupSummary &s) {
   if (s.watchdog_tripped)
@@ -142,5 +132,22 @@ inline std::string saver_bed(const GroupSummary &s) {
   std::snprintf(buf, sizeof(buf), "Bed %u%s", static_cast<unsigned>(s.active[0] + 1), s.active_count > 1 ? "+" : "");
   return buf;
 }
+
+/// Screensaver date line, e.g. "Friday - 16 Oct" (ASCII only: the built-in fonts have no middle dot).
+/// ESPTime fields: `day_of_week` 1 = Sunday .. 7, `day_of_month` 1..31, `month` 1..12. "" when invalid or out of range.
+inline std::string saver_date(bool valid, int day_of_week, int day_of_month, int month) {
+  static const char *const DAYS[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+  static const char *const MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  if (!valid || day_of_week < 1 || day_of_week > 7 || day_of_month < 1 || day_of_month > 31 || month < 1 || month > 12)
+    return "";
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%s - %d %s", DAYS[day_of_week - 1], day_of_month, MONTHS[month - 1]);
+  return buf;
+}
+
+/// ESPHome version text without the config hash / build date: everything up to the first space
+/// ("2026.9.1 (config hash 0x1a2b3c4d)" -> "2026.9.1"), so it fits one line of the Network page.
+inline std::string version_short(const std::string &version) { return version.substr(0, version.find(' ')); }
 
 }  // namespace esphome::gp::fmt

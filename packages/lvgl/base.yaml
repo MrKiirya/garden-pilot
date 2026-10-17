@@ -1,4 +1,66 @@
 # Shared LVGL setup (no pages). Pages live in packages/lvgl/page_*.yaml.
+#
+# Header clock (design rule: the current time is at the right of every header): the text is computed once here and
+# every page with a header appends ONE lvgl.label.update to gp_header_clock_update with
+#   script: [{id: !extend gp_header_clock_update, then: [lvgl.label.update: {id: <page>_clock_label, text: ...}]}]
+# LVGL is written only from this interval (never from a time trigger), so a clock that is not valid yet is harmless.
+#
+# Button fonts (tokens button-md 10 px, button-sm 8 px): LVGL's built-in Montserrat has one weight, so button labels use
+# glyph-limited custom fonts baked from the vendored Montserrat Bold (packages/lvgl/fonts/, OFL.txt; checksum in
+# packages/lvgl/screensaver.yaml). Upper case, digits and a few symbols only (a few KB of flash each).
+# Nav icons (design/icons/*.svg rendered once to 12x12 PNG, vendored in packages/lvgl/icons/): RGB565 with an alpha
+# channel, recoloured per state with `image_recolor` on the image widget. Paths are relative to the entry file.
+
+substitutions:
+  gp_root: "."
+
+font:
+  - id: gp_font_button_md
+    file: ${gp_root}/packages/lvgl/fonts/Montserrat-Bold.ttf
+    size: 10
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-./:%"
+    bpp: 4
+  - id: gp_font_button_sm
+    file: ${gp_root}/packages/lvgl/fonts/Montserrat-Bold.ttf
+    size: 8
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-./:%"
+    bpp: 4
+
+image:
+  - id: gp_icon_house
+    file: ${gp_root}/packages/lvgl/icons/house.png
+    type: RGB565
+    transparency: alpha_channel
+  - id: gp_icon_leaf
+    file: ${gp_root}/packages/lvgl/icons/leaf.png
+    type: RGB565
+    transparency: alpha_channel
+  - id: gp_icon_drop
+    file: ${gp_root}/packages/lvgl/icons/drop.png
+    type: RGB565
+    transparency: alpha_channel
+  - id: gp_icon_gear
+    file: ${gp_root}/packages/lvgl/icons/gear.png
+    type: RGB565
+    transparency: alpha_channel
+
+globals:
+  - id: gp_header_clock_text
+    type: std::string
+    restore_value: false
+    initial_value: '"--:--"'
+
+script:
+  - id: gp_header_clock_update
+    mode: restart
+    then:
+      - lambda: |-
+          id(gp_header_clock_text) = id(ha_time).now().is_valid() ? id(ha_time).now().strftime("%H:%M") : "--:--";
+
+interval:
+  - interval: 2s
+    then:
+      - script.execute: gp_header_clock_update
 
 lvgl:
   displays:

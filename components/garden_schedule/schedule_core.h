@@ -8,6 +8,9 @@
 //    repeated hour of a fall-back, the skipped hour of a spring-forward is crossed in one step).
 //  * The first valid tick and every tick after a clock jump are "discontinuous": nothing fires by crossing. Slots of
 //    today whose start has passed are caught up (inside the catch-up window) or recorded as missed.
+//  * The run mark is keyed by (local day, start minute): a slot is "handled today" only while its start is the one it
+//    ran with. Moving a slot to a later time runs it again the same day (also after a STOP); saving the same start again
+//    never does. ANY_MINUTE (marks migrated from before the minute was stored) matches every start.
 //  * The "done" mark is per zone: a fired slot keeps a pending zone mask; a zone leaves it when its watering
 //    completes. After a restart inside the window only the pending zones run again. A user STOP settles the slot
 //    (`stop_pending`): the pending zones are dropped and nothing resumes.
@@ -27,6 +30,8 @@ inline constexpr size_t MAX_SLOTS = 8;
 inline constexpr int32_t NEVER = INT32_MIN;
 inline constexpr int64_t CONTINUOUS_TOLERANCE_MS = 5000;
 inline constexpr uint8_t ALL_DAYS = 0x7F;
+/// Start minute of a run mark that predates the minute (migrated v1 marks): it matches whatever the start is now.
+inline constexpr uint16_t ANY_MINUTE = 0xFFFF;
 
 // ------------------------------------------------------------------------------------------------ calendar
 
@@ -163,6 +168,7 @@ enum class Result : uint8_t { NONE, RAN, CATCH_UP, MISSED, SKIPPED, STOPPED };
 
 struct SlotState {
   int32_t last_fired_day{NEVER};  ///< local day number of the last fire / miss / skip (persisted)
+  uint16_t last_fired_minute{ANY_MINUTE};  ///< the slot's start minute at that fire (persisted)
   uint32_t pending{0};  ///< zones of the fired run that did not complete yet (persisted)
   Result result{Result::NONE};  ///< not persisted
 };
@@ -183,6 +189,7 @@ struct Missed {
 struct Events {
   std::vector<Fire> fires;
   std::vector<Missed> missed;
+  std::vector<uint8_t> dropped;  ///< slots whose pending zones were dropped because their start changed meanwhile
   bool state_changed{false};  ///< a persisted field changed: save the state
   bool future_cleared{false};  ///< a day mark from the future was cleared (warn)
   bool clock_became_valid{false};
@@ -221,11 +228,14 @@ class Scheduler {
   uint8_t global_pct() const { return this->global_pct_; }
 
   const SlotState &state(size_t slot) const { return this->states_[slot]; }
-  void restore(size_t slot, int32_t last_fired_day, uint32_t pending) {
+  void restore(size_t slot, int32_t last_fired_day, uint16_t last_fired_minute, uint32_t pending) {
     this->states_[slot].last_fired_day = last_fired_day;
+    this->states_[slot].last_fired_minute = last_fired_minute;
     this->states_[slot].pending = pending;
   }
   bool clock_valid() const { return this->have_prev_; }
+  /// Local day number of the last valid tick (0 before the first one).
+  int32_t today() const { return this->prev_.local.day; }
 
   /// Evaluates one clock reading against the slot configuration (slot index = position in `cfg`).
   void tick(const Tick &t, const SlotConfig *cfg, size_t n, Events &out) {
@@ -252,6 +262,7 @@ class Scheduler {
         SlotState &st = this->states_[i];
         if (st.last_fired_day != NEVER && st.last_fired_day > today + 1) {
           st.last_fired_day = NEVER;
+          st.last_fired_minute = ANY_MINUTE;
           st.pending = 0;
           out.future_cleared = true;
           out.state_changed = true;
@@ -322,7 +333,7 @@ class Scheduler {
       for (size_t i = 0; i < n; i++) {
         if (!runs_on_(cfg[i], day))
           continue;
-        if (this->states_[i].last_fired_day == day)
+        if (this->handled_(i, cfg[i], day))
           continue;
         if (offset == 0 && cfg[i].start_minute * 60 <= now.minute * 60 + now.second)
           continue;
@@ -333,6 +344,25 @@ class Scheduler {
         return best;
     }
     return best;
+  }
+
+  /// Seconds until slot `i` runs next (over the next 8 local days; a slot already handled today counts from its next
+  /// day). nullopt: no clock, master off, slot off or without day / zone.
+  std::optional<int64_t> seconds_to_next(size_t i, const SlotConfig *cfg, size_t n) const {
+    if (!this->have_prev_ || !this->master_ || i >= n || i >= MAX_SLOTS)
+      return std::nullopt;
+    const LocalTime &now = this->prev_.local;
+    const int64_t now_s = now.minute * 60 + now.second;
+    for (int offset = 0; offset < 8; offset++) {
+      const int32_t day = now.day + offset;
+      if (!runs_on_(cfg[i], day) || this->handled_(i, cfg[i], day))
+        continue;
+      const int64_t start_s = cfg[i].start_minute * 60;
+      if (offset == 0 && start_s <= now_s)
+        continue;
+      return static_cast<int64_t>(offset) * 86400 + start_s - now_s;
+    }
+    return std::nullopt;
   }
 
   /// The slots that run on the local day `now + offset`, sorted by start time, with their state.
@@ -350,7 +380,7 @@ class Scheduler {
       run.slot = static_cast<uint8_t>(i);
       run.start_minute = cfg[i].start_minute;
       const SlotState &st = this->states_[i];
-      if (st.last_fired_day == day) {
+      if (this->handled_(i, cfg[i], day)) {
         run.state = st.result == Result::MISSED ? DayRunState::MISSED
                     : st.result == Result::SKIPPED ? DayRunState::SKIPPED
                     : st.result == Result::STOPPED ? DayRunState::STOPPED
@@ -369,9 +399,16 @@ class Scheduler {
     return c.enabled && c.zone_mask != 0 && (c.days_mask & (1u << weekday_of(day))) != 0;
   }
 
+  /// True when slot `i` already ran (or was missed / skipped) on `day` with its current start.
+  bool handled_(size_t i, const SlotConfig &c, int32_t day) const {
+    const SlotState &st = this->states_[i];
+    return st.last_fired_day == day && (st.last_fired_minute == c.start_minute || st.last_fired_minute == ANY_MINUTE);
+  }
+
   void fire_(size_t i, const SlotConfig &c, int32_t day, bool catch_up, uint32_t mask, Events &out) {
     SlotState &st = this->states_[i];
     st.last_fired_day = day;
+    st.last_fired_minute = c.start_minute;
     st.pending = mask;
     st.result = catch_up ? Result::CATCH_UP : Result::RAN;
     out.fires.push_back(Fire{static_cast<uint8_t>(i), mask, effective_pct(c.pct, this->global_pct_), catch_up});
@@ -386,7 +423,7 @@ class Scheduler {
       last_day = this->prev_.local.day + 2;
     for (int32_t day = this->prev_.local.day; day <= last_day; day++) {
       for (size_t i = 0; i < n; i++) {
-        if (!runs_on_(cfg[i], day) || this->states_[i].last_fired_day == day)
+        if (!runs_on_(cfg[i], day) || this->handled_(i, cfg[i], day))
           continue;
         const int64_t start = static_cast<int64_t>(day) * 86400 + cfg[i].start_minute * 60;
         if (before < start && start <= after)
@@ -401,13 +438,19 @@ class Scheduler {
     for (size_t i = 0; i < n; i++) {
       if (!runs_on_(cfg[i], today))
         continue;
+      SlotState &st = this->states_[i];
+      // zones still pending from a run with another start (the start was moved while the device was off) are dropped
+      if (resume && st.last_fired_day == today && st.pending != 0 && !this->handled_(i, cfg[i], today)) {
+        st.pending = 0;
+        out.dropped.push_back(static_cast<uint8_t>(i));
+        out.state_changed = true;
+      }
       const int64_t start_s = cfg[i].start_minute * 60;
       if (start_s > now_s)
         continue;
-      SlotState &st = this->states_[i];
       const int64_t late = now_s - start_s;
       const uint32_t late_min = static_cast<uint32_t>(late / 60);
-      if (st.last_fired_day == today) {
+      if (this->handled_(i, cfg[i], today)) {
         // Pending zones resume only on the first valid tick after boot; a later clock jump never re-fires or
         // "misses" a slot that was already handled (it may still be running).
         if (!resume || st.pending == 0)
@@ -428,6 +471,7 @@ class Scheduler {
       } else {
         out.missed.push_back(Missed{static_cast<uint8_t>(i), late_min, cfg[i].zone_mask});
         st.last_fired_day = today;
+        st.last_fired_minute = cfg[i].start_minute;
         st.pending = 0;
         st.result = Result::MISSED;
         out.state_changed = true;

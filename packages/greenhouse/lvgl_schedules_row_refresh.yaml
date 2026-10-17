@@ -1,0 +1,31 @@
+# Refresh script of one list row (included by lvgl_schedules.yaml into `script:` with vars {n, i}, see
+# lvgl_schedules_row.yaml): shows the row when the hub has that slot, else hides it. All texts come from the hub
+# (components/garden_schedule/schedule_ui.h), so every lambda is one line.
+
+id: gh_sched_row${n}_refresh
+then:
+  - if:
+      condition:
+        lambda: "return ${i} < id(gh_schedule)->slot_count();"
+      then:
+        - lvgl.widget.show: gh_sched_row${n}
+        - lvgl.label.update:
+            id: gh_sched_row${n}_time
+            text: !lambda "return id(gh_schedule)->row_time(${i});"
+            text_color: !lambda "return lv_color_hex(id(gh_schedule)->row_text_color(${i}));"
+        - lvgl.label.update:
+            id: gh_sched_row${n}_label
+            text: !lambda "return id(gh_schedule)->row_label(${i}, \"Greenhouse\", \"bed\");"
+            text_color: !lambda "return lv_color_hex(id(gh_schedule)->row_text_color(${i}));"
+        - lvgl.label.update:
+            id: gh_sched_row${n}_caption
+            text: !lambda "return id(gh_schedule)->row_caption(${i});"
+        - lvgl.label.update:
+            id: gh_sched_row${n}_countdown
+            text: !lambda "return id(gh_schedule)->row_countdown(${i});"
+        - lvgl.label.update:
+            id: gh_sched_row${n}_status
+            text: !lambda "return id(gh_schedule)->row_status_text(${i});"
+            text_color: !lambda "return lv_color_hex(id(gh_schedule)->row_status_color(${i}));"
+      else:
+        - lvgl.widget.hide: gh_sched_row${n}

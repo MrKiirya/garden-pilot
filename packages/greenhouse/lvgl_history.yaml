@@ -136,7 +136,7 @@ lvgl:
             x: 8
             y: 181
             text: "No watering yet"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - button:
             id: gh_hist_btn_prev
@@ -159,7 +159,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "PREV"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
         - button:
             id: gh_hist_btn_next
@@ -182,7 +182,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "NEXT"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
         - button:
             id: gh_history_btn_back
@@ -202,7 +202,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "BACK"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xbecab9
     # HISTORY button in the Greenhouse page header (the page itself lives in lvgl_page.yaml).
     - id: !extend greenhouse_page
@@ -225,7 +225,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "HISTORY"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
 
 interval:

@@ -18,7 +18,15 @@ lvgl:
             x: 8
             y: 4
             text: "Setup - Network"
-            text_font: montserrat_10
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            id: network_clock_label
+            align: TOP_RIGHT
+            x: -8
+            y: 4
+            text: "--:--"
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - obj:
             x: 0
@@ -42,72 +50,87 @@ lvgl:
             x: 30
             y: 30
             text: "--"
-            text_font: montserrat_12
+            text_font: montserrat_14
             text_color: 0xbecab9
         - label:
             x: 8
-            y: 55
+            y: 56
             text: "WI-FI"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: network_wifi_value
-            x: 120
+            x: 124
+            width: 188
+            height: 15
+            long_mode: DOT
             y: 55
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - label:
             x: 8
-            y: 73
+            y: 74
             text: "HOME ASSISTANT"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: network_api_value
-            x: 120
+            x: 124
+            width: 188
+            height: 15
+            long_mode: DOT
             y: 73
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - label:
             x: 8
-            y: 91
+            y: 92
             text: "IP"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: network_ip_value
-            x: 120
+            x: 124
+            width: 188
+            height: 15
+            long_mode: DOT
             y: 91
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - label:
             x: 8
-            y: 109
+            y: 110
             text: "ESPHOME"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: network_esphome_value
-            x: 120
+            x: 124
+            width: 188
+            height: 15
+            long_mode: DOT
             y: 109
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - label:
             x: 8
-            y: 127
+            y: 128
             text: "UPTIME"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: network_uptime_value
-            x: 120
+            x: 124
+            width: 188
+            height: 15
+            long_mode: DOT
             y: 127
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - button:
             id: network_btn_back
@@ -127,7 +150,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "BACK"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xbecab9
         - button:
             id: network_btn_restart
@@ -163,7 +186,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "RESTART"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xbecab9
 
 interval:
@@ -185,8 +208,18 @@ interval:
       - lvgl.label.update:
           id: network_esphome_value
           text: !lambda |-
-            return id(gp_esphome_version).has_state() ? id(gp_esphome_version).state : std::string("--");
+            if (!id(gp_esphome_version).has_state())
+              return std::string("--");
+            return gp::fmt::version_short(id(gp_esphome_version).state);
       - lvgl.label.update:
           id: network_uptime_value
           text: !lambda |-
             return id(gp_uptime).has_state() ? id(gp_uptime).state : std::string("--");
+
+# Header clock: one action on the shared poller (packages/lvgl/base.yaml).
+script:
+  - id: !extend gp_header_clock_update
+    then:
+      - lvgl.label.update:
+          id: network_clock_label
+          text: !lambda "return id(gp_header_clock_text);"
