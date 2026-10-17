@@ -370,3 +370,195 @@ Not verified on hardware: the HISTORY button hit area (72x20) and the page rende
 - Schedule -> gp "missed" history entries; time editor on the WATER tab; lawn card/history reuse (`p: lw`,
   `group: gp_lawn`).
 - Move `sensors_air_dht.yaml` / `sensors_soil.yaml` LVGL updates from `on_value` to pollers.
+
+## Rework to design D20 (2026-10-17)
+
+Status: planned. This section **supersedes** everything above where they disagree (the History parts of "Goal",
+"Structure", "Texts", the checks `fmt_history_row_and_pager` / `test_subpages_back` / the sim-ui HISTORY step, and
+027's implementation notes on the HISTORY button and PREV / NEXT).
+
+### Base and order
+- Branch `task/027-screens-history` (PR #33), first merged with `task/029-font-scale-c` (scale C fonts, bold
+  `gp_font_button_md` / `gp_font_button_sm`, design nav, shared header clock `gp_header_clock_update`; read
+  `tasks/029-font-scale-c.md` "Notes for later screen tasks" and "Rig feedback").
+- **Precondition: task 030 (schedule screens) is merged** before the YAML part starts. 030 creates `schedules_page`
+  with a hidden ghost button `sched_btn_history` left of the clock (`packages/lvgl/page_schedules.yaml`, generic, no
+  `gh_*`) and says the history task must make it >= 20 px and visible. If 030 is not merged yet, do the C++ part
+  (steps 1-3 below) first and stop before the page.
+
+### Keep from 027
+`HistoryEntry` 12 bytes, `PersistBlob` 1336 bytes, magic "GP01" (`static_assert`s stay), `result` byte from the old
+`reserved`, `result_of()`, skip entries (tracker `skip_pending_`, adapter `skip_wet`), `history_changed_since`,
+`history_clamp_page` / page count helpers, `old_blob_still_loads`, `tests/cpp/test_gp_history.cpp` and
+`tests/test_history_page.py` (rewritten where the texts below change).
+
+### Decisions (author 2026-10-17; defaults marked, see Open questions R1-R8)
+1. **Entry model "open at start, close at end".** When a zone run starts, gp pushes ONE entry
+   `{epoch = start, duration = planned seconds, zone, source, result = OPEN, detail}` and saves. When the run ends the
+   SAME entry is updated to `{duration = valve-open seconds, result = DONE | STOPPED}` and saved. Two saves per run, no
+   writes in between (live time is computed in RAM). Parallel zones = several OPEN entries (max one per zone).
+2. **Layout: no magic bump, no migration.** Everything fits the existing 12 bytes:
+
+   | field | bytes | meaning |
+   |---|---|---|
+   | `epoch` | 4 | start (Unix s); 0 = clock not valid at start (back-filled at close as `end_epoch - duration` when the clock became valid) |
+   | `duration` | 4 | OPEN / INTERRUPTED: planned seconds (time left at the first RUNNING sample, 0 = unknown); closed: valve-open seconds; skip: 0 |
+   | `zone` | 1 | 0-based |
+   | `source` | 1 | `Source`: UNKNOWN 0, MANUAL 1, QUEUE 2, SERVICE 3 (values already on master's flash), **SCHEDULE 4, HA 5** (new) |
+   | `result` | 1 | `Result`: UNKNOWN 0, DONE 1, STOPPED 2, SKIPPED_WET 3, SKIPPED 4, **OPEN 5, INTERRUPTED 6** |
+   | `detail` (was `reserved`) | 1 | schedule run: slot number 1..8 (0 = none); SKIPPED_WET: the zone's `skip_above` threshold 0..100 (255 = unknown); else 0 |
+
+   Old master entries (`result` 0, `detail` 0) read as UNKNOWN and render like DONE. `result_of()` accepts 0..6.
+3. **Power loss / reboot = INTERRUPTED, start-only, no heartbeat (default R1).** In `setup()` after loading the blob,
+   every OPEN entry becomes INTERRUPTED (one save, only if any changed). Elapsed time is not stored; the screen shows the
+   upper bound from the planned duration (`<5 min`, `?` when planned is 0). Reason: zero extra flash writes; the valve
+   cannot have been open longer than the planned run (the engine and the watchdog end it). Note (document in
+   `components/gp/README.md`): ESPHome keeps `save()` in RAM and flushes every `preferences: flash_write_interval`
+   (default 1 min, esphome.io/components/preferences), so a run shorter than that costs one flash write (start and end
+   coalesce), and a power cut within a minute of the start loses the OPEN entry (no row at all). A clean reboot
+   (OTA, restart button) flushes first, so a run cut by it reads `interrupted`. Implementer: confirm the flush on
+   `safe_reboot` in the pinned source (`esphome/core/application.cpp` / preferences backend) and cite it.
+4. **Locating the entry to close:** scan from the newest entry for `zone == z && result == OPEN` (at most one per zone).
+   Not found (100 newer pushes overwrote it) -> push a closed entry instead. `HistoryEntry` gets no id.
+5. **Who started a run (`Source`).** gp actions get a `source` option; gp remembers it per zone until the run starts:
+   - `gp.run_zone`, `gp.enqueue_zone`, `gp.enqueue_zones`, `gp.full_cycle`: `source: manual | ha | schedule | service`
+     (default `manual`; `service` only on `run_zone`, as today). `gp.enqueue_zones` also gets optional templatable
+     `slot` (0..8, default 0) stored in `detail`.
+   - `GpGroup`: `queued_source_[zone]` / `queued_detail_[zone]` set by enqueue (deferred enqueues carry both),
+     `cycle_source_` set by `full_cycle`. Precedence at run start (pure function `pick_source(...)` in `zone_model.h`,
+     tested): `run_zone` intent (15 s, as today) > queued source of that zone > `cycle_source_` while `cycle_run_` >
+     QUEUE while `queue_run_` > UNKNOWN. The queued source is consumed at the start; `stop_all`, `clear_queue`,
+     `dequeue_zone` and service mode clear it.
+   - Callers: `packages/greenhouse/schedule.yaml` `on_run` -> `gp.enqueue_zones {..., source: schedule, slot: !lambda
+     "return slot;"}`; `packages/core/gp_api.yaml` HA actions -> `source: ha`; `packages/greenhouse/gp.yaml` main switch
+     ON -> `gp.full_cycle {id: gp_greenhouse, source: ha}`; `components/gp_zone` switch ON -> `Source::HA`. Screen
+     buttons keep the default `manual`; the valve test keeps `service`. Lawn packages (task 024) are not edited.
+   - **`completed` for schedules is unchanged in meaning:** the `on_zone_finished` flag stays "came from the queue /
+     cycle, not from `run_zone`, and not stopped". Carry it as a separate `from_queue` bit in the tracker, not derived
+     from `Source` (a SCHEDULE run must still mark the slot zone done; a host scenario of the schedule must stay green).
+6. **Skip rows:** a skip entry takes the source the zone was queued with (schedule skip = SCHEDULE) and the threshold in
+   `detail`. `ZoneInput` gets `skip_limit` (uint8, 255 = unknown); the adapter `gp_engine.h` reads Y from its own text
+   `"soil moisture X > Y"` (it already parses the prefix) or from the zone's configured `skip_above` if accessible.
+7. **Live row:** `ZoneTracker::open_seconds(now_ms)` (valve-open time so far, pause excluded) is exposed as
+   `ZoneView::run_elapsed`. An OPEN entry is drawn live only when the model says that zone's run is open
+   (cross-check with the engine); an OPEN entry whose zone is not running (only possible for one refresh) renders like
+   DONE with the planned time.
+8. **Ordering:** rows are newest-start first (ring order). An open run is normally the top row; with parallel zones
+   several green rows sit at the top. No re-sorting.
+
+### Screen (D20 artboard, 320x240; all values below copied from it)
+- Page `gh_history_page` in `packages/greenhouse/lvgl_history.yaml` (rewritten), on `bg`, no nav.
+- Header (029 rule): title `gh_hist_title` x 8 y 4, montserrat_12, `text`: `History - 1/13` (artboard `History · 1/13`;
+  `·` is not in the built-in font, CLAUDE.md gotchas); empty history -> `History`. `history_clock_label` (TOP_RIGHT,
+  x -8, y 4, montserrat_12, `--:--`) + one `!extend gp_header_clock_update` action.
+- Column captions y 28, montserrat_10, `text-dim`: DATE x 8, TIME x 48, ZONE x 92, TIME ON x 158, SOURCE x 226.
+  Divider x 8 y 38, 304x1, `border`.
+- 8 rows, y = 44 + 18*(n-1) (44 .. 170), montserrat_12, five labels per row from one include
+  `packages/lvgl/history_row.yaml` (vars `p`, `n`, `y`; block lists only): ids `${p}_hist_r${n}_date` (x 8, w 38),
+  `_time` (x 48, w 42), `_zone` (x 92, w 62, `long_mode: DOT`), `_on` (x 158, w 66), `_src` (x 226, w 86,
+  `long_mode: DOT`). Rows past the data hidden. Empty state `gh_hist_empty` "No watering yet", montserrat_12,
+  `text-dim`, centred at y 110. (40 labels, ~5-8 KB heap; 027's 6 row labels and pager label go.)
+- Buttons y 210, h 26 (`btn-h-md`), ghost style as the Network BACK, labels `gp_font_button_md`: `gh_hist_btn_back`
+  BACK x 8 w 92; `gh_hist_btn_newer` x 104 w 100 (chevron-left + NEWER); `gh_hist_btn_older` x 208 w 104 (OLDER +
+  chevron-right). NEWER = page - 1, OLDER = page + 1, clamped; at an end the button label turns `text-dim` (R6).
+  Chevrons (R5, default): two 10x10 PNGs rendered once from a chevron SVG added to `design/icons/` (same `resvg` path and
+  `image_recolor` as 029's nav icons, `packages/lvgl/icons/`), not new font glyphs.
+- Cell texts and colour roles (pure `gp::fmt::history_cells(entry, LocalTime, optional<uint32_t> live_s,
+  const char *zone_name)` -> five strings + five colour tokens, in `format_history.h`):
+
+  | case | DATE | TIME | ZONE | TIME ON | SOURCE |
+  |---|---|---|---|---|---|
+  | done / old entry | `16.10` dim | `06:00` text | `Bed 1` text | `5 min` text (`45 s` below 1 min) | `schedule` dim |
+  | open (live) | dim | green | green | `4 min...` green (`45 s...` below 1 min) | `manual` dim |
+  | stopped (R3) | dim | text | text | `2 min` amber | source dim |
+  | interrupted (R3) | dim | text | text | `<5 min` amber, `?` when planned 0 | source dim |
+  | skipped wet | dim | dim | dim | `skipped` dim | `soil > 60%` dim (`too wet` when 255) |
+  | skipped (no sensor) | dim | dim | dim | `skipped` dim | `no sensor` dim |
+  | epoch 0 | `--.--` | `--:--` | | | |
+
+  Source words: manual, HA, schedule, queue, test (SERVICE), `-` (UNKNOWN). Zone name = the gp zone name (the bed
+  name, e.g. "Bed 2"; `B2` fallback). `16.10` = day.month, two digits each (artboard). Minutes are floored.
+- Poller: 1 s `interval`, guarded by `history_changed_since(seen) || (the page is showing && an OPEN row is on the
+  current page)` (live tick). Implementer verifies a "page is showing" check on 2026.9.1 and 2026.6.3 (`lvgl.page.is_showing`
+  condition if it exists; else compare `lv_scr_act()` in a one-line lambda) and cites it. Rendering goes through one
+  script `gh_hist_render` (opening, NEWER / OLDER, poller), lambdas one line into gp glue
+  (`history_cell(page, row, col)`, `history_colour(page, row, col)`, `history_title(page)`, `history_has_open(page)`).
+- **Entry / exit (R2):** remove 027's `!extend greenhouse_page` HISTORY button (`gh_btn_history`). Make
+  `sched_btn_history` visible and >= 20 px tall (030 hid it; 030 notes D08 draws it 18 px). Because `page_schedules.yaml`
+  must not name greenhouse ids, the button calls a no-op script `sched_history_open` defined there (pattern of
+  `touch_dot_overlay`); `lvgl_history.yaml` `!extend`s that script with `gh_hist_page = 0`, `gh_hist_render`,
+  `lvgl.page.show: gh_history_page`, and un-hides the button from the extended `on_load` of `schedules_page` (verify the
+  merge; fallback: a one-shot `lvgl.widget.show` in the history poller). BACK -> `schedules_page`. The bed page "ALL"
+  entry is a later task (it will add a return-page global).
+
+### Files (about 18; over the usual 10, but one goal and mostly small edits)
+- modify `components/gp/history.h` (enums, `detail`, pure `HistoryBook` helpers: `open`, `close`, `recover_after_boot`,
+  `find_open`), `zone_model.h` (Source values + words, `pick_source`, `from_queue`, `open_seconds` / `run_elapsed`,
+  `skip_limit`, start event from the tracker), `format_history.h` (cells, title, words; drop the old one-line row and
+  pager), `gp.h` (plumbing, two saves per run, boot recovery, glue), `__init__.py` (`source` / `slot` options)
+- modify `components/gp_zone/` (HA source), `components/garden_zones/gp_engine.h` (`skip_limit`)
+- modify `packages/greenhouse/lvgl_history.yaml` (rewrite); create `packages/lvgl/history_row.yaml`,
+  `design/icons/chevron-left.svg` / `chevron-right.svg` + two PNGs in `packages/lvgl/icons/`
+- modify `packages/lvgl/page_schedules.yaml` (no-op `sched_history_open`, button height / on_click),
+  `packages/greenhouse/schedule.yaml`, `packages/core/gp_api.yaml`, `packages/greenhouse/gp.yaml` (source args)
+- modify tests: `tests/cpp/test_gp_history.cpp`, `tests/test_history_page.py`, `tests/test_sim_ui.py`, list edits in
+  `tests/test_design_tokens.py` (`TOKENIZED_PAGES`), `tests/test_screens.py` (`test_header_clock` pages)
+- docs: `components/gp/README.md` (entry model, source plumbing, flush note), SPEC §8 (History built) / §9.1,
+  `design/README.md` (History page, chevron icons, amber for stopped/interrupted), `CLAUDE.md` (layout row; gotcha:
+  gp actions take `source`; schedules pass `source: schedule`)
+
+### Checks to write first
+| Level | Test | Asserts |
+|---|---|---|
+| cpp | `history_layout_unchanged` (kept) | 12 / 1336 bytes, magic GP01; `result_of` maps 0..6, 7+ -> UNKNOWN |
+| cpp | `book_open_then_close_done` | fake clock: start at t0 -> one entry OPEN, duration = planned, 1 save request; end at t0+300 s -> the same index DONE, duration 300; 2 save requests total; nothing written while running |
+| cpp | `book_parallel_open` | zones 1 and 2 open; a skip of zone 3 pushed in between; closing zone 1 updates its own entry, zone 2 stays OPEN |
+| cpp | `book_stopped` | end inside the stop window -> STOPPED; outside -> DONE (watchdog end = DONE) |
+| cpp | `book_interrupted_after_boot` | blob with 2 OPEN entries -> `recover_after_boot()` returns true, both INTERRUPTED, durations (planned) kept; blob without OPEN -> false (no save) |
+| cpp | `book_epoch_backfill` | start with epoch 0, end with a valid clock -> epoch = end - duration |
+| cpp | `book_close_overwritten` | 100 pushes after the open -> close pushes one closed entry, size stays 100 |
+| cpp | `tracker_elapsed_live` | `run_elapsed` counts valve-open time, a PAUSED gap is excluded, cleared at the end |
+| cpp | `pick_source_precedence` | intent > queued > cycle > queue > unknown; intent older than 15 s ignored |
+| cpp | `queued_source_lifecycle` | enqueue with SCHEDULE + slot 2 -> the run's entry has SCHEDULE / detail 2; consumed at start; `stop_all` / `clear_queue` / `dequeue` clear it |
+| cpp | `completed_flag_kept` | queue run and schedule run ending naturally -> completed; `run_zone` run -> not; stopped -> not |
+| cpp | `skip_entry_source_and_limit` | a wet skip of a schedule-queued zone -> SKIPPED_WET, SCHEDULE, detail 60; `skip_limit` 255 -> detail 255 |
+| cpp | `fmt_history_cells` | every row of the table above, exact strings and colour tokens; source words; `--.--` / `--:--`; every cell ASCII and within its column (date 5, time 5, TIME ON 8, SOURCE 11 chars) |
+| cpp | `fmt_history_title` | `History - 1/13` for 100 entries page 0, `History - 13/13` last page, `History` when empty; clamped page |
+| unit | `test_history_page.py::test_d20_geometry` | captions, divider, 8 rows x 5 labels at the x / y / w above, fonts montserrat_10 / _12, buttons at x 8/104/208 y 210 h 26 w 92/100/104 with `gp_font_button_md` labels; only token colours |
+| unit | `test_history_entry_exit` | no `gh_btn_history` anywhere; `sched_btn_history` visible path: on_click runs `sched_history_open`, height >= 20; `page_schedules.yaml` names no `gh_*`; BACK -> `schedules_page`; no nav on the history page |
+| unit | `test_sources_wired` | `schedule.yaml` on_run passes `source: schedule` and `slot`; every gp action in `gp_api.yaml` that starts watering passes `source: ha`; the main switch ON passes `source: ha`; no screen file passes `source: ha` / `schedule` |
+| unit | existing `test_header_clock`, `test_page_font_roles`, `test_screen_text_is_ascii`, `test_lambdas_are_small`, `test_lvgl_only_from_pollers` | history page added to their lists; pass |
+| host | `test_sim_ui.py` (same session) | SCHEDULE nav -> tap HISTORY -> `history.png` differs from the schedule page; after `script/sim-ctl switch "Greenhouse bed 1" on` (or the equivalent zone switch) a pixel of row 1's TIME ON is `green` (+-8) and a second shot 2 s later still shows the row; BACK -> schedule page |
+
+### Acceptance criteria
+- [ ] `script/test-cpp` -> all pass, including every `book_*`, `pick_source_*`, `fmt_history_*` check
+- [ ] `uv run pytest -m unit` -> passes; `script/lint`, `script/test` -> green
+- [ ] `GP_SECRETS=example script/config garden-pilot.yaml` / `garden-pilot-sim.yaml` / the 4 examples -> valid
+- [ ] CI `compile (pinned)` and `compile (minimum)` green; `sim-ui` green with `history.png` (live green row) in the artifact
+- [ ] `rg -n "gh_btn_history" packages` -> no match; `rg -n "gh_|garden_schedule" packages/lvgl/page_schedules.yaml packages/lvgl/history_row.yaml` -> no match
+- [ ] `git diff` of `components/gp/history.h` keeps both `static_assert`s and `MAGIC = 0x47503031` unchanged
+- [ ] Emulator by hand: a schedule slot run shows `schedule`, a screen RUN `manual`, an HA action `HA`; two zones in
+      parallel (lawn + greenhouse is not one page: use a manual run during a queue) give two green rows; Ctrl+C the
+      emulator during a run, restart -> that row reads `<N min` amber; screenshots in the PR
+- [ ] **Hardware (not CI):** page legible, NEWER / OLDER / BACK hit first time, a power cut during a run (> 1 min after
+      the start) shows `interrupted` after boot — or the PR says "not verified on hardware"
+
+### Out of scope (follow-ups)
+- Lawn rows on the same page (artboard shows "Lawn"): needs a cross-group history view; rain skips (no rain source).
+- Bed page ALL entry with a return-page global; "missed" schedule slots as entries; a heartbeat for exact interrupted
+  durations (R1 alternative).
+
+### Open questions (recommended defaults apply until the author answers)
+- **R1 Interrupted duration.** Default: start-only, show `<planned` (no extra writes). Alternative: an 8-byte
+  heartbeat preference every 5 min while a zone is open (exact to ~5 min + flush interval, ~6 small writes per 30 min run).
+- **R2 Entry.** Default: only the schedule-list HISTORY button (030) now; greenhouse HISTORY button removed; BACK ->
+  `schedules_page`.
+- **R3 Stopped / interrupted marker.** Default: TIME ON in `amber` (`2 min`, `<5 min`), no status column (D20 has
+  none). Alternative: text suffix such as `2m stop` (tight in 66 px). Amber is a reserved warning token: confirm.
+- **R4 Source of HA zone switch and main switch.** Default: `HA` (they are HA entities; the screen uses `gp.*` actions).
+- **R5 Chevrons in NEWER / OLDER.** Default: two 10x10 vendored PNG icons (029 nav mechanism). Alternative: omit them
+  (text only), cheapest.
+- **R6 Button at the end of the list.** Default: stays tappable (no-op), label `text-dim`.
+- **R7 Skip SOURCE text.** Default: the threshold `soil > 60%` (artboard style `soil < 35%`); alternative: the measured
+  value `soil 72%`. The artboard's watered row with `soil < 35%` implies soil-triggered watering, which does not exist.
+- **R8 Valve-test rows.** Default: kept in the history as `test` (today's behaviour), not as "last watering".
