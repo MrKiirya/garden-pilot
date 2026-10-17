@@ -510,6 +510,23 @@ TEST_CASE("moved_later_while_earlier_run_is_pending") {
   CHECK(fx.s.state(0).pending == 0x7u);
 }
 
+TEST_CASE("seconds_to_next_per_slot") {
+  Fx fx;
+  fx.n = 3;
+  fx.cfg[0] = slot(6, 0);
+  fx.cfg[1] = slot(18, 0, 0x3, 0x01);  // Mondays
+  fx.cfg[2] = slot(12, 0, 0x3, gs::ALL_DAYS, false);
+  fx.at(MON, 14, 32, 0);
+  CHECK(fx.s.seconds_to_next(0, fx.cfg, fx.n) == (24 - 14) * 3600 - 32 * 60 + 6 * 3600);  // tomorrow 06:00
+  CHECK(fx.s.seconds_to_next(1, fx.cfg, fx.n) == 3 * 3600 + 28 * 60);                      // today 18:00
+  CHECK(!fx.s.seconds_to_next(2, fx.cfg, fx.n).has_value());                                // disabled
+  fx.at(MON, 18, 0, 0, true);
+  fx.at(MON, 18, 0, 5);
+  CHECK(fx.s.seconds_to_next(1, fx.cfg, fx.n) == 7 * 86400 - 5);  // fired: next Monday
+  fx.s.set_master(false);
+  CHECK(!fx.s.seconds_to_next(0, fx.cfg, fx.n).has_value());
+}
+
 TEST_CASE("moved_slot_in_next_run_and_day_runs") {
   Fx fx;
   fx.cfg[0] = slot(6, 0);

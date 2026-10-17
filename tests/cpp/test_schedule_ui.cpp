@@ -251,6 +251,25 @@ TEST_CASE("list_texts") {
   }
 }
 
+TEST_CASE("countdown_texts") {
+  CHECK(gs::countdown_text(3 * 3600 + 28 * 60) == "in 3h 28m");
+  CHECK(gs::countdown_text(3 * 3600 + 28 * 60 + 59) == "in 3h 28m");  // whole minutes, rounded down
+  CHECK(gs::countdown_text(15 * 3600 + 28 * 60) == "in 15h 28m");
+  CHECK(gs::countdown_text(2 * 86400 + 6 * 3600 + 59) == "in 2d 6h");
+  CHECK(gs::countdown_text(86400) == "in 1d 0h");
+  CHECK(gs::countdown_text(7 * 86400 + 3600) == "in 7d 1h");
+  CHECK(gs::countdown_text(3600) == "in 1h 0m");
+  CHECK(gs::countdown_text(45 * 60) == "in 45m");
+  CHECK(gs::countdown_text(60) == "in 1m");
+  CHECK(gs::countdown_text(5) == "in 1m");  // never "in 0m"
+  CHECK(gs::countdown_text(0) == "in 1m");
+  CHECK(gs::countdown_text(-1).empty());
+  CHECK(gs::countdown_text(23 * 3600 + 59 * 60 + 59) == "in 23h 59m");
+  CHECK(gs::countdown_text(gs::NO_COUNTDOWN) == "-");
+  for (int64_t s = 0; s < 9 * 86400; s += 997)
+    CHECK(ascii(gs::countdown_text(s)) && gs::countdown_text(s).size() <= 10);
+}
+
 TEST_CASE("status_words") {
   using gs::DayRunState;
   const auto w_off = gs::status_word(false, true, DayRunState::PENDING, false, true);
@@ -268,7 +287,7 @@ TEST_CASE("status_words") {
   const auto w_next = gs::status_word(true, true, DayRunState::PENDING, false, true);
   CHECK(w_next.text == "NEXT" && w_next.color == gs::TONE_GREEN);
   const auto w_none = gs::status_word(true, true, DayRunState::PENDING, false, false);
-  CHECK(w_none.text.empty() && w_none.color == gs::TONE_DIM);
+  CHECK(w_none.text == "LATER" && w_none.color == gs::TONE_TEXT);
   // tones mirror design/tokens.json: text, text-dim, green, amber
   CHECK(gs::TONE_TEXT == 0xe5e2e1u && gs::TONE_DIM == 0xbecab9u && gs::TONE_GREEN == 0x78dc77u && gs::TONE_AMBER == 0xffb870u);
   for (const auto &w : {w_off, w_done, w_active, w_next, w_none})

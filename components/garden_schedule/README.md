@@ -108,7 +108,9 @@ texts and the editor model are pure functions in `schedule_ui.h` / `schedule_for
   (`Greenhouse - all beds`, `- bed 2`, `- beds 1 3`, `- 4 beds`; `Slot N` for an OFF slot), `row_caption(i)` (`Every day
   - 5 min each`, `Not set - tap to set up`; past 30 characters the days become `5 days`), `row_status_text(i)` /
   `row_status_color(i)` (`OFF` dim, `DONE` dim, `ACTIVE` green, `SKIP` amber for skipped / missed / stopped, `NEXT` green,
-  empty), `next_run_short()` (`06:00`, `Tue 06:00`, `--:--`: the Home "NEXT" label). The caption durations come from
+  `LATER` for an enabled slot that is neither next nor done), `row_countdown(i)` (`in 3h 28m`, `in 2d 6h`, `in 45m`;
+  time to the slot's next run, also for a slot done today; `-` for an OFF slot), `summary_label(group)` /
+  `summary_countdown()` (the line under the header: `18:00 - Greenhouse`, `in 3h 28m`), `next_run_short()` (`06:00`, `Tue 06:00`, `--:--`: the Home "NEXT" label). The caption durations come from
   `set_zone_seconds(provider)`, set once from the YAML (the hub never reads `gp`);
 - `changed_since(seen)`: true when anything a schedule screen shows changed (the poller guard; `seen = 0` forces a
   redraw);

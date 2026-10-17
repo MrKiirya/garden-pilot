@@ -8,7 +8,7 @@ obj:
   x: 8
   y: ${y}
   width: 304
-  height: 36
+  height: 34
   hidden: true
   clickable: true
   bg_color: 0x1c1b1b
@@ -27,14 +27,14 @@ obj:
     - label:
         id: gh_sched_row${n}_time
         x: 5
-        y: 4
+        y: 3
         text: "--:--"
         text_font: montserrat_14
         text_color: 0xbecab9
     - label:
         id: gh_sched_row${n}_label
         x: 55
-        y: 4
+        y: 3
         width: 180
         long_mode: DOT
         text: ""
@@ -43,7 +43,7 @@ obj:
     - label:
         id: gh_sched_row${n}_caption
         x: 55
-        y: 19
+        y: 18
         width: 180
         long_mode: DOT
         text: ""
@@ -51,15 +51,26 @@ obj:
         text_color: 0xbecab9
     - label:
         id: gh_sched_row${n}_status
-        x: 239
-        y: 12
+        x: 219
+        y: 3
+        width: 62
+        text_align: RIGHT
+        text: ""
+        text_font: montserrat_10
+        text_color: 0xbecab9
+    - label:
+        id: gh_sched_row${n}_countdown
+        x: 209
+        y: 18
+        width: 72
+        text_align: RIGHT
         text: ""
         text_font: montserrat_10
         text_color: 0xbecab9
     - label:
         id: gh_sched_row${n}_chev
         x: 287
-        y: 10
+        y: 12
         text: "\uF054"
         text_font: montserrat_12
         text_color: 0xbecab9

@@ -269,6 +269,15 @@ Status: implemented; not compiled for ESP32 or host (Windows, no Docker/SDL here
   compiler-checked: risk), RAM / flash numbers, the emulator and hardware checks.
 - Docs updated: component README, SPEC, CLAUDE.md, design/README.md, README.md, README.ru.md.
 
+## Design update 2026-10-17
+The author changed D08 / D09. D08: summary line under the header (`NEXT` caption + "18:00 - Greenhouse" + green
+countdown, ids `gh_sched_sum_*`), cards 34 px at y 44 / 82 / 120 / 158, right column right-aligned (status word, countdown
+caption `row_countdown`), new status `LATER` (text tone) instead of the empty word, OFF shows `-` as countdown. D09: captions
+`HOUR` / `MINUTE` centred over the values (x 44 / 208, w 68, y 28). Pure parts: `countdown_text`, `NO_COUNTDOWN`,
+`Scheduler::seconds_to_next` (C++ tests `countdown_texts`, `seconds_to_next_per_slot`); countdown strings are part of
+the `changed_since` hash so the list redraws each minute. A countdown never reads "in 0m" (floor, minimum 1m). Checked on
+this machine: unit tests, C++ 101 cases, lint, config of the device entry; not compiled for ESP32 / host.
+
 ## Follow-ups
 - Compile on ESP32 / host and check the hub glue and flash budget (main session).
 - Lawn zones in the editor; HISTORY button target (>= 20 px already).

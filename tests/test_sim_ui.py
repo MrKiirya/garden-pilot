@@ -28,8 +28,8 @@ SETUP_BTN = (244, 204, 72, 32)
 WATER_BTN = (164, 204, 76, 32)
 # Schedule page (task 030): rows 1 and 4 of the greenhouse list (packages/greenhouse/lvgl_schedules.yaml); a tap on
 # row 1 opens the editor, CANCEL (and SAVE) are its bottom buttons.
-SCHED_ROW1 = (8, 26, 304, 36)
-SCHED_ROW4 = (8, 146, 304, 36)
+SCHED_ROW1 = (8, 44, 304, 34)
+SCHED_ROW4 = (8, 158, 304, 34)
 EDIT_CANCEL = (8, 210, 150, 26)
 EDIT_SAVE = (162, 210, 150, 26)
 GREEN_FILL = (0x4C, 0xAF, 0x50)
