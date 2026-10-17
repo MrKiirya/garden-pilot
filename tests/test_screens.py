@@ -330,6 +330,8 @@ CLOCK_PAGES = {
     "network": NETWORK,
     "valve_test": "packages/greenhouse/lvgl_valve_test.yaml",
     "sim_board": "packages/sim/page_board.yaml",
+    "sched": "packages/lvgl/page_schedules.yaml",
+    "gh_sed": "packages/greenhouse/lvgl_schedules.yaml",
 }
 
 
@@ -348,7 +350,7 @@ def test_header_clock(name: str) -> None:
     assert label["x"] == (-6 if name == "home" else -8)
     assert label["text_font"] == "montserrat_12" and label["text"] == "--:--"
     assert label["text_color"] == 0xE5E2E1
-    scripts = [s for s in data["script"] if isinstance(s["id"], dict) and s["id"]["value"] == "gp_header_clock_update"]
+    scripts = [s for s in data["script"] if isinstance(s.get("id"), dict) and s["id"]["value"] == "gp_header_clock_update"]
     assert len(scripts) == 1 and scripts[0]["id"]["__tag__"] == "extend"
     steps = scripts[0]["then"]
     updates = [d["lvgl.label.update"] for d in _walk(steps) if "lvgl.label.update" in d]
@@ -385,6 +387,7 @@ def test_untouched_legacy_pages() -> None:
 @pytest.mark.parametrize(("rel", "page_id", "prefix", "active"), [
     (HOME, "home_page", "nav_btn_", "dash"),
     (SETUP, "setup_page", "setup_nav_btn_", "setup"),
+    ("packages/lvgl/page_schedules.yaml", "schedules_page", "sched_nav_btn_", "water"),
 ])
 def test_nav_matches_design_navbar(rel: str, page_id: str, prefix: str, active: str) -> None:
     """Design NavBar: band y 201 h 39 `status` + 1 px `border` top; buttons y 204 h 32; icon 12 px, gap 2, label."""

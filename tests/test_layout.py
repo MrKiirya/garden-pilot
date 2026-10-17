@@ -562,6 +562,19 @@ def test_substitutions_resolve() -> None:
         BED_SOIL_SKIP: set().union(*(set(p["vars"]) for e in EXAMPLES for p in _entry_packages(e).values() if p["path"] == BED_SOIL_SKIP_FILE)),
         SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
     }
+    # small includes with vars that a package file includes itself (the Schedule screens, task 030)
+    sched = load_esphome_yaml(REPO_ROOT / "packages" / "greenhouse" / "lvgl_schedules.yaml")
+    stack = [sched]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            value = node.get("value")
+            if node.get("__tag__") == "include" and isinstance(value, dict):
+                target = REPO_ROOT / "packages" / "greenhouse" / value["file"]
+                supplied.setdefault(target, set()).update(value.get("vars") or {})
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
     missing = set()
     for path in package_files:
         for name in re.findall(r"\$\{(\w+)\}", _strip_comments(path.read_text(encoding="utf-8"))):

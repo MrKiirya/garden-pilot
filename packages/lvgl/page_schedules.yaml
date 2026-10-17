@@ -1,8 +1,9 @@
-# Schedules page (WATER tab): the generic shell. Header, an empty-state label and the bottom nav with WATER active.
-# The rows (and the master switch, paging, Home "next") come from the schedule package of a domain, which extends this
-# page: packages/greenhouse/lvgl_schedules.yaml. Without it the page only says "No schedules configured".
-# View only: no time editor on the device (SPEC stage 11). Tokens only (design/tokens.json); ASCII only (built-in
-# fonts). Widget ids are global, hence the sched_* prefix.
+# Schedule page (design D08, WATER nav slot labelled SCHEDULE): the generic shell. Header (title, clock, a HISTORY
+# action that stays hidden until the history task), an empty-state label and the bottom nav with SCHEDULE active. The
+# rows and the editor page come from the schedule package of a domain, which extends this page:
+# packages/greenhouse/lvgl_schedules.yaml. Without it the page only says "No schedules configured".
+# Tokens only (design/tokens.json); ASCII only (built-in fonts). Widget ids are global, hence the sched_* prefix.
+# Header clock: one action on the shared poller (packages/lvgl/base.yaml). Needs lvgl_base (button fonts, nav icons).
 
 lvgl:
   pages:
@@ -17,9 +18,38 @@ lvgl:
         - label:
             x: 8
             y: 4
-            text: "Schedules"
-            text_font: montserrat_10
+            text: "Schedule"
+            text_font: montserrat_12
             text_color: 0xe5e2e1
+        - label:
+            id: sched_clock_label
+            align: TOP_RIGHT
+            x: -8
+            y: 4
+            text: "--:--"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        # History (a later task opens the history page here); hidden until then. Tappable height 20 px (design 18 px).
+        - button:
+            id: sched_btn_history
+            x: 196
+            y: 1
+            width: 72
+            height: 20
+            hidden: true
+            bg_opa: TRANSP
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "HISTORY"
+                  text_font: gp_font_button_sm
+                  text_color: 0xbecab9
         - obj:
             x: 0
             y: 22
@@ -36,9 +66,10 @@ lvgl:
             align: CENTER
             y: -10
             text: "No schedules configured"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xbecab9
-        # --- Bottom nav (same as Home / Setup, WATER active) ---
+
+        # --- Bottom nav (SCHEDULE active; design NavBar) ---
         - obj:
             x: 0
             y: 201
@@ -63,17 +94,17 @@ lvgl:
             radius: 3
             scrollable: false
             widgets:
+              - image:
+                  src: gp_icon_house
+                  align: TOP_MID
+                  y: 4
+                  image_recolor: 0xbecab9
+                  image_recolor_opa: COVER
               - label:
-                  align: CENTER
-                  y: -3
-                  text: ""
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
+                  align: TOP_MID
+                  y: 18
                   text: "DASH"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
             on_click:
               - lvgl.page.show: home_page
@@ -88,17 +119,17 @@ lvgl:
             radius: 3
             scrollable: false
             widgets:
+              - image:
+                  src: gp_icon_leaf
+                  align: TOP_MID
+                  y: 4
+                  image_recolor: 0xbecab9
+                  image_recolor_opa: COVER
               - label:
-                  align: CENTER
-                  y: -3
-                  text: ""
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
+                  align: TOP_MID
+                  y: 18
                   text: "ZONES"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
             on_click:
               - lvgl.page.show: greenhouse_page
@@ -113,17 +144,17 @@ lvgl:
             radius: 3
             scrollable: false
             widgets:
+              - image:
+                  src: gp_icon_drop
+                  align: TOP_MID
+                  y: 4
+                  image_recolor: 0x003c0b
+                  image_recolor_opa: COVER
               - label:
-                  align: CENTER
-                  y: -3
-                  text: ""
-                  text_font: montserrat_14
-                  text_color: 0x003c0b
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "WATER"
-                  text_font: montserrat_8
+                  align: TOP_MID
+                  y: 18
+                  text: "SCHEDULE"
+                  text_font: gp_font_button_sm
                   text_color: 0x003c0b
             on_click:
               - lvgl.page.show: schedules_page
@@ -138,17 +169,24 @@ lvgl:
             radius: 3
             scrollable: false
             widgets:
+              - image:
+                  src: gp_icon_gear
+                  align: TOP_MID
+                  y: 4
+                  image_recolor: 0xbecab9
+                  image_recolor_opa: COVER
               - label:
-                  align: CENTER
-                  y: -3
-                  text: ""
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
+                  align: TOP_MID
+                  y: 18
                   text: "SETUP"
-                  text_font: montserrat_8
+                  text_font: gp_font_button_sm
                   text_color: 0xbecab9
             on_click:
               - lvgl.page.show: setup_page
+
+script:
+  - id: !extend gp_header_clock_update
+    then:
+      - lvgl.label.update:
+          id: sched_clock_label
+          text: !lambda "return id(gp_header_clock_text);"
