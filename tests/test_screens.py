@@ -122,17 +122,11 @@ def test_page_ids_unique() -> None:
 
 def test_setup_nav() -> None:
     home = _page(HOME, "home_page")
-    assert _show_targets(_by_id(home, "nav_btn_setup")) == ["setup_page"]
     setup = _page(SETUP, "setup_page")
     assert _show_targets(_by_id(setup, "setup_tile_network")) == ["network_page"]
     assert _show_targets(_by_id(setup, "setup_tile_display")) == ["touch_test_page"]
     network = _page(NETWORK, "network_page")
     assert _show_targets(_by_id(network, "network_btn_back")) == ["setup_page"]
-    for name in NAV_NAMES:
-        assert _show_targets(_by_id(setup, f"setup_nav_btn_{name}")) == _show_targets(_by_id(home, f"nav_btn_{name}")) or (
-            name == "setup"
-        )
-    assert _show_targets(_by_id(setup, "setup_nav_btn_setup")) == ["setup_page"]
 
 
 def test_confirm_dialog_shape() -> None:
@@ -388,33 +382,135 @@ def test_untouched_legacy_pages() -> None:
         assert "text_font" not in (REPO_ROOT / rel).read_text(encoding="utf-8"), rel
 
 
-@pytest.mark.parametrize(("rel", "page_id", "prefix", "active"), [
-    (HOME, "home_page", "nav_btn_", "dash"),
-    (SETUP, "setup_page", "setup_nav_btn_", "setup"),
-])
-def test_nav_matches_design_navbar(rel: str, page_id: str, prefix: str, active: str) -> None:
+NAV_BAR = "packages/lvgl/nav_bar.yaml"
+NAV_TARGETS = {  # button -> substitution that holds its page id (defaults in base.yaml)
+    "dash": ("gp_nav_dash_page", "home_page"),
+    "zones": ("gp_nav_zones_page", "greenhouse_page"),
+    "water": ("gp_nav_schedule_page", "lawn_page"),
+    "setup": ("gp_nav_setup_page", "setup_page"),
+}
+NAV_USERS = [(HOME, "home_page", "home_", "dash"), (SETUP, "setup_page", "setup_", "setup")]
+
+
+def _render_nav(prefix: str, active: str) -> dict:
+    """The component as one widget dict, with the include vars applied (a minimal copy of ESPHome's substitution)."""
+    import jinja2
+    import yaml
+
+    text = (REPO_ROOT / NAV_BAR).read_text(encoding="utf-8")
+    env = {"p": prefix, "active": active}
+
+    def sub(m: re.Match) -> str:
+        expr = m.group(1).strip()
+        if expr.startswith("gp_nav_"):
+            return m.group(0)  # a page target: stays a substitution
+        return str(jinja2.Environment().compile_expression(expr)(**env))
+
+    return yaml.safe_load(re.sub(r"\$\{([^}]*)\}", sub, text))
+
+
+def _abs_nav_buttons(nav: dict) -> dict[str, dict]:
+    """name -> {x, y, w, h, props} in screen coordinates (children start inside the 1 px top border)."""
+    obj = nav["obj"]
+    border = obj["border_width"] if "TOP" in obj["border_side"] else 0
+    out = {}
+    for item in obj["widgets"]:
+        props = item["button"]
+        name = props["id"].rsplit("nav_btn_", 1)[1]
+        out[name] = {
+            "x": obj["x"] + props["x"], "y": obj["y"] + border + props["y"],
+            "w": props["width"], "h": props["height"], "props": props,
+        }
+    return out
+
+
+@pytest.mark.parametrize("active", NAV_NAMES)
+def test_nav_matches_design_navbar(active: str) -> None:
     """Design NavBar: band y 201 h 39 `status` + 1 px `border` top; buttons y 204 h 32; icon 12 px, gap 2, label."""
-    page = _page(rel, page_id)
-    band = next(p for t, p in _widgets(page) if t == "obj" and p.get("y") == 201)
-    assert (band["x"], band["width"], band["height"]) == (0, 320, 39)
+    nav = _render_nav("t_", active)
+    band = nav["obj"]
+    assert (band["x"], band["y"], band["width"], band["height"]) == (0, 201, 320, 39)
     assert (band["bg_color"], band["border_width"], band["border_color"]) == (0x201F1F, 1, 0x3F4A3C)
-    assert band["border_side"] == ["TOP"]
-    for name, (x, width, label, icon_id, icon_file) in NAV_SPEC.items():
-        btn = _by_id(page, f"{prefix}{name}")
-        assert (btn["x"], btn["y"], btn["width"], btn["height"]) == (x, 204, width, 32)
+    assert band["border_side"] == ["TOP"] and band["pad_all"] == 0
+    buttons = _abs_nav_buttons(nav)
+    assert list(buttons) == NAV_NAMES
+    for name, (x, width, label, icon_id, _icon_file) in NAV_SPEC.items():
+        b = buttons[name]
+        btn = b["props"]
+        assert (b["x"], b["y"], b["w"], b["h"]) == (x, 204, width, 32)
+        assert btn["id"] == f"t_nav_btn_{name}"
         on = name == active
         assert btn["bg_color"] == (0x4CAF50 if on else 0x201F1F)
         ink = 0x003C0B if on else 0xBECAB9
         image = next(p for t, p in _widgets(btn) if t == "image")
         assert image["src"] == icon_id
-        assert (image["align"], image["y"]) == ("TOP_MID", 4)
+        assert (image["align"], image["y"]) == ("TOP_MID", 4)  # 12 px icon, centre y 10
         assert image["image_recolor"] == ink and image["image_recolor_opa"] == "COVER"
         text = next(p for t, p in _widgets(btn) if t == "label")
         assert (text["text"], text["text_color"], text["text_font"]) == (label, ink, "gp_font_button_sm")
-        assert (text["align"], text["y"]) == ("TOP_MID", 18), "icon 12 px at y 4, gap 2, label below"
+        assert (text["align"], text["y"], text["text_align"]) == ("TOP_MID", 19, "CENTER")  # ~10 px line: centre y 24
         assert not any(ord(c) >= 0xE000 for c in text["text"])
-    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
-    assert not re.search(r"[\\]uF0(?:15|6C|43|13)", text, re.IGNORECASE), "nav icons are images, not LVGL symbols"
+
+
+@pytest.mark.parametrize("active", NAV_NAMES)
+def test_nav_children_stay_inside_buttons(active: str) -> None:
+    """Zero padding, centred column; no child reaches past its button, no button past x 320."""
+    buttons = _abs_nav_buttons(_render_nav("t_", active))
+    ICON, LINE = 12, 10  # icon size; line height of the 8 px label font (upper bound)
+    for name, b in buttons.items():
+        props = b["props"]
+        assert props["pad_all"] == 0 and props["border_width"] == 0 and props["shadow_width"] == 0, name
+        assert b["x"] >= 0 and b["x"] + b["w"] <= 320, f"{name} reaches past the screen edge"
+        image = next(p for t, p in _widgets(props) if t == "image")
+        text = next(p for t, p in _widgets(props) if t == "label")
+        label_w = text.get("width", 0)
+        assert 0 < label_w <= b["w"], f"{name}: label wider than its button"
+        # TOP_MID children are centred in the button: left edge = (w - child w) / 2 >= 0, so right edge <= w
+        assert (b["w"] - ICON) / 2 >= 0 and (b["w"] - label_w) / 2 >= 0
+        assert image["y"] + ICON <= b["h"] and text["y"] + LINE <= b["h"], f"{name}: child below the button"
+        assert abs((image["y"] + ICON / 2) - 10) <= 1 and abs((text["y"] + LINE / 2) - 24) <= 1
+        assert image["y"] + ICON <= text["y"], "icon above label"
+
+
+def test_nav_targets_are_substitutions_with_defaults() -> None:
+    nav = _render_nav("t_", "dash")
+    subs = _load(BASE)["substitutions"]
+    for item in nav["obj"]["widgets"]:
+        props = item["button"]
+        name = props["id"].rsplit("nav_btn_", 1)[1]
+        sub, default = NAV_TARGETS[name]
+        assert props["on_click"] == [{"lvgl.page.show": "${" + sub + "}"}]
+        assert subs[sub] == default, f"{sub} default"
+
+
+@pytest.mark.parametrize(("rel", "page_id", "prefix", "active"), NAV_USERS)
+def test_nav_pages_include_the_component(rel: str, page_id: str, prefix: str, active: str) -> None:
+    page = _page(rel, page_id)
+    incs = [w["__tag__"] and w for w in page["widgets"] if isinstance(w, dict) and w.get("__tag__") == "include"]
+    nav = [i for i in incs if i["value"].get("file") == "nav_bar.yaml"]
+    assert len(nav) == 1, f"{rel} must include nav_bar.yaml exactly once"
+    assert nav[0]["value"]["vars"] == {"p": prefix, "active": active}
+
+
+def test_no_page_declares_its_own_nav() -> None:
+    """Nav buttons exist only in the component: no other file has nav_btn_* ids or a gp_icon_* image widget, and no
+    page navigates to a nav target by a hard-coded id from a button of the 201..240 band."""
+    for path in _yaml_files("packages"):
+        rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+        if rel == NAV_BAR:
+            continue
+        text = _strip_comments(path.read_text(encoding="utf-8"))
+        assert "nav_btn_" not in text.replace("nav_btn_sim", ""), f"{rel}: nav buttons belong in {NAV_BAR}"
+        assert "src: gp_icon_" not in text, f"{rel}: nav icons belong in {NAV_BAR}"
+        data = load_esphome_yaml(path)
+        if isinstance(data, dict) and isinstance(data.get("lvgl"), dict):
+            for _t, props in _widgets(data["lvgl"]):
+                if props.get("y") == 201 and props.get("width") == 320:
+                    raise AssertionError(f"{rel}: a nav band outside {NAV_BAR}")
+    assert "lawn_page" not in (REPO_ROOT / HOME).read_text(encoding="utf-8")
+    assert "lawn_page" not in (REPO_ROOT / SETUP).read_text(encoding="utf-8")
+    nav_text = (REPO_ROOT / NAV_BAR).read_text(encoding="utf-8")
+    assert nav_text.count("lvgl.page.show") == 4 and "lawn_page" not in nav_text
 
 
 def test_nav_icons_are_vendored_images() -> None:

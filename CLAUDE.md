@@ -45,6 +45,7 @@ task's scope, and don't block a review on it — list it as a follow-up.
 | `packages/display_sdl.yaml` | Emulator only: SDL display + mouse touch with the same ids and scripts as `display_touch.yaml` (keep in sync). |
 | `packages/lvgl/base.yaml` | LVGL `displays` / `touchscreens` / `buffer_size` — no `pages`; also the shared header clock (`gp_header_clock_text`, script `gp_header_clock_update`, 2 s interval). |
 | `packages/lvgl/page_*.yaml` | One LVGL page per file under `lvgl: pages:`. |
+| `packages/lvgl/nav_bar.yaml` | The ONE bottom nav: included as a widget with vars `p` (id prefix) and `active`; page targets are substitutions `gp_nav_*_page` (defaults in `base.yaml`). Pages never draw their own nav buttons (test). |
 | `packages/lvgl/screensaver.yaml` | Idle screensaver overlay on the top layer + the `clock` font token (`gp_font_clock`); status line from `packages/greenhouse/screensaver_status.yaml`. |
 | `packages/lvgl/fonts/` | Vendored TTF (Montserrat Bold) + `OFL.txt` for the glyph-limited custom font. |
 | `packages/lvgl/dialog_confirm.yaml` | Confirm dialog on the LVGL top layer + `gp_confirm` script (pattern in its header). |
