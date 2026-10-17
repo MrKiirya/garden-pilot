@@ -94,12 +94,10 @@ def test_shell_is_generic() -> None:
     assert history.get("hidden") is True, "HISTORY stays hidden until the history package shows it"
     assert history["height"] >= 20 and history["x"] + history["width"] <= 268, "left of the clock"
     assert history["on_click"] == [{"script.execute": "sched_history_open"}], "the domain extends this no-op script"
-    for name, target in NAV.items():
-        assert _show_targets(_by_id(page, f"sched_nav_btn_{name}")) == [target], name
-    active = [n for n in NAV if _by_id(page, f"sched_nav_btn_{n}").get("bg_color") == int(ACTIVE, 16)]
-    assert active == ["water"]
-    label = next(p for t, p in _widgets(_by_id(page, "sched_nav_btn_water")) if t == "label")
-    assert label["text"] == "SCHEDULE"
+    # the nav is the shared component (tests/test_screens.py checks it): active SCHEDULE, target set by this package
+    navs = [w for w in page["widgets"] if isinstance(w, dict) and w.get("__tag__") == "include"]
+    assert [n["value"] for n in navs] == [{"file": "nav_bar.yaml", "vars": {"p": "sched_", "active": "water"}}]
+    assert _text(SHELL).count("gp_nav_schedule_page: schedules_page") == 1
     title = next(p for t, p in _widgets(page) if t == "label" and p.get("text") == "Schedule")
     assert (title["x"], title["y"], title["text_font"]) == (8, 4, "montserrat_12")
     clock = _by_id(page, "sched_clock_label")
@@ -139,7 +137,7 @@ def test_rows_and_editor_shape() -> None:
     assert (summary["gh_sched_sum_label"]["x"], summary["gh_sched_sum_label"]["y"]) == (46, 27)
     inn = summary["gh_sched_sum_in"]
     assert (inn["x"], inn["y"], inn["width"], inn["text_align"], inn["text_color"]) == (212, 27, 100, "RIGHT", 0x78DC77)
-    assert any(p.get("text") == "NEXT" and (p["x"], p["y"]) == (8, 28) for _t, p in _widgets(_list_page(data)))
+    assert any(p.get("text") == "NEXT" and (p["x"], p["y"]) == (8, 30) for _t, p in _widgets(_list_page(data)))
     # editor page
     edit = _edit_page(data)
     assert _show_targets(_by_id(edit, "gh_sed_btn_cancel")) == ["schedules_page"]
@@ -225,11 +223,12 @@ def test_editor_writes_only_on_save() -> None:
 
 
 def test_nav_bars_target_the_right_pages() -> None:
-    for rel, page_id, prefix in ((HOME, "home_page", "nav_btn_"), (SETUP, "setup_page", "setup_nav_btn_"),
-                                 (SHELL, "schedules_page", "sched_nav_btn_")):
-        page = _page(rel, page_id)
-        for name, target in NAV.items():
-            assert _show_targets(_by_id(page, prefix + name)) == [target], (rel, name)
+    """Targets live once in nav_bar.yaml (substitutions); the schedules package sets the schedule one."""
+    nav = _text("packages/lvgl/nav_bar.yaml")
+    for sub in ("gp_nav_dash_page", "gp_nav_zones_page", "gp_nav_schedule_page", "gp_nav_setup_page"):
+        assert f"lvgl.page.show: ${{{sub}}}" in nav
+    assert "gp_nav_schedule_page: schedules_page" in _text(SHELL)
+    assert NAV["water"] == "schedules_page"
 
 
 @pytest.mark.parametrize("entry", ["garden-pilot.yaml", "garden-pilot-sim.yaml"])
@@ -358,3 +357,26 @@ def test_helper_files_use_tokens_and_ascii() -> None:
     for _t, props in _widgets(_rows_data()["lvgl"]):
         if props.get("text_font") in BUTTON_FONTS_IDS:
             assert set(props["text"]) <= set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-./:%"), props
+
+
+def test_step_buttons_repeat_on_hold() -> None:
+    """Every -/+ of the editor steps on a tap and keeps stepping while held (LVGL long press + repeat)."""
+    edit = _edit_page(_rows_data())
+    steps = {
+        "gh_sed_btn_hour_dec": "hour_down", "gh_sed_btn_hour_inc": "hour_up",
+        "gh_sed_btn_min_dec": "minute_hold_down", "gh_sed_btn_min_inc": "minute_hold_up",
+        "gh_sed_btn_pct_dec": "pct_down", "gh_sed_btn_pct_inc": "pct_up",
+    }
+    for wid, method in steps.items():
+        w = _by_id(edit, wid)
+        for trig in ("on_long_press", "on_long_press_repeat"):
+            assert trig in w, f"{wid} lacks {trig}"
+            text = " ".join(_lambdas(w[trig]))
+            assert f"{method}()" in text, (wid, trig, text)
+            assert "refresh" in json.dumps(w[trig]), (wid, trig)
+        # draft only: holding never writes to flash (SAVE does)
+        assert "save_edit" not in json.dumps([w["on_long_press"], w["on_long_press_repeat"]])
+    # the minute buttons restart the acceleration at every press
+    for wid in ("gh_sed_btn_min_dec", "gh_sed_btn_min_inc"):
+        w = _by_id(edit, wid)
+        assert "hold_begin()" in " ".join(_lambdas(w["on_long_press"])), wid

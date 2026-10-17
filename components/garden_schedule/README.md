@@ -115,7 +115,7 @@ texts and the editor model are pure functions in `schedule_ui.h` / `schedule_for
 - `changed_since(seen)`: true when anything a schedule screen shows changed (the poller guard; `seen = 0` forces a
   redraw);
 - editor (design D09): `begin_edit(i)` copies slot `i` from its entities into a RAM draft, `draft()` is the draft (hour /
-  minute with step 5, days, zones, factor 10-200 % in steps of 10, ON), `edit_title()` (`Schedule 2`), `can_save()`
+  minute (a tap steps 1 minute; a hold repeats every 100 ms after 400 ms, 1 minute per repeat and 5 after 10 repeats, via `hold_begin()` / `minute_hold_up()` / `minute_hold_down()`), days, zones, factor 10-200 % in steps of 10, ON), `edit_title()` (`Schedule 2`), `can_save()`
   (enabled needs a day and a zone), `save_edit()` writes **only the fields the user changed** to the slot entities (the ones
   Home Assistant edits: switch `turn_on/off`, time / text / number `make_call()`), so nothing is written per tap and a
   Home Assistant change made meanwhile survives; it logs one INFO line. `cancel_edit()` drops the draft. An index out

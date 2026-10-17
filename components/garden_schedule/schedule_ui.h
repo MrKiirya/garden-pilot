@@ -36,6 +36,11 @@ struct Diff {
   bool any() const { return this->enabled || this->start || this->days != 0 || this->zones || this->pct; }
 };
 
+/// Repeats of a held minute button that step by one minute before the step becomes 5.
+inline constexpr uint8_t HOLD_FAST_AFTER = 10;
+/// Minute step of the n-th repeat (0-based) of a hold.
+inline constexpr unsigned hold_minute_step(unsigned repeat) { return repeat >= HOLD_FAST_AFTER ? 5u : 1u; }
+
 struct ScheduleDraft {
   uint8_t index{0};  ///< 0-based position in the hub (include order)
   bool enabled{false};
@@ -47,12 +52,29 @@ struct ScheduleDraft {
 
   void hour_up() { this->hour = this->hour >= 23 ? 0 : static_cast<uint8_t>(this->hour + 1); }
   void hour_down() { this->hour = this->hour == 0 ? 23 : static_cast<uint8_t>(this->hour - 1); }
-  /// Step 5; a minute that is not a multiple of 5 (set from Home Assistant) snaps to the next / previous multiple.
-  void minute_up() {
+  /// A tap steps one minute (wraps 59 -> 0).
+  void minute_up() { this->minute = this->minute >= 59 ? 0 : static_cast<uint8_t>(this->minute + 1); }
+  void minute_down() { this->minute = this->minute == 0 ? 59 : static_cast<uint8_t>(this->minute - 1); }
+  /// A hold repeats: one minute per repeat, after HOLD_FAST_AFTER repeats the step is 5 (snapping to multiples of 5).
+  /// `hold_begin()` restarts the count at the first long-press event; nothing here touches flash (SAVE does).
+  void hold_begin() { this->hold_count_ = 0; }
+  void minute_hold_up() {
+    const unsigned step = hold_minute_step(this->hold_count_);
+    this->bump_hold_();
+    if (step == 1) {
+      this->minute_up();
+      return;
+    }
     const unsigned next = (this->minute / 5u + 1u) * 5u;
     this->minute = next >= 60 ? 0 : static_cast<uint8_t>(next);
   }
-  void minute_down() {
+  void minute_hold_down() {
+    const unsigned step = hold_minute_step(this->hold_count_);
+    this->bump_hold_();
+    if (step == 1) {
+      this->minute_down();
+      return;
+    }
     if (this->minute % 5u != 0)
       this->minute = static_cast<uint8_t>(this->minute / 5u * 5u);
     else
@@ -112,6 +134,11 @@ struct ScheduleDraft {
   }
 
  protected:
+  uint8_t hold_count_{0};
+  void bump_hold_() {
+    if (this->hold_count_ < 255)
+      this->hold_count_++;
+  }
   static std::string two_digits_(unsigned v) {
     char buf[4];
     std::snprintf(buf, sizeof(buf), "%02u", v % 100u);

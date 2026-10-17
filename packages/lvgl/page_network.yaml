@@ -208,9 +208,7 @@ interval:
       - lvgl.label.update:
           id: network_esphome_value
           text: !lambda |-
-            if (!id(gp_esphome_version).has_state())
-              return std::string("--");
-            return gp::fmt::version_short(id(gp_esphome_version).state);
+            return gp::fmt::version_short_or_dash(id(gp_esphome_version).has_state(), id(gp_esphome_version).state);
       - lvgl.label.update:
           id: network_uptime_value
           text: !lambda |-
