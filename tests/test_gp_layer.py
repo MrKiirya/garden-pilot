@@ -88,7 +88,8 @@ def test_callers_use_gp() -> None:
         for target in (d["gp.run_zone"] for d in _walk(data) if "gp.run_zone" in d):
             assert target["id"] == "gp_greenhouse", rel
         reads = re.findall(r"id\((gp_\w+)\)", code)
-        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_service_mode", "gp_confirm_result"}, (rel, reads)
+        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_service_mode", "gp_confirm_result",
+                     "gp_header_clock_text"}, (rel, reads)
 
 
 @pytest.mark.unit

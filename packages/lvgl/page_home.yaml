@@ -15,7 +15,7 @@ lvgl:
             x: 6
             y: 4
             text: "GardenPilot"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0x78dc77
         # Quiet icon: shown only while no Home Assistant client is connected
         # (set by packages/greenhouse/gp_lvgl_status.yaml).
@@ -29,10 +29,11 @@ lvgl:
             text_color: 0xbecab9
         - label:
             id: home_clock_label
-            x: 252
+            align: TOP_RIGHT
+            x: -6
             y: 4
             text: "--:--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - obj:
             x: 0
@@ -62,33 +63,33 @@ lvgl:
             x: 9
             y: 29
             text: "GREENHOUSE"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: gh_home_air_t_label
             x: 10
             y: 44
             text: "--C"
-            text_font: montserrat_12
+            text_font: montserrat_14
             text_color: 0xe5e2e1
         - label:
             id: gh_home_air_rh_label
             x: 82
             y: 44
             text: "--%"
-            text_font: montserrat_12
+            text_font: montserrat_14
             text_color: 0xe5e2e1
         - label:
             x: 10
-            y: 60
+            y: 64
             text: "SOIL MOISTURE"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - bar:
             id: gh_home_soil_bar
             x: 10
-            y: 71
-            width: 132
+            y: 78
+            width: 140
             height: 5
             min_value: 0
             max_value: 100
@@ -102,9 +103,9 @@ lvgl:
               bg_opa: COVER
         - obj:
             x: 10
-            y: 128
-            width: 132
-            height: 64
+            y: 120
+            width: 140
+            height: 72
             bg_color: 0x201f1f
             bg_opa: COVER
             border_width: 1
@@ -114,29 +115,29 @@ lvgl:
             clickable: false
         - label:
             x: 14
-            y: 132
+            y: 124
             text: "STATUS"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: gh_home_irr_status
             x: 14
-            y: 144
+            y: 137
             text: "Idle"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0x78dc77
         - label:
             x: 14
-            y: 158
+            y: 155
             text: "NEXT"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: gh_home_next_label
             x: 14
-            y: 170
+            y: 168
             text: "--:--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
 
         # --- Lawn card (right, placeholders) ---
@@ -157,19 +158,19 @@ lvgl:
             x: 164
             y: 29
             text: "LAWN"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             x: 165
-            y: 46
+            y: 64
             text: "SOIL MOISTURE"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - bar:
             id: lawn_home_soil_bar
             x: 165
-            y: 57
-            width: 133
+            y: 78
+            width: 140
             height: 5
             min_value: 0
             max_value: 100
@@ -183,15 +184,15 @@ lvgl:
               bg_opa: COVER
         - label:
             x: 165
-            y: 68
+            y: 90
             text: "Drainage: Optimal"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - obj:
             x: 165
-            y: 128
-            width: 133
-            height: 64
+            y: 120
+            width: 140
+            height: 72
             bg_color: 0x201f1f
             bg_opa: COVER
             border_width: 1
@@ -201,162 +202,40 @@ lvgl:
             clickable: false
         - label:
             x: 169
-            y: 132
+            y: 124
             text: "STATUS"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: lawn_home_status_label
             x: 169
-            y: 144
+            y: 137
             text: "Idle"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xbecab9
         - label:
             x: 169
-            y: 158
+            y: 155
             text: "NEXT"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: lawn_home_next_label
             x: 169
-            y: 170
+            y: 168
             text: "--:--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
 
-        # --- Bottom nav (ref h 54 -> 39 px) ---
-        - obj:
-            x: 0
-            y: 201
-            width: 320
-            height: 39
-            bg_color: 0x201f1f
-            bg_opa: COVER
-            border_width: 1
-            border_color: 0x3f4a3c
-            border_side: [TOP]
-            pad_all: 0
-            scrollable: false
-            clickable: false
-        - button:
-            id: nav_btn_dash
-            x: 4
-            y: 204
-            width: 76
-            height: 32
-            bg_color: 0x4caf50
-            bg_opa: COVER
-            radius: 3
-            scrollable: false
-            widgets:
-              - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF015"
-                  text_font: montserrat_14
-                  text_color: 0x003c0b
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "DASH"
-                  text_font: montserrat_8
-                  text_color: 0x003c0b
-            on_click:
-              - lvgl.page.show: home_page
-        - button:
-            id: nav_btn_zones
-            x: 84
-            y: 204
-            width: 76
-            height: 32
-            bg_color: 0x201f1f
-            bg_opa: COVER
-            radius: 3
-            scrollable: false
-            widgets:
-              - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF06C"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "ZONES"
-                  text_font: montserrat_8
-                  text_color: 0xbecab9
-            on_click:
-              - lvgl.page.show: greenhouse_page
-        - button:
-            id: nav_btn_water
-            x: 164
-            y: 204
-            width: 76
-            height: 32
-            bg_color: 0x201f1f
-            bg_opa: COVER
-            radius: 3
-            scrollable: false
-            widgets:
-              - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF043"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "WATER"
-                  text_font: montserrat_8
-                  text_color: 0xbecab9
-            on_click:
-              - lvgl.page.show: lawn_page
-        - button:
-            id: nav_btn_setup
-            x: 244
-            y: 204
-            width: 72
-            height: 32
-            bg_color: 0x201f1f
-            bg_opa: COVER
-            radius: 3
-            scrollable: false
-            widgets:
-              - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF013"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "SETUP"
-                  text_font: montserrat_8
-                  text_color: 0xbecab9
-            on_click:
-              - lvgl.page.show: setup_page
+        # --- Bottom nav: shared component (packages/lvgl/nav_bar.yaml) ---
+        - !include
+          file: nav_bar.yaml
+          vars: {p: home_, active: dash}
 
-# Clock in the header. Adds the trigger to the core clock (packages/core/time.yaml).
-# Risk: on_time_sync can fire before LVGL is ready (SPEC §8); the 30 s interval keeps the label fresh.
-time:
-  - id: !extend ha_time
-    on_time_sync:
-      - lvgl.label.update:
-          id: home_clock_label
-          text:
-            time_format: "%H:%M"
-            time: ha_time
-
-interval:
-  - interval: 30s
+# Header clock: one action on the shared poller (packages/lvgl/base.yaml).
+script:
+  - id: !extend gp_header_clock_update
     then:
       - lvgl.label.update:
           id: home_clock_label
-          text:
-            time_format: "%H:%M"
-            time: ha_time
+          text: !lambda "return id(gp_header_clock_text);"

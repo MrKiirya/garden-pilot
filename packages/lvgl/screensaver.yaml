@@ -70,21 +70,28 @@ lvgl:
             - label:
                 id: gp_screensaver_clock
                 align: TOP_MID
-                y: 70
+                y: 62
                 text: "--:--"
                 text_font: gp_font_clock
                 text_color: 0xe5e2e1
             - label:
+                id: gp_screensaver_date
+                align: TOP_MID
+                y: 116
+                text: ""
+                text_font: montserrat_14
+                text_color: 0xe5e2e1
+            - label:
                 id: gp_screensaver_status
                 align: TOP_MID
-                y: 124
+                y: 142
                 text: ""
-                text_font: montserrat_10
+                text_font: montserrat_12
                 text_color: 0xbecab9
             - obj:
                 id: gp_screensaver_bed_dot
                 x: 132
-                y: 146
+                y: 165
                 width: 8
                 height: 8
                 bg_color: 0x4caf50
@@ -98,16 +105,16 @@ lvgl:
             - label:
                 id: gp_screensaver_bed_label
                 x: 146
-                y: 145
+                y: 163
                 text: ""
-                text_font: montserrat_8
+                text_font: montserrat_10
                 text_color: 0x78dc77
                 hidden: true
             - label:
                 align: TOP_MID
                 y: 220
                 text: "Touch to wake"
-                text_font: montserrat_8
+                text_font: montserrat_10
                 text_color: 0xbecab9
 
 # "--:--" until the clock is valid (time.has_time is not a condition: use now().is_valid()).
@@ -124,10 +131,18 @@ script:
                 text:
                   time_format: "%H:%M"
                   time: ha_time
+            - lvgl.label.update:
+                id: gp_screensaver_date
+                text: !lambda |-
+                  auto t = id(ha_time).now();
+                  return gp::fmt::saver_date(t.is_valid(), t.day_of_week, t.day_of_month, t.month);
           else:
             - lvgl.label.update:
                 id: gp_screensaver_clock
                 text: "--:--"
+            - lvgl.label.update:
+                id: gp_screensaver_date
+                text: ""
 
 # Keep the clock current while the screensaver is up (cheap: one short label update).
 interval:

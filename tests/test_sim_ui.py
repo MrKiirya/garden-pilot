@@ -140,25 +140,13 @@ def test_outputs_stay_in_esphome_dir() -> None:
 @pytest.mark.unit
 def test_tap_target_is_the_setup_button() -> None:
     # Keeps the host scenario honest: the button must still be where the test taps.
-    home = load_esphome_yaml(REPO_ROOT / "packages" / "lvgl" / "page_home.yaml")
-
-    def find(node: object) -> dict | None:
-        if isinstance(node, dict):
-            if node.get("id") == "nav_btn_setup":
-                return node
-            for value in node.values():
-                found = find(value)
-                if found:
-                    return found
-        elif isinstance(node, list):
-            for value in node:
-                found = find(value)
-                if found:
-                    return found
-        return None
-
-    button = find(home)
-    assert button, "nav_btn_setup not found in page_home.yaml: update SETUP_BTN in tests/test_sim_ui.py"
+    nav = load_esphome_yaml(REPO_ROOT / "packages" / "lvgl" / "nav_bar.yaml")  # the shared nav: band at y 201, 1 px border
+    band = nav["obj"]
+    button = next(w["button"] for w in band["widgets"] if w["button"]["id"] == "${p}nav_btn_setup")
+    button = {
+        "x": band["x"] + button["x"], "y": band["y"] + band["border_width"] + button["y"],
+        "width": button["width"], "height": button["height"],
+    }
     assert (int(button["x"]), int(button["y"]), int(button["width"]), int(button["height"])) == SETUP_BTN
 
 

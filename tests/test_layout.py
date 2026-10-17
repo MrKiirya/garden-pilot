@@ -560,6 +560,7 @@ def test_substitutions_resolve() -> None:
         BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(BED_SOIL_FILE))),
         SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
         BED_SOIL_SKIP: set().union(*(set(p["vars"]) for e in EXAMPLES for p in _entry_packages(e).values() if p["path"] == BED_SOIL_SKIP_FILE)),
+        REPO_ROOT / "packages/lvgl/nav_bar.yaml": {"p", "active"},  # include vars of the shared nav
         SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
     }
     missing = set()
@@ -907,7 +908,8 @@ def test_sim_board_page() -> None:
     top = data["lvgl"]["top_layer"]["widgets"]
     assert [w["button"]["id"] for w in top] == ["nav_btn_sim"]
     assert top[0]["button"]["on_click"] == [{"lvgl.page.show": "sim_board_page"}]
-    assert set(re.findall(r"text_font: (\w+)", code)) <= {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14"}
+    assert set(re.findall(r"text_font: (\w+)", code)) <= {
+        "montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16", "gp_font_button_md", "gp_font_button_sm"}
     for name in SIM_DISPLAY_FREE:  # no lvgl.* in any on_value of a number/switch (anywhere in packages/sim)
         for entity in (_sim_pkg(name).get("number") or []) + (_sim_pkg(name).get("switch") or []):
             assert "lvgl" not in _actions_text(entity.get("on_value")), entity["id"]
