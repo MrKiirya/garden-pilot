@@ -91,9 +91,9 @@ def test_shell_is_generic() -> None:
     page = _page(SHELL, "schedules_page")
     _by_id(page, "sched_empty_label")
     history = _by_id(page, "sched_btn_history")
-    assert history.get("hidden") is True, "HISTORY stays hidden until the history task"
+    assert history.get("hidden") is True, "HISTORY stays hidden until the history package shows it"
     assert history["height"] >= 20 and history["x"] + history["width"] <= 268, "left of the clock"
-    assert "on_click" not in history
+    assert history["on_click"] == [{"script.execute": "sched_history_open"}], "the domain extends this no-op script"
     for name, target in NAV.items():
         assert _show_targets(_by_id(page, f"sched_nav_btn_{name}")) == [target], name
     active = [n for n in NAV if _by_id(page, f"sched_nav_btn_{n}").get("bg_color") == int(ACTIVE, 16)]

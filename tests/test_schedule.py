@@ -104,7 +104,7 @@ def test_schedule_package_shape() -> None:
     for node in _walk(hub["on_run"]):
         for value in node.values():
             if isinstance(value, dict) and value.get("__tag__") == "lambda":
-                assert value["value"] in ("return zone_mask;", "return multiplier_pct;"), value
+                assert value["value"] in ("return zone_mask;", "return multiplier_pct;", "return slot;"), value
     # entities
     master, = config["switch"]
     assert master["id"] == "gh_schedules_on" and master["name"] == "Greenhouse schedules"

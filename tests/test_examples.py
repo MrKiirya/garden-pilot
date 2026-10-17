@@ -115,7 +115,7 @@ def test_gp_root_default() -> None:
         seen += 1
         assert all(s.startswith("${gp_root}/") for s in local), f"{path}: {local}"
         assert data["substitutions"]["gp_root"] == ".", f"{path}: define gp_root: \".\""
-    assert seen == 6, "irrigation, irrigation_pump, schedule, gp (components), screensaver and lvgl base (fonts)"
+    assert seen == 7, "irrigation, irrigation_pump, schedule, gp (components), screensaver, lvgl base (fonts) and history (chevrons)"
     assert "gp_root" not in (_load(REPO_ROOT / "garden-pilot.yaml")["substitutions"]), "root entry uses the default"
 
 

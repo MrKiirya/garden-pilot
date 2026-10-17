@@ -19,6 +19,7 @@ api:
             group: !lambda "return group;"
             zone: !lambda "return zone - 1;"
             duration: !lambda "return gp::api_seconds(minutes);"
+            source: ha
     - action: gp_enqueue_zone
       variables:
         group: string
@@ -30,6 +31,7 @@ api:
             group: !lambda "return group;"
             zone: !lambda "return zone - 1;"
             duration: !lambda "return gp::api_seconds(minutes);"
+            source: ha
     - action: gp_start_queue
       variables:
         group: string
@@ -44,6 +46,7 @@ api:
         - gp.full_cycle:
             hub: gp_hub
             group: !lambda "return group;"
+            source: ha
     - action: gp_stop_all
       variables:
         group: string

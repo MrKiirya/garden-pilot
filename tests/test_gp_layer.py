@@ -192,7 +192,7 @@ def test_main_switch_through_gp() -> None:
     assert sw["platform"] == "template" and sw["id"] == "gp_greenhouse_main_switch"
     assert sw["restore_mode"] == "DISABLED", "ALWAYS_OFF would run the OFF action (a STOP) at every boot"
     assert not sw.get("optimistic", False)
-    assert sw["turn_on_action"] == [{"gp.full_cycle": "gp_greenhouse"}]
+    assert sw["turn_on_action"] == [{"gp.full_cycle": {"id": "gp_greenhouse", "source": "ha"}}]
     assert sw["turn_off_action"] == [{"gp.stop_all": "gp_greenhouse"}]
     assert "gp_greenhouse" in sw["lambda"]
 

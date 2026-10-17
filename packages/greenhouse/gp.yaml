@@ -53,7 +53,9 @@ switch:
     optimistic: false
     lambda: "return id(gp_greenhouse)->summary().running;"
     turn_on_action:
-      - gp.full_cycle: gp_greenhouse
+      - gp.full_cycle:
+          id: gp_greenhouse
+          source: ha
     turn_off_action:
       - gp.stop_all: gp_greenhouse
 

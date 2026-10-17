@@ -43,6 +43,8 @@ garden_schedule:
           id: gp_greenhouse
           mask: !lambda "return zone_mask;"
           pct: !lambda "return multiplier_pct;"
+          source: schedule
+          slot: !lambda "return slot;"
       - gp.start_queue: gp_greenhouse
 
 switch:

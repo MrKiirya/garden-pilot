@@ -1,55 +1,111 @@
-# History page (task 027): the gp history (100 entries, flash) as pages of 6 rows, newest first: zone, start, duration,
-# result (done / stopped / skipped / skipped wet / test). Reached from the HISTORY button on the Greenhouse page (added
-# here with `!extend`, so the page file stays untouched); BACK returns. No scrolling (design/README): PREV / NEXT page
-# through a fixed window of 6 labels. Tokens only; ASCII only.
-# Needs gh_gp (group gp_greenhouse) and gh_lvgl_page. Texts come from gp::fmt (components/gp/format_history.h); the
-# glue converts the epoch to local time. LVGL is written from a script (page opened, PREV / NEXT) and from a 1 s poller
-# guarded by history_changed_since, never from a gp trigger.
+# History page (task 027, design D20): the gp history of the greenhouse group (100 entries, flash) as pages of 8 rows,
+# newest first: DATE, TIME, ZONE, TIME ON, SOURCE. A run is one entry that opens when the zone starts (its row is green
+# and ticks while the zone runs) and is closed when it ends. Reached from the HISTORY button of the Schedule page
+# (packages/lvgl/page_schedules.yaml calls the no-op script `sched_history_open`, extended here); BACK returns there.
+# NEWER / OLDER page through the 8-row window (no scrolling, design/README). Tokens only; ASCII only.
+# Needs gh_gp (group gp_greenhouse) and lvgl_page_schedules. All texts and colours come from gp::fmt through the glue
+# (history_cell / history_colour / history_title), so every lambda is one line. LVGL is written from scripts (page
+# opened, NEWER / OLDER) and from a 1 s poller guarded by history_changed_since or an open row on the visible page,
+# never from a gp trigger.
+
+substitutions:
+  gp_root: "."
 
 globals:
-  - id: gh_hist_page  # 0-based page shown; reset when the page opens
+  - id: gh_hist_page  # 0-based page shown; reset when the page is opened from the Schedule page
     type: int
     initial_value: "0"
+    restore_value: false
+  - id: gh_hist_visible  # true while the page is the current one (live tick of an open row)
+    type: bool
+    initial_value: "false"
     restore_value: false
   - id: gp_hist_seen
     type: uint32_t
     initial_value: "0"
     restore_value: false
 
+image:
+  - id: gp_icon_chevron_left
+    file: ${gp_root}/packages/lvgl/icons/chevron-left.png
+    type: RGB565
+    transparency: alpha_channel
+  - id: gp_icon_chevron_right
+    file: ${gp_root}/packages/lvgl/icons/chevron-right.png
+    type: RGB565
+    transparency: alpha_channel
+
 script:
-  - id: gh_hist_render
-    mode: restart
-    then:
-      - lvgl.label.update:
-          id: gh_hist_row1
-          text: !lambda "return id(gp_greenhouse)->history_row(id(gh_hist_page), 0);"
-      - lvgl.label.update:
-          id: gh_hist_row2
-          text: !lambda "return id(gp_greenhouse)->history_row(id(gh_hist_page), 1);"
-      - lvgl.label.update:
-          id: gh_hist_row3
-          text: !lambda "return id(gp_greenhouse)->history_row(id(gh_hist_page), 2);"
-      - lvgl.label.update:
-          id: gh_hist_row4
-          text: !lambda "return id(gp_greenhouse)->history_row(id(gh_hist_page), 3);"
-      - lvgl.label.update:
-          id: gh_hist_row5
-          text: !lambda "return id(gp_greenhouse)->history_row(id(gh_hist_page), 4);"
-      - lvgl.label.update:
-          id: gh_hist_row6
-          text: !lambda "return id(gp_greenhouse)->history_row(id(gh_hist_page), 5);"
-      - lvgl.label.update:
-          id: gh_hist_pager
-          text: !lambda "return id(gp_greenhouse)->history_pager(id(gh_hist_page));"
-  - id: gh_hist_open
+  # Schedule page HISTORY button: first page, then the page (its on_load renders).
+  - id: !extend sched_history_open
     then:
       - globals.set:
           id: gh_hist_page
           value: "0"
-      - script.execute: gh_hist_render
+      - lvgl.page.show: gh_history_page
+  - id: gh_hist_render
+    mode: restart
+    then:
+      - lvgl.label.update:
+          id: gh_hist_title
+          text: !lambda "return id(gp_greenhouse)->history_title(id(gh_hist_page));"
+      - script.execute: gh_hist_r1_refresh
+      - script.execute: gh_hist_r2_refresh
+      - script.execute: gh_hist_r3_refresh
+      - script.execute: gh_hist_r4_refresh
+      - script.execute: gh_hist_r5_refresh
+      - script.execute: gh_hist_r6_refresh
+      - script.execute: gh_hist_r7_refresh
+      - script.execute: gh_hist_r8_refresh
+      - if:
+          condition:
+            lambda: "return id(gp_greenhouse)->history().size() == 0;"
+          then:
+            - lvgl.widget.show: gh_hist_empty
+          else:
+            - lvgl.widget.hide: gh_hist_empty
+      - lvgl.label.update:
+          id: gh_hist_newer_label
+          text_color: !lambda "return lv_color_hex(id(gp_greenhouse)->history_edge_colour(id(gh_hist_page), -1));"
+      - lvgl.label.update:
+          id: gh_hist_older_label
+          text_color: !lambda "return lv_color_hex(id(gp_greenhouse)->history_edge_colour(id(gh_hist_page), 1));"
+  - id: !extend gp_header_clock_update
+    then:
+      - lvgl.label.update:
+          id: history_clock_label
+          text: !lambda "return id(gp_header_clock_text);"
+  - !include
+    file: ../lvgl/history_row_refresh.yaml
+    vars: {p: gh, n: "1", group: gp_greenhouse, page: gh_hist_page}
+  - !include
+    file: ../lvgl/history_row_refresh.yaml
+    vars: {p: gh, n: "2", group: gp_greenhouse, page: gh_hist_page}
+  - !include
+    file: ../lvgl/history_row_refresh.yaml
+    vars: {p: gh, n: "3", group: gp_greenhouse, page: gh_hist_page}
+  - !include
+    file: ../lvgl/history_row_refresh.yaml
+    vars: {p: gh, n: "4", group: gp_greenhouse, page: gh_hist_page}
+  - !include
+    file: ../lvgl/history_row_refresh.yaml
+    vars: {p: gh, n: "5", group: gp_greenhouse, page: gh_hist_page}
+  - !include
+    file: ../lvgl/history_row_refresh.yaml
+    vars: {p: gh, n: "6", group: gp_greenhouse, page: gh_hist_page}
+  - !include
+    file: ../lvgl/history_row_refresh.yaml
+    vars: {p: gh, n: "7", group: gp_greenhouse, page: gh_hist_page}
+  - !include
+    file: ../lvgl/history_row_refresh.yaml
+    vars: {p: gh, n: "8", group: gp_greenhouse, page: gh_hist_page}
 
 lvgl:
   pages:
+    # the Schedule page shows its HISTORY button (hidden in the generic page: it needs this package)
+    - id: !extend schedules_page
+      on_load:
+        - lvgl.widget.show: sched_btn_history
     - id: gh_history_page
       bg_color: 0x131313
       bg_opa: COVER
@@ -58,13 +114,29 @@ lvgl:
       border_side: [TOP, BOTTOM, LEFT, RIGHT]
       scrollable: false
       on_load:
-        - script.execute: gh_hist_open
+        - globals.set:
+            id: gh_hist_visible
+            value: "true"
+        - script.execute: gh_hist_render
+      on_unload:
+        - globals.set:
+            id: gh_hist_visible
+            value: "false"
       widgets:
         - label:
+            id: gh_hist_title
             x: 8
             y: 4
             text: "History"
-            text_font: montserrat_10
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            id: history_clock_label
+            align: TOP_RIGHT
+            x: -8
+            y: 4
+            text: "--:--"
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - obj:
             x: 0
@@ -78,114 +150,79 @@ lvgl:
             scrollable: false
             clickable: false
         - label:
-            id: gh_hist_row1
             x: 8
             y: 28
-            width: 304
-            long_mode: CLIP
-            text: ""
-            text_font: montserrat_10
-            text_color: 0xe5e2e1
-        - label:
-            id: gh_hist_row2
-            x: 8
-            y: 50
-            width: 304
-            long_mode: CLIP
-            text: ""
-            text_font: montserrat_10
-            text_color: 0xe5e2e1
-        - label:
-            id: gh_hist_row3
-            x: 8
-            y: 72
-            width: 304
-            long_mode: CLIP
-            text: ""
-            text_font: montserrat_10
-            text_color: 0xe5e2e1
-        - label:
-            id: gh_hist_row4
-            x: 8
-            y: 94
-            width: 304
-            long_mode: CLIP
-            text: ""
-            text_font: montserrat_10
-            text_color: 0xe5e2e1
-        - label:
-            id: gh_hist_row5
-            x: 8
-            y: 116
-            width: 304
-            long_mode: CLIP
-            text: ""
-            text_font: montserrat_10
-            text_color: 0xe5e2e1
-        - label:
-            id: gh_hist_row6
-            x: 8
-            y: 138
-            width: 304
-            long_mode: CLIP
-            text: ""
-            text_font: montserrat_10
-            text_color: 0xe5e2e1
-        - label:
-            id: gh_hist_pager
-            x: 8
-            y: 181
-            text: "No watering yet"
+            text: "DATE"
             text_font: montserrat_10
             text_color: 0xbecab9
-        - button:
-            id: gh_hist_btn_prev
-            x: 188
-            y: 176
-            width: 60
-            height: 20
-            bg_opa: TRANSP
-            border_width: 1
-            border_color: 0xbecab9
-            radius: 3
-            shadow_width: 0
+        - label:
+            x: 48
+            y: 28
+            text: "TIME"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - label:
+            x: 92
+            y: 28
+            text: "ZONE"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - label:
+            x: 158
+            y: 28
+            text: "TIME ON"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - label:
+            x: 226
+            y: 28
+            text: "SOURCE"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - obj:
+            x: 8
+            y: 38
+            width: 304
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
             scrollable: false
-            on_click:
-              - globals.set:
-                  id: gh_hist_page
-                  value: !lambda "return id(gp_greenhouse)->history_clamp_page(id(gh_hist_page) - 1);"
-              - script.execute: gh_hist_render
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "PREV"
-                  text_font: gp_font_button_sm
-                  text_color: 0xbecab9
+            clickable: false
+        - !include
+          file: ../lvgl/history_row.yaml
+          vars: {p: gh, n: "1", y: "44"}
+        - !include
+          file: ../lvgl/history_row.yaml
+          vars: {p: gh, n: "2", y: "62"}
+        - !include
+          file: ../lvgl/history_row.yaml
+          vars: {p: gh, n: "3", y: "80"}
+        - !include
+          file: ../lvgl/history_row.yaml
+          vars: {p: gh, n: "4", y: "98"}
+        - !include
+          file: ../lvgl/history_row.yaml
+          vars: {p: gh, n: "5", y: "116"}
+        - !include
+          file: ../lvgl/history_row.yaml
+          vars: {p: gh, n: "6", y: "134"}
+        - !include
+          file: ../lvgl/history_row.yaml
+          vars: {p: gh, n: "7", y: "152"}
+        - !include
+          file: ../lvgl/history_row.yaml
+          vars: {p: gh, n: "8", y: "170"}
+        - label:
+            id: gh_hist_empty
+            align: TOP_MID
+            y: 110
+            text: "No watering yet"
+            text_font: montserrat_12
+            text_color: 0xbecab9
         - button:
-            id: gh_hist_btn_next
-            x: 252
-            y: 176
-            width: 60
-            height: 20
-            bg_opa: TRANSP
-            border_width: 1
-            border_color: 0xbecab9
-            radius: 3
-            shadow_width: 0
-            scrollable: false
-            on_click:
-              - globals.set:
-                  id: gh_hist_page
-                  value: !lambda "return id(gp_greenhouse)->history_clamp_page(id(gh_hist_page) + 1);"
-              - script.execute: gh_hist_render
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "NEXT"
-                  text_font: gp_font_button_sm
-                  text_color: 0xbecab9
-        - button:
-            id: gh_history_btn_back
+            id: gh_hist_btn_back
             x: 8
             y: 210
             width: 92
@@ -195,44 +232,90 @@ lvgl:
             border_color: 0xbecab9
             radius: 3
             shadow_width: 0
+            pad_all: 0
             scrollable: false
             on_click:
-              - lvgl.page.show: greenhouse_page
+              - lvgl.page.show: schedules_page
             widgets:
               - label:
-                  align: CENTER
+                  id: gh_hist_back_label
                   text: "BACK"
                   text_font: gp_font_button_md
                   text_color: 0xbecab9
-    # HISTORY button in the Greenhouse page header (the page itself lives in lvgl_page.yaml).
-    - id: !extend greenhouse_page
-      widgets:
         - button:
-            id: gh_btn_history
-            x: 240
-            y: 1
-            width: 72
-            height: 20
+            id: gh_hist_btn_newer
+            x: 104
+            y: 210
+            width: 100
+            height: 26
             bg_opa: TRANSP
             border_width: 1
             border_color: 0xbecab9
             radius: 3
             shadow_width: 0
+            pad_all: 0
             scrollable: false
+            layout:
+              type: flex
+              flex_flow: ROW
+              flex_align_main: CENTER
+              flex_align_cross: CENTER
+              pad_column: 4
             on_click:
-              - lvgl.page.show: gh_history_page
+              - globals.set:
+                  id: gh_hist_page
+                  value: !lambda "return id(gp_greenhouse)->history_clamp_page(id(gh_hist_page) - 1);"
+              - script.execute: gh_hist_render
+            widgets:
+              - image:
+                  src: gp_icon_chevron_left
+                  image_recolor: 0xbecab9
+                  image_recolor_opa: COVER
+              - label:
+                  id: gh_hist_newer_label
+                  text: "NEWER"
+                  text_font: gp_font_button_md
+                  text_color: 0xbecab9
+        - button:
+            id: gh_hist_btn_older
+            x: 208
+            y: 210
+            width: 104
+            height: 26
+            bg_opa: TRANSP
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            layout:
+              type: flex
+              flex_flow: ROW
+              flex_align_main: CENTER
+              flex_align_cross: CENTER
+              pad_column: 4
+            on_click:
+              - globals.set:
+                  id: gh_hist_page
+                  value: !lambda "return id(gp_greenhouse)->history_clamp_page(id(gh_hist_page) + 1);"
+              - script.execute: gh_hist_render
             widgets:
               - label:
-                  align: CENTER
-                  text: "HISTORY"
-                  text_font: gp_font_button_sm
+                  id: gh_hist_older_label
+                  text: "OLDER"
+                  text_font: gp_font_button_md
                   text_color: 0xbecab9
+              - image:
+                  src: gp_icon_chevron_right
+                  image_recolor: 0xbecab9
+                  image_recolor_opa: COVER
 
 interval:
   - interval: 1s
     then:
       - if:
           condition:
-            lambda: "return id(gp_greenhouse)->history_changed_since(id(gp_hist_seen));"
+            lambda: "return id(gp_greenhouse)->history_tick(id(gp_hist_seen), id(gh_hist_visible), id(gh_hist_page));"
           then:
             - script.execute: gh_hist_render
