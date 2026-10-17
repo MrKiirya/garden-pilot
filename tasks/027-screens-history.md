@@ -562,3 +562,50 @@ Status: planned. This section **supersedes** everything above where they disagre
 - **R7 Skip SOURCE text.** Default: the threshold `soil > 60%` (artboard style `soil < 35%`); alternative: the measured
   value `soil 72%`. The artboard's watered row with `soil < 35%` implies soil-triggered watering, which does not exist.
 - **R8 Valve-test rows.** Default: kept in the history as `test` (today's behaviour), not as "last watering".
+
+### Implementation notes - D20 rework (2026-10-17)
+Done: entry model "open at start, close at end" (`components/gp/history.h` `book::`, `components/gp/journal.h`,
+`SourcePlan` / `pick_source` / `StartInfo` / `RunStart` / `run_elapsed` / `parse_skip_limit` in `zone_model.h`), boot
+recovery (`interrupted`), `source` / `slot` options and callers, D20 page (`lvgl_history.yaml`, `history_row.yaml`,
+`history_row_refresh.yaml`), chevron icons, entry from the Schedule page (`sched_btn_history` -> `sched_history_open`),
+greenhouse HISTORY button removed, docs (gp README, SPEC, design README, CLAUDE.md). Flash layout unchanged
+(12 B / 1336 B / `GP01`). `script/test-cpp` 120 cases green with zig; `pytest -m unit` green apart from the known
+Windows-only failures.
+
+Decisions and deviations:
+- Tests were written in the same pass as the headers (a tooling hiccup lost the first test-only draft); every check in
+  the plan's table exists (`book_*`, `tracker_elapsed_live`, `pick_source_precedence`, `queued_source_lifecycle`,
+  `completed_flag_kept`, `skip_entry_source_and_limit`, `fmt_history_cells`, `fmt_history_title`) plus
+  `fmt_history_zone_label` and `skip_limit_parsing`. gp.h glue is not host-testable: the lifecycle logic was moved into
+  pure `Journal` / `SourcePlan` so the tests cover it.
+- `Journal::process(model, now_ms, stop_ms, on_event)` returns "blob changed"; the glue saves then (two saves per run).
+- TIME ON uses floor minutes with 5 s tolerance (299 s reads `5 min`, the valve-open time is sampled every 250 ms) and is
+  capped at `99 min`.
+- ZONE cell: `history_zone_label` shortens names longer than 8 characters by dropping leading words ("Greenhouse bed 1"
+  -> "Bed 1"), else `B<n>`: the gp zone name is the full bed name.
+- Skip rows show `soil > N%` / `too wet` / `no sensor` in SOURCE; the stored source of a skip is kept in the entry only.
+- `gp.full_cycle` default source is now `manual` (it was QUEUE-looking before); `completed` is unchanged (`from_queue`).
+- "page is showing": ESPHome 2026.9.1 has no `lvgl.page.is_showing` condition (only `LvPageType::is_showing()` in C++), so the
+  page sets a global `gh_hist_visible` from `on_load` / `on_unload` (accepted by `esphome config`); the poller guard is
+  `history_tick(seen, visible, page)`. Not checked on 2026.6.3.
+- NEWER / OLDER labels are `text` normally and `text-dim` at the end of the list (R6), while BACK is `text-dim`.
+- Chevrons: no `resvg` in this environment, the two 10x10 PNGs were rendered with Pillow (16x supersampling) from the SVGs in
+  `design/icons/`; re-render with resvg when convenient. The chevron images are declared in `lvgl_history.yaml`, not in
+  `lvgl/base.yaml` (a test pins the base image list to the nav icons).
+- The schedule page button was already 20 px; `hidden: true` stays in the generic page and the history package shows it
+  from an extended `on_load` (verified in the merged config). The history row cells are in an 18 px strip container.
+- Extra files: `packages/lvgl/history_row_refresh.yaml`, `components/gp/journal.h`; tests touched: `test_examples`
+  (7 files with `gp_root`), `test_layout` (include vars of `lvgl_history`), `test_schedule`, `test_screens_schedules`,
+  `test_gp_layer`, `test_sim_ui`.
+- Flush-before-reboot verified in the pinned 2026.9.1 sources: `Application::reboot()` / `safe_reboot()` run every
+  component's `on_shutdown()` (`esphome/core/application.cpp`), `IntervalSyncer::on_shutdown()` calls
+  `global_preferences->sync()` (`esphome/components/preferences/syncer.h`), default `flash_write_interval` 60 s
+  (`components/preferences/__init__.py`). Documented in `components/gp/README.md`.
+
+Not run / to check: the ESPHome compile of `gp.h` / `gp_engine.h` (the host build and `script/compile` need a Linux
+toolchain; the gp glue is only reviewed by eye), `garden-pilot-sim.yaml` config (needs a runnable `sdl2-config`, fails on this
+Windows box), `script/test` (host-level), the sim-ui scenario (Xvfb), CI compiles, and all hardware items (page legibility,
+a power cut during a run showing `interrupted`, chevron rendering).
+
+### ESP32 compile (D20 rework), 2026-10-17
+`GP_SECRETS=example script/compile garden-pilot.yaml` in the devcontainer image (Docker Desktop on Windows), pinned ESPHome: **SUCCESS** on the first try. RAM 41.2% (140827 / 341760 bytes), Flash 74.2% (1362011 / 1835008 bytes). Minimum ESPHome: CI.

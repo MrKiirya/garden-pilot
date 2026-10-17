@@ -147,7 +147,7 @@ adapter (`components/garden_zones/gp_engine.h`, GPLv3). Full contract, names and
 - Home Assistant gets ONE generic action set for all groups (`gp_run_zone` etc. with `group` and a 1-based `zone`), one
   switch per zone from the gp layer ("Greenhouse bed N"; the engine's zone switches are internal), a "Greenhouse status"
   and an "Alert" text sensor; settings entities have `entity_category: config`.
-- The last watering of each zone and the last 100 runs are persisted to flash after each run; the full history stays
+- The last watering of each zone and the last 100 runs are persisted to flash (a run is one entry, saved at its start and at its end); the full history stays
   in Home Assistant.
 - "Home Assistant disconnected" is a quiet header icon, not an alert.
 - LVGL reads `gp` only from pollers.
@@ -329,8 +329,8 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   in a grid). Home is a stack of widgets (308x172, gap 4, heights 26/40/44/76) filled by priority with a C++
   fit helper; available widgets come from the enabled packages, their order is set in SETUP and stored on the
   device.
-- Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11), `gh_history_page` (task 027: reached from
-  a HISTORY button in the Greenhouse header, 6 rows per page with PREV / NEXT and BACK, no scrolling) and the confirm
+- Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11), `gh_history_page` (task 027, D20: reached from
+  the HISTORY button of the Schedule page, 8 rows per page with NEWER / OLDER and BACK, no scrolling) and the confirm
   dialog (D14, top layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
   LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the
 - Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
@@ -411,7 +411,7 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
 
 ### 9.1 Backlog (ideas, separate tasks once the base is ready)
 Optional modules; most can be built and tested without the physical sensors (`hardware/sim.yaml`):
-- **Watering history** per zone: on screen since task 027 (History page, 6 rows per page, result `done` / `stopped` / `skipped` / `skipped wet`, skips included); in HA still open (wanted).
+- **Watering history** per zone: on screen since task 027 (History page D20, 8 rows per page; one entry per run, opened at the start and closed at the end, with source manual / HA / schedule / queue / test, a live row, `stopped`, `interrupted` after a restart, skips included); in HA still open (wanted).
 - Barrel water level sensor: don't water when empty, alert.
 - Pump dry-run protection (flow or pressure sensor).
 - Flow meter: litres per zone, watering by volume.
