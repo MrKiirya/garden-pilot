@@ -1,0 +1,31 @@
+# One toggle button of the Schedule editor (design D09), a day or a bed. Included by lvgl_schedules.yaml with
+#   vars: {kind: day|zone, n: "1", i: "0", x, y, w, text}
+#   kind  day (i = 0 Monday .. 6 Sunday) or zone (i = 0-based bed); the hub helper edit_toggle_<kind>(i) flips the
+# draft.
+# 22 px tall (design value, at least btn-h-sm 20). The state colours are set by gh_sed_<kind>${n}_refresh
+# (lvgl_schedules_toggle_refresh.yaml): selected = green-fill + on-green, unselected = ghost.
+
+button:
+  id: gh_sed_btn_${kind}${n}
+  x: ${x}
+  y: ${y}
+  width: ${w}
+  height: 22
+  bg_color: 0x131313
+  bg_opa: COVER
+  border_width: 1
+  border_color: 0xbecab9
+  radius: 3
+  shadow_width: 0
+  pad_all: 0
+  scrollable: false
+  on_click:
+    - lambda: "id(gh_schedule)->edit_toggle_${kind}(${i});"
+    - script.execute: gh_sed_refresh
+  widgets:
+    - label:
+        id: gh_sed_lbl_${kind}${n}
+        align: CENTER
+        text: "${text}"
+        text_font: gp_font_button_sm
+        text_color: 0xbecab9

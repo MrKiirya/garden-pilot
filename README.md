@@ -99,7 +99,7 @@ and Greenhouse like the real sensors.
 - **Screenshots without a desktop:** `script/sim-ui start` runs the emulator on a private Xvfb display (no window on
   your screen), `script/sim-ui shot home` saves `.esphome/shots/home.png` (320x240), `script/sim-ui tap 280 220` taps
   a display pixel, `script/sim-ui stop` ends the session. Combine with `script/sim-ctl` to see how a sensor value
-  changes a screen (Home refreshes its labels every 30 s). Needs Xvfb and xdotool (in the devcontainer image); exit
+  changes a screen (Home refreshes its labels every second). Needs Xvfb and xdotool (in the devcontainer image); exit
   code 3 means a session runs or port 6053 is busy.
 
 - **Where:** in the SDL devcontainer config (above; on rootless Podman, X11 host) or on a desktop host with SDL2
@@ -152,7 +152,7 @@ Reproduce locally: `script/lint`, `script/test`, `GP_SECRETS=example script/comp
 - `garden-pilot.yaml` — device entry file: a list of packages. `garden-pilot-sim.yaml` — the same packages for the PC emulator.
 - `examples/` — four complete device configs (see Examples above). `hardware/` — board profiles (breadboard, LilyGO T-Relay-S3: pins, relay drivers) and `sim.yaml` (PC emulator and config checks without a board); `packages/` — core (API, OTA, network, time), display and touch (device or SDL window), LVGL pages, greenhouse (irrigation, beds, optional bed soil sensor, sensors). One `!include` block per bed in the entry file; one bed is enough (the greenhouse page still shows beds 1-3).
 - Irrigation is reached only through the `gp_*` layer (`components/gp/README.md`): the greenhouse page, valve test and Home Assistant use the same actions; Home Assistant gets one generic action set (`gp_run_zone`, `gp_enqueue_zone`, `gp_start_queue`, `gp_full_cycle`, `gp_stop_all`, `gp_reset_watchdog`, with `group` and a 1-based `zone`).
-- Watering schedules run on the device (`components/garden_schedule/README.md`): 2 slots by default (max 8), each with a start time, 7 day switches, a zone list and a run-time multiplier, edited in Home Assistant; they keep working without Home Assistant once the clock was set, catch up a run missed by a power cut within 60 minutes, and never repeat a zone that already completed.
+- Watering schedules run on the device (`components/garden_schedule/README.md`): 4 slots on the device screen (max 8), each with a start time, 7 day switches, a zone list and a run-time multiplier, edited on the Schedule screen or in Home Assistant; they keep working without Home Assistant once the clock was set, catch up a run missed by a power cut within 60 minutes, and never repeat a zone that already completed.
 - `design/` — design system: rules, colour/type tokens, icons.
 - `docs/SPEC.md` — specification, architecture, roadmap.
 - `CLAUDE.md`, `.claude/`, `tasks/` — how the project is developed with Claude Code agents.
