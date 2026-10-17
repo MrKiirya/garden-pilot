@@ -150,4 +150,9 @@ inline std::string saver_date(bool valid, int day_of_week, int day_of_month, int
 /// ("2026.9.1 (config hash 0x1a2b3c4d)" -> "2026.9.1"), so it fits one line of the Network page.
 inline std::string version_short(const std::string &version) { return version.substr(0, version.find(' ')); }
 
+/// Same, or "--" while the text sensor has no state yet.
+inline std::string version_short_or_dash(bool has_state, const std::string &version) {
+  return has_state ? version_short(version) : std::string("--");
+}
+
 }  // namespace esphome::gp::fmt

@@ -94,12 +94,10 @@ def test_shell_is_generic() -> None:
     assert history.get("hidden") is True, "HISTORY stays hidden until the history task"
     assert history["height"] >= 20 and history["x"] + history["width"] <= 268, "left of the clock"
     assert "on_click" not in history
-    for name, target in NAV.items():
-        assert _show_targets(_by_id(page, f"sched_nav_btn_{name}")) == [target], name
-    active = [n for n in NAV if _by_id(page, f"sched_nav_btn_{n}").get("bg_color") == int(ACTIVE, 16)]
-    assert active == ["water"]
-    label = next(p for t, p in _widgets(_by_id(page, "sched_nav_btn_water")) if t == "label")
-    assert label["text"] == "SCHEDULE"
+    # the nav is the shared component (tests/test_screens.py checks it): active SCHEDULE, target set by this package
+    navs = [w for w in page["widgets"] if isinstance(w, dict) and w.get("__tag__") == "include"]
+    assert [n["value"] for n in navs] == [{"file": "nav_bar.yaml", "vars": {"p": "sched_", "active": "water"}}]
+    assert _text(SHELL).count("gp_nav_schedule_page: schedules_page") == 1
     title = next(p for t, p in _widgets(page) if t == "label" and p.get("text") == "Schedule")
     assert (title["x"], title["y"], title["text_font"]) == (8, 4, "montserrat_12")
     clock = _by_id(page, "sched_clock_label")
@@ -225,11 +223,12 @@ def test_editor_writes_only_on_save() -> None:
 
 
 def test_nav_bars_target_the_right_pages() -> None:
-    for rel, page_id, prefix in ((HOME, "home_page", "nav_btn_"), (SETUP, "setup_page", "setup_nav_btn_"),
-                                 (SHELL, "schedules_page", "sched_nav_btn_")):
-        page = _page(rel, page_id)
-        for name, target in NAV.items():
-            assert _show_targets(_by_id(page, prefix + name)) == [target], (rel, name)
+    """Targets live once in nav_bar.yaml (substitutions); the schedules package sets the schedule one."""
+    nav = _text("packages/lvgl/nav_bar.yaml")
+    for sub in ("gp_nav_dash_page", "gp_nav_zones_page", "gp_nav_schedule_page", "gp_nav_setup_page"):
+        assert f"lvgl.page.show: ${{{sub}}}" in nav
+    assert "gp_nav_schedule_page: schedules_page" in _text(SHELL)
+    assert NAV["water"] == "schedules_page"
 
 
 @pytest.mark.parametrize("entry", ["garden-pilot.yaml", "garden-pilot-sim.yaml"])

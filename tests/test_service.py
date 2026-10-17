@@ -64,6 +64,7 @@ def test_valve_test_limit() -> None:
     # enters the engine's STOPPING state and delays the valve by about 2 s (rig feedback, task 029).
     stop = next(s for s in gated if "if" in s)["if"]
     assert "summary().running" in str(stop["condition"])
+    assert {"script.is_running": "gp_valve_test_guard"} in stop["condition"]["or"], "two quick taps: one valve at a time"
     assert stop["then"] == [{"gp.stop_all": GROUP}] and "else" not in stop
     assert order.index("if") < order.index("gp.run_zone")
     assert not any("gp.stop_all" in s for s in gated), "no unconditional stop before the start (2 s delay)"
