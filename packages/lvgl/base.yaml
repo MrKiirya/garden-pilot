@@ -13,6 +13,12 @@
 
 substitutions:
   gp_root: "."
+  # Bottom nav targets (packages/lvgl/nav_bar.yaml); override in the entry file's substitutions (or a package that
+  # defines them) when a page exists: the schedules page, a different zones page.
+  gp_nav_dash_page: home_page
+  gp_nav_zones_page: greenhouse_page
+  gp_nav_schedule_page: lawn_page
+  gp_nav_setup_page: setup_page
 
 font:
   - id: gp_font_button_md

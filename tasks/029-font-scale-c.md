@@ -271,3 +271,35 @@ The author flashed 029 on the device. Fixes, in priority order; each has its own
   `base.yaml` (fonts) and checks `image` file paths; `test_screensaver` allows fonts in `base.yaml`; `test_layout` font set.
 - Results: `uv run pytest -m unit` only the known Windows failures; `script/test` 857 passed, 6 failed (the known ones);
   `script/test-cpp` (zig) 82 cases ok; `script/lint` ok. NOT run: ESP32 compile, sim-ui screenshots, hardware.
+
+## Shared nav (2026-10-17)
+
+Author feedback from the device: (1) every page drew its own nav and some still opened the old empty `lawn_page`;
+(2) icons and labels were not centred and seemed to run off the screen edge.
+
+- **What:** `packages/lvgl/nav_bar.yaml` is the only definition of the bottom nav (band, four buttons, icons, labels,
+  colours, targets). Pages include it as one widget:
+  `- !include {file: nav_bar.yaml, vars: {p: <id prefix>, active: dash|zones|water|setup}}` (Home: `home_` / `dash`,
+  Setup: `setup_` / `setup`). Widget ids become `<p>nav_bar`, `<p>nav_btn_<name>` (were `nav_btn_*` / `setup_nav_btn_*`).
+  The active colours are Jinja in the component (`${ '0x4caf50' if active == 'dash' else '0x201f1f' }`).
+- **Targets:** substitutions with defaults in `packages/lvgl/base.yaml`: `gp_nav_dash_page` (home_page),
+  `gp_nav_zones_page` (greenhouse_page), `gp_nav_schedule_page` (lawn_page, the master default), `gp_nav_setup_page`
+  (setup_page). The branch that adds `schedules_page` sets `gp_nav_schedule_page: schedules_page` (entry-file
+  substitutions always win; a package-level substitution may lose against the base default, so set it in the entry
+  files and examples, or change the default in `base.yaml` in that branch).
+- **Why an include, not a top-layer nav:** a single top-layer nav would need hiding on non-nav pages and ESPHome has no
+  page condition for it (the same limit as the SIM button), so it would also cover boot, valve test, network and
+  confirm screens and eat their touches. Includes keep each page self-contained, ids unique via `p`, and one file owns
+  geometry and targets. A page include must be a single widget (an include of a list is nested, not flattened), hence the
+  band is one `obj` holding the four buttons (child coordinates are inside the 1 px top border: y 2 -> absolute 204).
+- **Centring:** buttons have zero padding, border and shadow; icon `TOP_MID` y 4 (centre y 10), label `TOP_MID` y 19 with
+  width = button width and `text_align: CENTER` (centre y ~24 for a ~10 px line), so no child can pass its button and the
+  last button ends at x 316. The old label (no width, default padding) is the likely cause of the drift; judge on the panel.
+- **Checks (`tests/test_screens.py`):** renders the component with its vars and checks geometry, colours, icons, labels,
+  `x + w <= 320`, children inside buttons and the column centres; targets are the four `gp_nav_*` substitutions with the
+  documented defaults; Home and Setup include it once with the right vars; no other file has `nav_btn_*` ids, a
+  `src: gp_icon_*` image or a nav band; pages no longer mention `lawn_page`.
+- **For other branches:** schedules, history, greenhouse and any new page that shows the nav must include the component
+  (never copy buttons) and pick `active`; set `gp_nav_schedule_page` where the schedules page exists. Merging with branches
+  that still carry per-page navs will conflict in `page_home.yaml` / `page_setup.yaml` and the nav tests: take this version.
+- Not verified on hardware or in sim-ui screenshots.

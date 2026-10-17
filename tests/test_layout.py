@@ -578,6 +578,7 @@ def test_substitutions_resolve() -> None:
         BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(BED_SOIL_FILE))),
         SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
         BED_SOIL_SKIP: set().union(*(set(p["vars"]) for e in EXAMPLES for p in _entry_packages(e).values() if p["path"] == BED_SOIL_SKIP_FILE)),
+        REPO_ROOT / "packages/lvgl/nav_bar.yaml": {"p", "active"},  # include vars of the shared nav
         SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
         REPO_ROOT / LAWN_ZONE_FILE: set().union(*(set(i["vars"]) for i in _entry_includes(LAWN_ZONE_FILE))),
         REPO_ROOT / LAWN_IRRIGATION_FILE: set().union(*(set(i["vars"]) for i in _entry_includes(LAWN_IRRIGATION_FILE))),

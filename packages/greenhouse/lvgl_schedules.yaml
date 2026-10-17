@@ -31,7 +31,7 @@ lvgl:
         # summary line: the next run of any slot and the time to it
         - label:
             x: 8
-            y: 28
+            y: 30  # same baseline as the 12 px labels (27 + 15 - 3 = 30 + 11 - 2)
             text: "NEXT"
             text_font: montserrat_10
             text_color: 0x78dc77
@@ -175,6 +175,12 @@ lvgl:
             on_click:
               - lambda: "id(gh_schedule)->draft().hour_down();"
               - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().hour_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().hour_down();"
+              - script.execute: gh_sed_refresh
             widgets:
               - label:
                   align: CENTER
@@ -205,6 +211,12 @@ lvgl:
             pad_all: 0
             scrollable: false
             on_click:
+              - lambda: "id(gh_schedule)->draft().hour_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().hour_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
               - lambda: "id(gh_schedule)->draft().hour_up();"
               - script.execute: gh_sed_refresh
             widgets:
@@ -238,6 +250,12 @@ lvgl:
             on_click:
               - lambda: "id(gh_schedule)->draft().minute_down();"
               - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().hold_begin(); id(gh_schedule)->draft().minute_hold_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().minute_hold_down();"
+              - script.execute: gh_sed_refresh
             widgets:
               - label:
                   align: CENTER
@@ -269,6 +287,12 @@ lvgl:
             scrollable: false
             on_click:
               - lambda: "id(gh_schedule)->draft().minute_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().hold_begin(); id(gh_schedule)->draft().minute_hold_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().minute_hold_up();"
               - script.execute: gh_sed_refresh
             widgets:
               - label:
@@ -350,6 +374,12 @@ lvgl:
             on_click:
               - lambda: "id(gh_schedule)->draft().pct_down();"
               - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().pct_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().pct_down();"
+              - script.execute: gh_sed_refresh
             widgets:
               - label:
                   align: CENTER
@@ -380,6 +410,12 @@ lvgl:
             pad_all: 0
             scrollable: false
             on_click:
+              - lambda: "id(gh_schedule)->draft().pct_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().pct_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
               - lambda: "id(gh_schedule)->draft().pct_up();"
               - script.execute: gh_sed_refresh
             widgets:

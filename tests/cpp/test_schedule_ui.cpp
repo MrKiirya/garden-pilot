@@ -64,29 +64,64 @@ TEST_CASE("draft_time_wrap") {
   CHECK(d.hour == 23);
   d.hour_down();
   CHECK(d.hour == 22);
+  d.minute_up();  // 55 -> 56: a tap steps by one minute
+  CHECK(d.minute == 56);
+  d.minute = 59;
   d.minute_up();
   CHECK(d.minute == 0);
   d.minute_down();
-  CHECK(d.minute == 55);
+  CHECK(d.minute == 59);
   d.minute = 7;
   d.minute_up();
-  CHECK(d.minute == 10);
-  d.minute = 7;
+  CHECK(d.minute == 8);
   d.minute_down();
-  CHECK(d.minute == 5);
+  CHECK(d.minute == 7);
   d.minute = 0;
   d.minute_down();
-  CHECK(d.minute == 55);
-  d.minute = 58;  // from Home Assistant
-  d.minute_up();
-  CHECK(d.minute == 0);
-  d.minute = 5;
-  d.minute_down();
-  CHECK(d.minute == 0);
+  CHECK(d.minute == 59);
   CHECK(draft(7, 5).hour_text() == "07");
   CHECK(draft(7, 5).minute_text() == "05");
   CHECK(draft(18, 45).hour_text() == "18");
   CHECK(draft(18, 45).minute_text() == "45");
+}
+
+TEST_CASE("draft_hold_accelerates_minutes") {
+  CHECK(gs::hold_minute_step(0) == 1);
+  CHECK(gs::hold_minute_step(gs::HOLD_FAST_AFTER - 1) == 1);
+  CHECK(gs::hold_minute_step(gs::HOLD_FAST_AFTER) == 5);
+  CHECK(gs::hold_minute_step(200) == 5);
+
+  gs::ScheduleDraft d = draft(6, 0);
+  d.hold_begin();
+  for (int i = 0; i < gs::HOLD_FAST_AFTER; i++)
+    d.minute_hold_up();
+  CHECK(d.minute == gs::HOLD_FAST_AFTER);  // one minute per repeat first
+  d.minute_hold_up();                      // then multiples of 5
+  CHECK(d.minute == 15);
+  d.minute_hold_up();
+  CHECK(d.minute == 20);
+  d.minute = 58;
+  d.minute_hold_up();
+  CHECK(d.minute == 0);  // wraps
+  d.hold_begin();        // a new hold starts slow again
+  d.minute_hold_up();
+  CHECK(d.minute == 1);
+
+  d = draft(6, 0);
+  d.hold_begin();
+  for (int i = 0; i < gs::HOLD_FAST_AFTER; i++)
+    d.minute_hold_down();
+  CHECK(d.minute == 60 - gs::HOLD_FAST_AFTER);  // 50
+  d.minute_hold_down();
+  CHECK(d.minute == 45);
+  d.minute = 3;
+  d.minute_hold_down();
+  CHECK(d.minute == 0);
+  d.minute_hold_down();
+  CHECK(d.minute == 55);
+  d.hold_begin();
+  d.minute_hold_down();
+  CHECK(d.minute == 54);
 }
 
 TEST_CASE("draft_days_zones_pct") {

@@ -52,7 +52,7 @@ obj:
     - label:
         id: gh_sched_row${n}_status
         x: 219
-        y: 3
+        y: 6   # baseline of the 12 px label (3 + 15 - 3)
         width: 62
         text_align: RIGHT
         text: ""
