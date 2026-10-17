@@ -17,6 +17,7 @@ lvgl:
     widgets:
       - button:
           id: nav_btn_sim
+          pad_all: 0
           x: 200
           y: 1
           width: 44
@@ -32,7 +33,7 @@ lvgl:
             - label:
                 align: CENTER
                 text: "SIM"
-                text_font: montserrat_8
+                text_font: gp_font_button_sm
                 text_color: 0xbecab9
   pages:
     - id: sim_board_page
@@ -44,7 +45,15 @@ lvgl:
             x: 8
             y: 5
             text: "SIM BOARD"
-            text_font: montserrat_10
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            id: sim_board_clock_label
+            align: TOP_RIGHT
+            x: -8
+            y: 4
+            text: "--:--"
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - obj:
             x: 0
@@ -74,7 +83,7 @@ lvgl:
             x: 14
             y: 31
             text: "OUTPUTS"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - obj:
             id: sim_relay_1_led
@@ -94,14 +103,14 @@ lvgl:
             x: 30
             y: 49
             text: "R1 BED 1 VALVE"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_relay_1_state
-            x: 124
+            x: 128
             y: 48
             text: "OFF"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xbecab9
         - obj:
             id: sim_relay_2_led
@@ -121,14 +130,14 @@ lvgl:
             x: 30
             y: 69
             text: "R2 BED 2 VALVE"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_relay_2_state
-            x: 124
+            x: 128
             y: 68
             text: "OFF"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xbecab9
         - obj:
             id: sim_relay_3_led
@@ -148,20 +157,20 @@ lvgl:
             x: 30
             y: 89
             text: "R3 BED 3 VALVE"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_relay_3_state
-            x: 124
+            x: 128
             y: 88
             text: "OFF"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xbecab9
         - label:
             x: 14
             y: 118
             text: "SIM AUTO DRIFT"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - switch:
             id: sim_auto_drift_sw
@@ -192,7 +201,7 @@ lvgl:
             x: 50
             y: 135
             text: "OFF"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xbecab9
         - obj:
             x: 162
@@ -211,20 +220,20 @@ lvgl:
             x: 168
             y: 31
             text: "INPUTS"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             x: 168
             y: 44
             text: "AIR T"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_air_t_value
             x: 262
             y: 43
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - slider:
             id: sim_air_t_slider
@@ -251,14 +260,14 @@ lvgl:
             x: 168
             y: 69
             text: "AIR RH"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_air_rh_value
             x: 262
             y: 68
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - slider:
             id: sim_air_rh_slider
@@ -285,14 +294,14 @@ lvgl:
             x: 168
             y: 94
             text: "SOIL GH"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_soil_gh_value
             x: 262
             y: 93
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - slider:
             id: sim_soil_gh_slider
@@ -319,14 +328,14 @@ lvgl:
             x: 168
             y: 119
             text: "SOIL B1"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_soil_b1_value
             x: 262
             y: 118
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - slider:
             id: sim_soil_b1_slider
@@ -353,14 +362,14 @@ lvgl:
             x: 168
             y: 144
             text: "SOIL B2"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_soil_b2_value
             x: 262
             y: 143
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - slider:
             id: sim_soil_b2_slider
@@ -387,14 +396,14 @@ lvgl:
             x: 168
             y: 169
             text: "SOIL B3"
-            text_font: montserrat_8
+            text_font: montserrat_10
             text_color: 0xbecab9
         - label:
             id: sim_soil_b3_value
             x: 262
             y: 168
             text: "--"
-            text_font: montserrat_10
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - slider:
             id: sim_soil_b3_slider
@@ -419,6 +428,7 @@ lvgl:
                   value: !lambda return x;
         - button:
             id: sim_btn_home
+            pad_all: 0
             x: 232
             y: 208
             width: 80
@@ -435,7 +445,7 @@ lvgl:
               - label:
                   align: CENTER
                   text: "HOME"
-                  text_font: montserrat_10
+                  text_font: gp_font_button_md
                   text_color: 0xbecab9
 
 interval:
@@ -597,3 +607,11 @@ interval:
                   char buf[12];
                   snprintf(buf, sizeof(buf), "%.0f%%", id(sim_bed3_soil_moisture).state);
                   return std::string(buf);
+
+# Header clock: one action on the shared poller (packages/lvgl/base.yaml).
+script:
+  - id: !extend gp_header_clock_update
+    then:
+      - lvgl.label.update:
+          id: sim_board_clock_label
+          text: !lambda "return id(gp_header_clock_text);"

@@ -1,0 +1,58 @@
+# One row of the History page (design D20), included as a widget of `lvgl: pages: widgets:` with vars {p, n, y}:
+# a transparent 320 x 18 strip at y holding the five cells DATE / TIME / ZONE / TIME ON / SOURCE. The cells are filled
+# by packages/lvgl/history_row_refresh.yaml. Block lists only (a `{` in a flow list breaks the YAML). Tokens only.
+
+obj:
+  id: ${p}_hist_r${n}
+  x: 0
+  y: ${y}
+  width: 320
+  height: 18
+  bg_opa: TRANSP
+  border_width: 0
+  pad_all: 0
+  scrollable: false
+  clickable: false
+  widgets:
+    - label:
+        id: ${p}_hist_r${n}_date
+        x: 8
+        y: 0
+        width: 38
+        text: ""
+        text_font: montserrat_12
+        text_color: 0xbecab9
+    - label:
+        id: ${p}_hist_r${n}_time
+        x: 48
+        y: 0
+        width: 42
+        text: ""
+        text_font: montserrat_12
+        text_color: 0xe5e2e1
+    - label:
+        id: ${p}_hist_r${n}_zone
+        x: 92
+        y: 0
+        width: 62
+        long_mode: DOT
+        text: ""
+        text_font: montserrat_12
+        text_color: 0xe5e2e1
+    - label:
+        id: ${p}_hist_r${n}_on
+        x: 158
+        y: 0
+        width: 66
+        text: ""
+        text_font: montserrat_12
+        text_color: 0xe5e2e1
+    - label:
+        id: ${p}_hist_r${n}_src
+        x: 226
+        y: 0
+        width: 86
+        long_mode: DOT
+        text: ""
+        text_font: montserrat_12
+        text_color: 0xbecab9

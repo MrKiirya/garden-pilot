@@ -19,12 +19,15 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/core/preferences.h"
+#include "esphome/core/time.h"
 
 #include "alerts.h"
 #include "deferred_start.h"
 #include "engine.h"
 #include "format.h"
+#include "format_history.h"
 #include "history.h"
+#include "journal.h"
 #include "limits.h"
 #include "zone_model.h"
 
@@ -49,6 +52,62 @@ class GpGroup {
   const GroupSummary &summary() const { return this->model_.summary(); }
   const GroupModel &model() const { return this->model_; }
   const History<HISTORY_LENGTH> &history() const { return this->blob_.history; }
+
+  /// True when the history changed since the count stored in `seen` (a RAM counter, not part of the flash blob);
+  /// stores the current count. For the History page poller.
+  bool history_changed_since(uint32_t &seen) const {
+    const bool changed = seen != this->journal_.pushes;
+    seen = this->journal_.pushes;
+    return changed;
+  }
+  /// `page` limited to the existing History pages.
+  int history_clamp_page(int page) const { return fmt::history_clamp_page(this->blob_.history.size(), page); }
+  /// "History - 1/13" (or "History" when empty) for History page `page`.
+  std::string history_title(int page) const { return fmt::history_title(this->blob_.history.size(), page); }
+  /// True when at least one entry of History page `page` is OPEN and its zone is running (the page ticks live).
+  bool history_has_open(int page) const {
+    for (size_t row = 0; row < fmt::HISTORY_ROWS; row++) {
+      HistoryEntry entry;
+      if (this->history_entry_(page, row, entry) && this->history_live_(entry).has_value())
+        return true;
+    }
+    return false;
+  }
+  /// Poller guard: true when the history changed since `seen` (stored) or, while the page is visible, a row on `page`
+  /// is open (live tick). `history_changed_since` is always evaluated.
+  bool history_tick(uint32_t &seen, bool visible, int page) const {
+    const bool changed = this->history_changed_since(seen);
+    return changed || (visible && this->history_has_open(page));
+  }
+  /// Colour (0xRRGGBB) of the NEWER (`delta` -1) / OLDER (+1) label: text-dim at the end of the list, else text.
+  uint32_t history_edge_colour(int page, int delta) const {
+    return this->history_clamp_page(page + delta) == this->history_clamp_page(page) ? TONE_DIM : TONE_TEXT;
+  }
+  /// Text of column `col` (0 DATE .. 4 SOURCE) of row `row` (0-based) of History page `page`, newest entry first;
+  /// empty past the end.
+  std::string history_cell(int page, size_t row, size_t col) const {
+    HistoryEntry entry;
+    if (col >= fmt::HISTORY_COLS || !this->history_entry_(page, row, entry))
+      return "";
+    return this->history_cells_(entry).text[col];
+  }
+  /// Colour of that cell as 0xRRGGBB from the design tokens (text, text-dim, green, amber).
+  uint32_t history_colour(int page, size_t row, size_t col) const {
+    HistoryEntry entry;
+    if (col >= fmt::HISTORY_COLS || !this->history_entry_(page, row, entry))
+      return TONE_DIM;
+    switch (this->history_cells_(entry).tone[col]) {
+      case fmt::Tone::TEXT: return TONE_TEXT;
+      case fmt::Tone::GREEN: return TONE_GREEN;
+      case fmt::Tone::AMBER: return TONE_AMBER;
+      default: return TONE_DIM;
+    }
+  }
+  /// True when row `row` of History page `page` holds an entry (rows past the end are hidden).
+  bool history_row_present(int page, size_t row) const {
+    HistoryEntry entry;
+    return this->history_entry_(page, row, entry);
+  }
 
   /// True when something visible changed since the revision stored in `seen`; stores the current revision.
   bool changed_since(uint32_t &seen) const {
@@ -88,13 +147,12 @@ class GpGroup {
     }
     seconds = this->clamp_(zone, seconds);
     ESP_LOGI(TAG, "%s: run zone %u%s", this->name_.c_str(), (unsigned) (zone + 1), seconds.has_value() ? " (timed)" : "");
-    this->intent_[zone] = source;
-    this->intent_ms_[zone] = millis();
+    this->plan_.note_intent(zone, source, millis());
     this->engine_->run_zone(zone, seconds);
     return true;
   }
 
-  void enqueue_zone(size_t zone, optional<uint32_t> seconds) {
+  void enqueue_zone(size_t zone, optional<uint32_t> seconds, Source source = Source::MANUAL) {
     if (!this->check_zone_("enqueue_zone", zone))
       return;
     if (this->inhibited_) {
@@ -109,17 +167,17 @@ class GpGroup {
       }
       ESP_LOGI(TAG, "%s: enqueue_zone deferred: a run that is not a queue run is active, the zone queues after it",
                this->name_.c_str());
-      this->deferred_enq_.push_back(DeferredEnqueue{0, 0, zone, seconds, true});
+      this->deferred_enq_.push_back(DeferredEnqueue{0, 0, zone, seconds, true, source, 0});
       this->deferred_.request(millis());
       return;
     }
-    this->queue_now_(zone, seconds);
+    this->queue_now_(zone, seconds, source, 0);
   }
 
   /// Queues every zone of the bit mask (bit n = zone n, 0-based) in zone order, each for its configured run duration
   /// times `pct` percent (cut to the zone's maximum). Zones that are already queued or running are not queued again;
   /// bits beyond the group's zones are ignored. Never starts anything.
-  void enqueue_zones(uint32_t mask, uint8_t pct) {
+  void enqueue_zones(uint32_t mask, uint8_t pct, Source source = Source::MANUAL, uint8_t slot = 0) {
     if (this->inhibited_) {
       ESP_LOGW(TAG, "%s: enqueue_zones refused: service mode is on", this->name_.c_str());
       return;
@@ -133,7 +191,7 @@ class GpGroup {
       }
       ESP_LOGI(TAG, "%s: enqueue_zones deferred: a run that is not a queue run is active, the zones queue after it",
                this->name_.c_str());
-      this->deferred_enq_.push_back(DeferredEnqueue{mask, pct, 0, {}, false});
+      this->deferred_enq_.push_back(DeferredEnqueue{mask, pct, 0, {}, false, source, slot});
       this->deferred_.request(millis());
       return;
     }
@@ -154,7 +212,7 @@ class GpGroup {
       optional<uint32_t> seconds;
       if (in.run_duration > 0)
         seconds = static_cast<uint32_t>((static_cast<uint64_t>(in.run_duration) * pct + 50) / 100);
-      this->queue_now_(zone, this->clamp_(zone, seconds));
+      this->queue_now_(zone, this->clamp_(zone, seconds), source, slot);
     }
   }
 
@@ -162,6 +220,7 @@ class GpGroup {
     if (!this->check_zone_("dequeue_zone", zone))
       return;
     ESP_LOGI(TAG, "%s: dequeue zone %u", this->name_.c_str(), (unsigned) (zone + 1));
+    this->plan_.clear_queued(zone);
     this->engine_->remove_queued_zone(zone);
   }
 
@@ -190,7 +249,7 @@ class GpGroup {
     this->engine_->start_queue();
   }
 
-  void full_cycle() {
+  void full_cycle(Source source = Source::MANUAL) {
     if (this->inhibited_) {
       ESP_LOGW(TAG, "%s: full_cycle refused: service mode is on", this->name_.c_str());
       return;
@@ -199,12 +258,14 @@ class GpGroup {
       ESP_LOGI(TAG, "%s: full_cycle deferred: the group is still stopping, the cycle starts after it",
                this->name_.c_str());
       this->deferred_cycle_ = true;
+      this->deferred_cycle_source_ = source;
       this->deferred_start_ = false;
       this->deferred_.request(millis());
       return;
     }
     this->deferred_cycle_ = false;
     ESP_LOGI(TAG, "%s: full cycle", this->name_.c_str());
+    this->plan_.set_cycle(source);
     this->cycle_run_ = true;
     this->queue_run_ = true;
     this->queue_idle_ms_ = millis();
@@ -216,6 +277,7 @@ class GpGroup {
     this->inhibited_ = inhibit;
     ESP_LOGI(TAG, "%s: starts %s", this->name_.c_str(), inhibit ? "inhibited (service mode)" : "allowed");
     if (inhibit) {  // entering service mode settles the schedules like a STOP
+      this->plan_.clear_all_queued();
       this->cancel_deferred_();
       this->stop_cb_.call();
     }
@@ -227,6 +289,7 @@ class GpGroup {
     this->queue_run_ = false;
     this->cycle_run_ = false;
     this->stop_ms_ = millis() == 0 ? 1 : millis();
+    this->plan_.clear_all_queued();
     this->cancel_deferred_();
     this->engine_->shutdown(clear_queue);
     this->stop_cb_.call();
@@ -239,6 +302,7 @@ class GpGroup {
       if (this->input_.zones[zone].queued)
         this->engine_->remove_queued_zone(zone);
     }
+    this->plan_.clear_all_queued();
     this->cancel_deferred_();
     ESP_LOGI(TAG, "%s: queue cleared", this->name_.c_str());
   }
@@ -262,34 +326,36 @@ class GpGroup {
         this->model_.restore_last(i, this->blob_.last[i].epoch, this->blob_.last[i].duration);
       ESP_LOGI(TAG, "%s: restored %u history entries", this->name_.c_str(), (unsigned) this->blob_.history.size());
     }
+    // a run that was open when the device went down never saw its end: it reads "interrupted"
+    if (this->journal_.recover_after_boot()) {
+      ESP_LOGW(TAG, "%s: a run was cut by a restart, marked interrupted", this->name_.c_str());
+      if (!this->pref_.save(&this->blob_))
+        ESP_LOGW(TAG, "%s: saving the history failed", this->name_.c_str());
+    }
   }
 
   /// Reads the engine and updates the model; persists completed runs.
   void refresh(uint32_t now_ms, uint32_t now_epoch) {
     this->engine_->read(this->input_);
-    for (size_t i = 0; i < this->input_.zone_count; i++)
-      this->input_.start_source[i] = this->source_for_(i, now_ms);
+    for (size_t i = 0; i < this->input_.zone_count; i++) {
+      const StartInfo info = this->plan_.resolve(i, now_ms, this->cycle_run_, this->queue_run_);
+      this->input_.start_source[i] = info.source;
+      this->input_.start_detail[i] = info.detail;
+      this->input_.start_from_queue[i] = info.from_queue;
+    }
     this->model_.refresh(now_ms, now_epoch, this->input_);
     const GroupSummary &s = this->model_.summary();
+    for (size_t i = 0; i < s.zone_count; i++) {  // the run has started: its queued source is used up
+      const ZoneState state = this->model_.zone(i).state;
+      if (state == ZoneState::RUNNING || state == ZoneState::PAUSED)
+        this->plan_.consume(i);
+    }
     if (s.running || s.queue_length > 0)
       this->queue_idle_ms_ = now_ms;
     else if (this->queue_run_ && (uint32_t) (now_ms - this->queue_idle_ms_) > QUEUE_RUN_GRACE_MS)
       this->queue_run_ = this->cycle_run_ = false;
-    RunRecord record;
-    bool changed = false;
-    while (this->model_.take_completed(record)) {
-      HistoryEntry entry{record.epoch, record.duration, record.zone, static_cast<uint8_t>(record.source), 0};
-      this->blob_.history.push(entry);
-      if (record.zone < MAX_ZONES && record.source != Source::SERVICE) {
-        this->blob_.last[record.zone].epoch = record.epoch;
-        this->blob_.last[record.zone].duration = record.duration;
-      }
-      ESP_LOGI(TAG, "%s: zone %u finished: %u s (%s)", this->name_.c_str(), (unsigned) (record.zone + 1),
-               (unsigned) record.duration, source_word(record.source));
-      changed = true;
-      const bool stopped = this->stop_ms_ != 0 && (uint32_t) (now_ms - this->stop_ms_) < STOP_WINDOW_MS;
-      this->finished_cb_.call(record.zone, record.source == Source::QUEUE && !stopped);
-    }
+    const bool changed = this->journal_.process(this->model_, now_ms, this->stop_ms_,
+                                                [this](const RunRecord &record, Result result) { this->on_record_(record, result); });
     if (changed && !this->pref_.save(&this->blob_))
       ESP_LOGW(TAG, "%s: saving the history failed", this->name_.c_str());
     if (this->deferred_.update(s.running, now_ms)) {
@@ -300,7 +366,7 @@ class GpGroup {
       this->deferred_cycle_ = false;
       this->apply_deferred_();
       if (cycle)
-        this->full_cycle();
+        this->full_cycle(this->deferred_cycle_source_);
       else if (start)
         this->start_queue();
     }
@@ -323,9 +389,8 @@ class GpGroup {
   }
 
  protected:
-  static constexpr uint32_t STOP_WINDOW_MS = 3000;
-  static constexpr uint32_t INTENT_MS = 15000;
   static constexpr uint32_t QUEUE_RUN_GRACE_MS = 5000;
+  static constexpr uint32_t TONE_TEXT = 0xe5e2e1, TONE_DIM = 0xbecab9, TONE_GREEN = 0x78dc77, TONE_AMBER = 0xffb870;  // tokens
 
   /// A held-back enqueue: a zone mask + percent (`single` false) or one zone + seconds (`single` true).
   struct DeferredEnqueue {
@@ -334,6 +399,8 @@ class GpGroup {
     size_t zone;
     optional<uint32_t> seconds;
     bool single;
+    Source source;
+    uint8_t slot;
   };
   static constexpr size_t MAX_DEFERRED = 16;
 
@@ -353,9 +420,53 @@ class GpGroup {
                                  : "a run that is not a queue run is active, the queue starts after it";
   }
 
-  void queue_now_(size_t zone, optional<uint32_t> seconds) {
+  void queue_now_(size_t zone, optional<uint32_t> seconds, Source source, uint8_t slot) {
     ESP_LOGI(TAG, "%s: enqueue zone %u", this->name_.c_str(), (unsigned) (zone + 1));
+    this->plan_.queue(zone, source, slot);
     this->engine_->queue_zone(zone, seconds);
+  }
+
+  /// A finished run or a skip was written to the history (log; schedules hear about finished runs).
+  void on_record_(const RunRecord &record, Result result) {
+    if (record.is_skip()) {
+      this->plan_.consume(record.zone);
+      ESP_LOGI(TAG, "%s: zone %u skipped%s", this->name_.c_str(), (unsigned) (record.zone + 1),
+               result == Result::SKIPPED_WET ? " (too wet)" : "");
+      return;
+    }
+    ESP_LOGI(TAG, "%s: zone %u finished: %u s (%s)", this->name_.c_str(), (unsigned) (record.zone + 1),
+             (unsigned) record.duration, source_word(record.source));
+    this->finished_cb_.call(record.zone, record.from_queue && result != Result::STOPPED);
+  }
+
+  /// Entry `row` of History page `page` (newest first); false past the end.
+  bool history_entry_(int page, size_t row, HistoryEntry &entry) const {
+    const size_t index = static_cast<size_t>(fmt::history_clamp_page(this->blob_.history.size(), page)) * fmt::HISTORY_ROWS + row;
+    if (index >= this->blob_.history.size())
+      return false;
+    entry = this->blob_.history.at(index);
+    return true;
+  }
+  /// Valve-open seconds when the entry is OPEN and the model says that zone's run is open.
+  optional<uint32_t> history_live_(const HistoryEntry &entry) const {
+    if (entry.result != static_cast<uint8_t>(Result::OPEN))
+      return {};
+    const ZoneView &view = this->model_.zone(entry.zone);
+    if (!view.run_elapsed.has_value())
+      return {};
+    return *view.run_elapsed;
+  }
+  fmt::HistoryCells history_cells_(const HistoryEntry &entry) const {
+    fmt::LocalTime when;
+    if (entry.epoch != 0) {
+      const ESPTime t = ESPTime::from_epoch_local(entry.epoch);
+      when = fmt::LocalTime{t.is_valid(), static_cast<uint8_t>(t.day_of_month), static_cast<uint8_t>(t.month),
+                            static_cast<uint8_t>(t.hour), static_cast<uint8_t>(t.minute)};
+    }
+    const ZoneView &view = this->model_.zone(entry.zone);
+    const optional<uint32_t> live = this->history_live_(entry);
+    return fmt::history_cells(entry, when, live.has_value() ? std::optional<uint32_t>(*live) : std::nullopt,
+                              view.present ? view.name : nullptr);
   }
 
   /// Queues the held-back enqueue requests (in arrival order); nothing is started.
@@ -364,9 +475,9 @@ class GpGroup {
     list.swap(this->deferred_enq_);
     for (const DeferredEnqueue &request : list) {
       if (request.single)
-        this->enqueue_zone(request.zone, request.seconds);
+        this->enqueue_zone(request.zone, request.seconds, request.source);
       else
-        this->enqueue_zones(request.mask, request.pct);
+        this->enqueue_zones(request.mask, request.pct, request.source, request.slot);
     }
   }
 
@@ -396,12 +507,6 @@ class GpGroup {
     return cut;
   }
 
-  Source source_for_(size_t zone, uint32_t now_ms) const {
-    if (this->intent_[zone] != Source::UNKNOWN && (uint32_t) (now_ms - this->intent_ms_[zone]) < INTENT_MS)
-      return this->intent_[zone];
-    return this->queue_run_ ? Source::QUEUE : Source::UNKNOWN;
-  }
-
   std::string key_, name_;
   std::unique_ptr<Engine> engine_;
   GpHub *hub_{nullptr};
@@ -409,10 +514,10 @@ class GpGroup {
   GroupInput input_;
   GroupModel model_;
   PersistBlob blob_;
+  Journal journal_{blob_};  ///< after blob_
   ESPPreferenceObject pref_;
   std::string last_status_;
-  Source intent_[MAX_ZONES]{};
-  uint32_t intent_ms_[MAX_ZONES]{};
+  SourcePlan plan_;
   bool queue_run_{false};
   bool cycle_run_{false};  ///< the current run was started by full_cycle (start_queue would drop its rest)
   bool inhibited_{false};
@@ -423,6 +528,7 @@ class GpGroup {
   std::vector<DeferredEnqueue> deferred_enq_;
   bool deferred_start_{false};
   bool deferred_cycle_{false};  ///< a full_cycle waits for the engine to finish stopping
+  Source deferred_cycle_source_{Source::MANUAL};
   bool block_stopping_{false};
   uint32_t queue_idle_ms_{0};
 };
@@ -646,6 +752,7 @@ template<typename... Ts> class EnqueueZoneAction final : public GroupAction<Ts..
  public:
   TEMPLATABLE_VALUE(size_t, zone)
   TEMPLATABLE_VALUE(uint32_t, duration)
+  void set_source(Source source) { this->source_ = source; }
   void play(const Ts &...x) override {
     GpGroup *group = this->resolve_(x...);
     if (group == nullptr)
@@ -653,19 +760,28 @@ template<typename... Ts> class EnqueueZoneAction final : public GroupAction<Ts..
     optional<uint32_t> seconds;
     if (this->duration_.has_value() && this->duration_.value(x...) > 0)
       seconds = this->duration_.value(x...);
-    group->enqueue_zone(this->zone_.value(x...), seconds);
+    group->enqueue_zone(this->zone_.value(x...), seconds, this->source_);
   }
+
+ protected:
+  Source source_{Source::MANUAL};
 };
 
 template<typename... Ts> class EnqueueZonesAction final : public GroupAction<Ts...> {
  public:
   TEMPLATABLE_VALUE(uint32_t, mask)
   TEMPLATABLE_VALUE(uint8_t, pct)
+  TEMPLATABLE_VALUE(uint8_t, slot)  ///< schedule slot 1..8 stored with the history entry; 0 / unset = none
+  void set_source(Source source) { this->source_ = source; }
   void play(const Ts &...x) override {
     GpGroup *group = this->resolve_(x...);
     if (group != nullptr)
-      group->enqueue_zones(this->mask_.value(x...), this->pct_.has_value() ? this->pct_.value(x...) : 100);
+      group->enqueue_zones(this->mask_.value(x...), this->pct_.has_value() ? this->pct_.value(x...) : 100, this->source_,
+                           this->slot_.has_value() ? this->slot_.value(x...) : 0);
   }
+
+ protected:
+  Source source_{Source::MANUAL};
 };
 
 template<typename... Ts> class DequeueZoneAction final : public GroupAction<Ts...> {
@@ -689,11 +805,15 @@ template<typename... Ts> class StartQueueAction final : public GroupAction<Ts...
 
 template<typename... Ts> class FullCycleAction final : public GroupAction<Ts...> {
  public:
+  void set_source(Source source) { this->source_ = source; }
   void play(const Ts &...x) override {
     GpGroup *group = this->resolve_(x...);
     if (group != nullptr)
-      group->full_cycle();
+      group->full_cycle(this->source_);
   }
+
+ protected:
+  Source source_{Source::MANUAL};
 };
 
 template<typename... Ts> class ClearQueueAction final : public GroupAction<Ts...> {
@@ -868,7 +988,7 @@ class GpZoneSwitch : public switch_::Switch, public Component {
       return;
     if (state) {
       this->command_ms_ = millis();
-      this->publish_state(this->group_->run_zone(this->zone_, {}));
+      this->publish_state(this->group_->run_zone(this->zone_, {}, Source::HA));
     } else {
       // always stop when the switch is on or the zone runs: an OFF right after ON (before the model shows RUNNING, or
       // during the engine's switching delay) must not let the valve open anyway

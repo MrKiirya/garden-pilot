@@ -57,6 +57,7 @@ lvgl:
             text: "Soil: --"
         - button:
             id: gh_btn_run_bed1
+            pad_all: 0
             x: 10
             y: 146
             width: 92
@@ -71,6 +72,7 @@ lvgl:
                   text: "Bed 1"
         - button:
             id: gh_btn_run_bed2
+            pad_all: 0
             x: 114
             y: 146
             width: 92
@@ -85,6 +87,7 @@ lvgl:
                   text: "Bed 2"
         - button:
             id: gh_btn_run_bed3
+            pad_all: 0
             x: 218
             y: 146
             width: 92
@@ -99,6 +102,7 @@ lvgl:
                   text: "Bed 3"
         - button:
             id: gh_btn_queue_bed1
+            pad_all: 0
             x: 10
             y: 180
             width: 92
@@ -113,6 +117,7 @@ lvgl:
                   text: "+Q B1"
         - button:
             id: gh_btn_queue_bed2
+            pad_all: 0
             x: 114
             y: 180
             width: 92
@@ -127,6 +132,7 @@ lvgl:
                   text: "+Q B2"
         - button:
             id: gh_btn_queue_bed3
+            pad_all: 0
             x: 218
             y: 180
             width: 92
@@ -141,6 +147,7 @@ lvgl:
                   text: "+Q B3"
         - button:
             id: gh_btn_stop
+            pad_all: 0
             x: 10
             y: 212
             width: 92
@@ -170,6 +177,7 @@ lvgl:
                   text: "Stop"
         - button:
             id: gh_btn_start_queue
+            pad_all: 0
             x: 114
             y: 212
             width: 92
@@ -182,6 +190,7 @@ lvgl:
                   text: "Run Q"
         - button:
             id: gh_btn_home
+            pad_all: 0
             x: 218
             y: 212
             width: 92

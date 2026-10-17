@@ -19,6 +19,7 @@ lvgl:
             bg_color: 0xff0000
         - button:
             id: btn_touch_to_home
+            pad_all: 0
             x: 210
             y: 190
             width: 100
