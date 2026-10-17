@@ -368,3 +368,5 @@ list above belongs to the combined spec, so it is not ticked here. Part B result
 - Schedule -> gp "missed" history entries; time editor on the WATER tab; lawn card/history reuse (`p: lw`,
   `group: gp_lawn`).
 - Move `sensors_air_dht.yaml` / `sensors_soil.yaml` LVGL updates from `on_value` to pollers.
+
+Continued and superseded by task 030.

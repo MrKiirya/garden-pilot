@@ -127,7 +127,7 @@ documented as recommendations, the builder decides; the author's own build is do
 
 **Schedules** live on the device and run without Home Assistant or Wi-Fi once the clock was set (HA time or SNTP);
 HA is optional (it can edit and trigger them). Task 019 (`components/garden_schedule/`, MIT, engine-agnostic): each
-group has 2 slots by default (max 8). A slot = start time, 7 day switches, a zone list ("all" or bed numbers) and one
+group has 4 slots by default (max 8; the device screen edits the first 4). A slot = start time, 7 day switches, a zone list ("all" or bed numbers) and one
 run-time multiplier (10-200 % of each zone's own run duration). A due slot queues its zones through `gp.enqueue_zones`
 and `gp.start_queue`, so the watchdog lockout, disabled zones and service mode apply unchanged. Rules: one run per slot
 per local day (DST safe); a slot missed by a power cut or a late clock still runs when the device is back within the
@@ -391,8 +391,7 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
    at build time. On top of the stage 8 `gp_*` layer: bed card slots and Home widgets (§8, decided in §10.2).
 10. **Time without HA:** SNTP fallback (done, task 016, `packages/core/time_sntp.yaml`, §4.1a); RTC chip if needed
     (follow-up) so schedules work offline.
-11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the WATER tab view is done (task 026), its time editor
-    and the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens)
+11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the on-device Schedule list and editor are done (tasks 026, 030; the run mark is keyed by day and start minute), the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens)
     with the heating widget, alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
     scenarios against the host build. Screenshots and taps under Xvfb exist (task 015, `script/sim-ui`, CI job

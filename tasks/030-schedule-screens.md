@@ -199,15 +199,15 @@ Above 10 files, but most are list edits; the work is one pure header, the core r
 | host | `test_sim_ui.py::test_sim_headless_shot_and_tap` (extended) | tap SCHEDULE -> `schedules.png` differs, pixels in rows 1 and 4 are `card` (+-8); tap row 1 -> `schedule_edit.png` differs, SAVE pixel `green-fill`; CANCEL -> back on the list |
 
 ## Acceptance criteria
-- [ ] Branch contains a merge of `task/029-font-scale-c` before the task commits (`git log --merges`)
-- [ ] `script/test-cpp` -> passes, including the run-mark cases and `test_schedule_ui.cpp`
+- [x] Branch contains a merge of `task/029-font-scale-c` before the task commits (`git log --merges`)
+- [x] `script/test-cpp` -> passes, including the run-mark cases and `test_schedule_ui.cpp`
 - [ ] `uv run pytest -m unit`, `script/lint`, `script/test` -> green
 - [ ] `GP_SECRETS=example script/config garden-pilot.yaml`, `... garden-pilot-sim.yaml`, `script/config examples/<each>.yaml` -> valid
 - [ ] `GP_SECRETS=example script/compile` and `GP_SECRETS=example GP_ESPHOME=minimum script/compile` -> build; RAM /
       Flash of master and branch recorded; within budget or approved
 - [ ] CI `compile (pinned)`, `compile (minimum)` green; `sim-ui` green with `schedules.png`, `schedule_edit.png`
-- [ ] `rg -n "toggle_slot|pager_text|page_step" components packages tests` -> only the absence test
-- [ ] `rg -nE "garden_zones|gh_zones|board_relay|sprinkler" packages/lvgl/page_schedules.yaml packages/greenhouse/lvgl_schedules.yaml` -> no match
+- [x] `rg -n "toggle_slot|pager_text|page_step" components packages tests` -> only the absence test
+- [x] `rg -nE "garden_zones|gh_zones|board_relay|sprinkler" packages/lvgl/page_schedules.yaml packages/greenhouse/lvgl_schedules.yaml` -> no match
 - [ ] Emulator by hand (`script/sim`): 4 rows (OFF, `--:--`); edit slot 1 (ON, 06:05, Mon Wed Fri, beds 1 3, x1.5),
       SAVE -> `script/sim-ctl get` shows the slot entities changed (Tue off, zones `1 3`, multiplier 150); CANCEL changes
       nothing; an HA start change (`script/sim-ctl time ...`) shows within 2 s; after a run, moving the slot to now + 2 min
@@ -229,6 +229,49 @@ Above 10 files, but most are list edits; the work is one pure header, the core r
 2. **Moving a slot to an earlier, already passed time today** does not run it (no crossing), even if it never ran with
    that time today. Recommended as is; the author's rule only names later times.
 
-<!-- Filled in by implementer -->
 ## Implementation notes
+Status: implemented; not compiled for ESP32 or host (Windows, no Docker/SDL here), not verified on hardware.
+
+- **Merge step skipped** as instructed (029 already merged). The nav of Home / Setup targets `schedules_page`; the shell
+  nav is a copy of 029's with SCHEDULE active.
+- **Run mark** (`schedule_core.h`): `last_fired_minute`, `ANY_MINUTE`, `handled_()`, `restore(slot, day, minute, pending)`,
+  `Events::dropped` (pending zones dropped when the start moved while the device was off, INFO log in the hub). All C++
+  cases of the task pass (`script/test-cpp` 98 cases). `next_run_and_day_runs` is a separate new case
+  `moved_slot_in_next_run_and_day_runs`; `dst_fall_back_one_run` is folded into `dst_fall_back_no_double` (mark minute
+  asserted). I wrote the core change and the tests in one pass, so the checks were not run red first.
+- **Persistence:** blob v2 under `garden_schedule2:<key>`, v1 read from the old key and migrated with `ANY_MINUTE`.
+  ESPHome pinned 2026.9.1: `esp32/preferences.cpp` `load()` returns false on a pending-save size mismatch (~l.100) and on
+  `actual_len != len` for NVS (~l.117); `host/preferences.h` `load()` `vec.size() != len` (~l.41). So blobs of another size
+  never load as garbage.
+- **Hub:** switch has no `make_call()` in 2026.9.1 (`switch/switch.h` has `turn_on/turn_off`), so the editor uses
+  `turn_on()/turn_off()` for switches and `make_call()` for time / text / number. Added one-line helpers
+  (`edit_toggle_day/zone`, `edit_day_on/visible`, `row_text_color`, ...) so the shared toggle include stays generic.
+  `toggle_slot`, pager, `row_when/detail/today/enabled`, and `zones_text/detail_text/row_text/ROW_MAX` of
+  `schedule_format.h` were removed (superseded by `schedule_ui.h`). A disabled draft with no zone selected saves
+  without writing the zone text (it would be empty).
+- **YAML:** to keep four rows, 7 day and 6 bed buttons short, the page uses small includes with vars
+  (`lvgl_schedules_row*.yaml`, `lvgl_schedules_toggle*.yaml`; not in the file list of the spec); tests expand them.
+  Colour of status / toggle states uses `!lambda` returning `lv_color_hex(...)` (validated on both ESPHome versions).
+  The ON label is a plain label beside the transparent `gh_sed_btn_enable` button (a montserrat label inside a <=32 px
+  button breaks the font-role test). HISTORY button is 20 px high (>= 20 rule), hidden. The duration provider is set in an
+  `esphome: on_boot` item (priority 600).
+- **ESPHome minimum 2026.6.3:** `script/config` with `GP_ESPHOME=minimum` is valid (page `!extend`, lambda colours,
+  `lvgl.widget.show/hide` `automation.py` l.341/352, `long_mode: DOT` `defines.py` l.480, `resolve_extend_remove`
+  `config.py` l.398).
+- **Entry files / examples:** 4 slots (06:00, 07:00, 18:00, 19:00); examples had 1 slot, now 4 too. Tests adapted:
+  `test_schedule.py`, `test_config_matrix.py` (SCHEDULE list), `test_screens.py` (clock pages, nav, `s.get("id")`),
+  `test_esphome_config.py` (merged clock labels), `test_layout.py` (vars supplied by `lvgl_schedules.yaml` includes),
+  `test_sim_ui.py` (rows 1 and 4, editor, CANCEL), `test_screens_schedules.py` rewritten.
+- **Verified here:** `uv run pytest -m unit`, `script/lint`, `script/test` (only the known Windows failures plus
+  `sdl2-config`-dependent rows skipped), `script/config` of `garden-pilot.yaml` and the four examples (pinned and, for the
+  entry, minimum). **Not run:** `garden-pilot-sim.yaml` config and the `sim_*` config rows and `test_sim_ui` host test
+  (no `sdl2-config` / Xvfb on Windows), ESP32 and host compile (the hub glue `garden_schedule.h` is therefore not
+  compiler-checked: risk), RAM / flash numbers, the emulator and hardware checks.
+- Docs updated: component README, SPEC, CLAUDE.md, design/README.md, README.md, README.ru.md.
+
 ## Follow-ups
+- Compile on ESP32 / host and check the hub glue and flash budget (main session).
+- Lawn zones in the editor; HISTORY button target (>= 20 px already).
+
+### ESP32 compile, 2026-10-17
+`GP_SECRETS=example script/compile garden-pilot.yaml` in the devcontainer image (Docker Desktop on Windows), pinned ESPHome: **SUCCESS** after one fix (the ON/OFF label lambda returned a `const char*` ternary; now `std::string(...)`, guarded by `test_text_lambdas_return_strings`). RAM 40.2% (137259 / 341760 bytes), Flash 72.3% (1326839 / 1835008 bytes). Minimum ESPHome: CI.
