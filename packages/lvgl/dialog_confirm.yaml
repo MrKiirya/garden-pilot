@@ -76,6 +76,7 @@ lvgl:
                 text_color: 0xbecab9
             - button:
                 id: gp_confirm_cancel
+                pad_all: 0
                 x: 42
                 y: 140
                 width: 104
@@ -98,6 +99,7 @@ lvgl:
                       text_color: 0xbecab9
             - button:
                 id: gp_confirm_ok_danger
+                pad_all: 0
                 x: 154
                 y: 140
                 width: 124
@@ -124,6 +126,7 @@ lvgl:
                       text_color: 0xffdad6
             - button:
                 id: gp_confirm_ok_primary
+                pad_all: 0
                 x: 154
                 y: 140
                 width: 124

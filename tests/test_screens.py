@@ -448,32 +448,30 @@ def test_nav_matches_design_navbar(active: str) -> None:
         ink = 0x003C0B if on else 0xBECAB9
         image = next(p for t, p in _widgets(btn) if t == "image")
         assert image["src"] == icon_id
-        assert (image["align"], image["y"]) == ("TOP_MID", 4)  # 12 px icon, centre y 10
+        assert not {"x", "y", "align"} & set(image)  # centred by the button's flex column, never hand-placed
         assert image["image_recolor"] == ink and image["image_recolor_opa"] == "COVER"
         text = next(p for t, p in _widgets(btn) if t == "label")
         assert (text["text"], text["text_color"], text["text_font"]) == (label, ink, "gp_font_button_sm")
-        assert (text["align"], text["y"], text["text_align"]) == ("TOP_MID", 19, "CENTER")  # ~10 px line: centre y 24
+        assert not {"x", "y", "align", "width"} & set(text) and text["text_align"] == "CENTER"
         assert not any(ord(c) >= 0xE000 for c in text["text"])
 
 
 @pytest.mark.parametrize("active", NAV_NAMES)
 def test_nav_children_stay_inside_buttons(active: str) -> None:
-    """Zero padding, centred column; no child reaches past its button, no button past x 320."""
+    """Zero padding; each button is a flex column centred on every axis (icon above label), no hand-placed child."""
     buttons = _abs_nav_buttons(_render_nav("t_", active))
-    ICON, LINE = 12, 10  # icon size; line height of the 8 px label font (upper bound)
+    ICON, LINE, GAP = 12, 10, 2  # icon size; line height of the 8 px label font (upper bound); pad_row
     for name, b in buttons.items():
         props = b["props"]
         assert props["pad_all"] == 0 and props["border_width"] == 0 and props["shadow_width"] == 0, name
         assert b["x"] >= 0 and b["x"] + b["w"] <= 320, f"{name} reaches past the screen edge"
-        image = next(p for t, p in _widgets(props) if t == "image")
-        text = next(p for t, p in _widgets(props) if t == "label")
-        label_w = text.get("width", 0)
-        assert 0 < label_w <= b["w"], f"{name}: label wider than its button"
-        # TOP_MID children are centred in the button: left edge = (w - child w) / 2 >= 0, so right edge <= w
-        assert (b["w"] - ICON) / 2 >= 0 and (b["w"] - label_w) / 2 >= 0
-        assert image["y"] + ICON <= b["h"] and text["y"] + LINE <= b["h"], f"{name}: child below the button"
-        assert abs((image["y"] + ICON / 2) - 10) <= 1 and abs((text["y"] + LINE / 2) - 24) <= 1
-        assert image["y"] + ICON <= text["y"], "icon above label"
+        layout = props["layout"]
+        assert str(layout["type"]).lower() == "flex" and layout["flex_flow"] == "COLUMN", name
+        assert all(layout[k] == "CENTER" for k in ("flex_align_main", "flex_align_cross", "flex_align_track")), name
+        assert layout["pad_row"] == GAP
+        kids = [t for t, _p in _widgets(props)]
+        assert kids == ["image", "label"], "icon above label"
+        assert ICON + GAP + LINE <= b["h"], f"{name}: content taller than its button"
 
 
 def test_nav_targets_are_substitutions_with_defaults() -> None:

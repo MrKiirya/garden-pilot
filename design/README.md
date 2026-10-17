@@ -19,6 +19,7 @@ GardenPilot is the on-device UI for a greenhouse and lawn irrigation controller:
 ## Content
 
 - English UI copy, short. Captions are UPPERCASE nouns (`SOIL MOISTURE`, `STATUS`, `NEXT`). Button labels are UPPERCASE verbs (`RUN`, `STOP`, `RUN QUEUE`, `WATER NOW`), with `+Q` as the queue shorthand.
+- Button content is centred by LVGL (`align: CENTER`, or a centred flex row / column for icon + label), never by hand-computed x/y offsets; buttons have zero padding.
 - Values carry their unit with no space: `24C`, `65%`, `5 min` (duration keeps the space). Times are 24h `18:00`; unknown is `--:--`.
 - Status words: `Watering`, `Running: Bed 2`, `Idle`. Mode flags compress to `AA:on  Q:off  Rev:off`.
 - No emoji, no exclamation marks.

@@ -17,6 +17,7 @@ lvgl:
     widgets:
       - button:
           id: nav_btn_sim
+          pad_all: 0
           x: 200
           y: 1
           width: 44
@@ -427,6 +428,7 @@ lvgl:
                   value: !lambda return x;
         - button:
             id: sim_btn_home
+            pad_all: 0
             x: 232
             y: 208
             width: 80
