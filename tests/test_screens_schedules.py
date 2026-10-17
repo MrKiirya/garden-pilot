@@ -115,12 +115,12 @@ def test_rows_and_editor_shape() -> None:
     for n in range(1, 5):
         row = _by_id(_list_page(data), f"gh_sched_row{n}")
         rows[n] = row
-        assert (row["x"], row["y"], row["width"], row["height"]) == (8, 26 + 40 * (n - 1), 304, 36)
+        assert (row["x"], row["y"], row["width"], row["height"]) == (8, 44 + 38 * (n - 1), 304, 34)
         assert (row["bg_color"], row["border_color"], row["radius"]) == (0x1C1B1B, 0x3F4A3C, 2)
         assert row.get("hidden") is True and row["on_click"][0]["lambda"] == f"id(gh_schedule)->begin_edit({n - 1});"
         assert {"lvgl.page.show": "gh_sched_edit_page"} in row["on_click"]
         ids = {p["id"]: p for _t, p in _widgets(row)}
-        assert set(ids) == {f"gh_sched_row{n}_{k}" for k in ("time", "label", "caption", "status", "chev")}
+        assert set(ids) == {f"gh_sched_row{n}_{k}" for k in ("time", "label", "caption", "status", "countdown", "chev")}
         assert ids[f"gh_sched_row{n}_time"]["text_font"] == "montserrat_14"
         for k in ("label", "caption"):
             assert ids[f"gh_sched_row{n}_{k}"]["width"] == 180 and ids[f"gh_sched_row{n}_{k}"]["long_mode"] == "DOT"
@@ -128,7 +128,18 @@ def test_rows_and_editor_shape() -> None:
         assert ids[f"gh_sched_row{n}_caption"]["text_font"] == "montserrat_10"
         assert ids[f"gh_sched_row{n}_status"]["text_font"] == "montserrat_10"
         assert ids[f"gh_sched_row{n}_chev"]["text"] == ""
-    assert rows[1]["y"] >= 24 and rows[4]["y"] + rows[4]["height"] <= 200
+        # right column of the design: status word and countdown right-aligned (card-relative, minus the 1 px border)
+        assert (ids[f"gh_sched_row{n}_status"]["x"], ids[f"gh_sched_row{n}_status"]["width"]) == (219, 62)
+        assert (ids[f"gh_sched_row{n}_countdown"]["x"], ids[f"gh_sched_row{n}_countdown"]["width"]) == (209, 72)
+        for k in ("status", "countdown"):
+            assert ids[f"gh_sched_row{n}_{k}"]["text_align"] == "RIGHT" and ids[f"gh_sched_row{n}_{k}"]["text_font"] == "montserrat_10"
+        assert ids[f"gh_sched_row{n}_label"]["y"] == 3 and ids[f"gh_sched_row{n}_caption"]["y"] == 18
+    assert rows[1]["y"] >= 44 and rows[4]["y"] + rows[4]["height"] <= 200
+    summary = {p["id"]: p for _t, p in _widgets(_list_page(data)) if str(p.get("id", "")).startswith("gh_sched_sum_")}
+    assert (summary["gh_sched_sum_label"]["x"], summary["gh_sched_sum_label"]["y"]) == (46, 27)
+    inn = summary["gh_sched_sum_in"]
+    assert (inn["x"], inn["y"], inn["width"], inn["text_align"], inn["text_color"]) == (212, 27, 100, "RIGHT", 0x78DC77)
+    assert any(p.get("text") == "NEXT" and (p["x"], p["y"]) == (8, 28) for _t, p in _widgets(_list_page(data)))
     # editor page
     edit = _edit_page(data)
     assert _show_targets(_by_id(edit, "gh_sed_btn_cancel")) == ["schedules_page"]
@@ -164,7 +175,10 @@ def test_rows_and_editor_shape() -> None:
         assert next(p for t, p in _widgets(b) if t == "label")["text"] == f"BED {i + 1}"
     # the caption texts of the design
     texts = {p.get("text") for t, p in _widgets(edit) if t == "label"}
-    assert {"START - HOUR", "MINUTE", "DAYS", "ZONES", "RUN TIME"} <= texts
+    assert {"HOUR", "MINUTE", "DAYS", "ZONES", "RUN TIME"} <= texts and "START - HOUR" not in texts
+    for cap, x in (("HOUR", 44), ("MINUTE", 208)):
+        lab = next(p for _t, p in _widgets(edit) if p.get("text") == cap)
+        assert (lab["x"], lab["y"], lab["width"], lab["text_align"]) == (x, 28, 68, "CENTER"), cap
     # every clickable is at least 20 px tall (design rule), nothing but buttons and the row cards is clickable
     for _t, props in _widgets(data["lvgl"]):
         if "on_click" in props:
@@ -288,8 +302,9 @@ def test_refresh_scripts_cover_every_widget() -> None:
                 updates.append(d[key])
     assert updates and all(u in known or u in {"gh_home_next_label"} for u in updates), sorted(set(updates) - known)
     for n in range(1, 5):
-        for k in ("time", "label", "caption", "status"):
+        for k in ("time", "label", "caption", "status", "countdown"):
             assert f"gh_sched_row{n}_{k}" in updates
+    assert {"gh_sched_sum_label", "gh_sched_sum_in"} <= set(updates)
 
 
 def test_text_lambdas_return_strings() -> None:

@@ -200,12 +200,31 @@ inline std::string row_caption(bool enabled, uint8_t days_mask, const std::strin
   return out;
 }
 
+/// Value of "no countdown" (an OFF slot): drawn as "-".
+inline constexpr int64_t NO_COUNTDOWN = INT64_MIN;
+
+/// "in 2d 6h", "in 3h 28m", "in 45m" (whole units, rounded down, at least "in 1m"); "-" for NO_COUNTDOWN, empty when
+/// negative.
+inline std::string countdown_text(int64_t seconds) {
+  if (seconds == NO_COUNTDOWN)
+    return "-";
+  if (seconds < 0)
+    return std::string();
+  const int64_t minutes = seconds / 60;
+  const int64_t hours = minutes / 60;
+  if (hours >= 24)
+    return "in " + std::to_string(hours / 24) + "d " + std::to_string(hours % 24) + "h";
+  if (hours >= 1)
+    return "in " + std::to_string(hours) + "h " + std::to_string(minutes % 60) + "m";
+  return "in " + std::to_string(minutes < 1 ? 1 : minutes) + "m";
+}
+
 struct StatusWord {
   std::string text;
   uint32_t color{TONE_DIM};
 };
 
-/// The coloured word at the right of a row. `today` is the slot's state on the current local day.
+/// The coloured word at the right of a row (LATER: enabled, neither next nor done today). `today` is the slot's state on the current local day.
 inline StatusWord status_word(bool enabled, bool master_on, DayRunState today, bool pending, bool is_next) {
   if (!enabled || !master_on)
     return {"OFF", TONE_DIM};
@@ -221,7 +240,7 @@ inline StatusWord status_word(bool enabled, bool master_on, DayRunState today, b
   }
   if (is_next)
     return {"NEXT", TONE_GREEN};
-  return {"", TONE_DIM};
+  return {"LATER", TONE_TEXT};
 }
 
 }  // namespace esphome::garden_schedule

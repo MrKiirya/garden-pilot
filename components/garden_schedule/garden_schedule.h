@@ -228,6 +228,27 @@ class GardenSchedule : public Component {
   uint32_t row_text_color(size_t index) const {
     return index < this->slots_.size() && this->cfg_[index].enabled ? TONE_TEXT : TONE_DIM;
   }
+  /// Right column of a row: "in 3h 28m" (time to the slot's next run, also for a slot done today), "-" for an OFF slot.
+  std::string row_countdown(size_t index) const {
+    if (index >= this->slots_.size())
+      return std::string();
+    const optional<int64_t> s = this->core_.seconds_to_next(index, this->cfg_, this->slots_.size());
+    return countdown_text(s.has_value() ? *s : NO_COUNTDOWN);
+  }
+  /// Summary line under the header: "18:00 - Greenhouse" (the next run of any slot), "No run planned" when none.
+  std::string summary_label(const char *group) const {
+    const optional<NextRun> next = this->next_run();
+    if (!next.has_value())
+      return "No run planned";
+    return this->next_run_short() + " - " + group;
+  }
+  std::string summary_countdown() const {
+    const optional<NextRun> next = this->next_run();
+    if (!next.has_value())
+      return std::string();
+    const optional<int64_t> s = this->core_.seconds_to_next(next->slot, this->cfg_, this->slots_.size());
+    return s.has_value() ? countdown_text(*s) : std::string();
+  }
   /// Home "next": "06:00" / "Tue 06:00" / "--:--".
   std::string next_run_short() const {
     const optional<NextRun> next = this->next_run();
@@ -244,6 +265,12 @@ class GardenSchedule : public Component {
       for (size_t z = 0; z < this->zone_count_; z++)
         seconds = (seconds ^ this->zone_seconds_(z)) * 16777619u;
     }
+    for (size_t i = 0; i < this->slots_.size(); i++) {  // the countdowns change every minute
+      for (char c : this->row_countdown(i))
+        seconds = (seconds ^ static_cast<uint8_t>(c)) * 16777619u;
+    }
+    for (char c : this->summary_countdown())
+      seconds = (seconds ^ static_cast<uint8_t>(c)) * 16777619u;
     const uint32_t hash = view_hash(views, this->core_.master(), this->next_run_short(), seconds);
     if (hash == seen)
       return false;

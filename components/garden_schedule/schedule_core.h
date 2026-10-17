@@ -346,6 +346,25 @@ class Scheduler {
     return best;
   }
 
+  /// Seconds until slot `i` runs next (over the next 8 local days; a slot already handled today counts from its next
+  /// day). nullopt: no clock, master off, slot off or without day / zone.
+  std::optional<int64_t> seconds_to_next(size_t i, const SlotConfig *cfg, size_t n) const {
+    if (!this->have_prev_ || !this->master_ || i >= n || i >= MAX_SLOTS)
+      return std::nullopt;
+    const LocalTime &now = this->prev_.local;
+    const int64_t now_s = now.minute * 60 + now.second;
+    for (int offset = 0; offset < 8; offset++) {
+      const int32_t day = now.day + offset;
+      if (!runs_on_(cfg[i], day) || this->handled_(i, cfg[i], day))
+        continue;
+      const int64_t start_s = cfg[i].start_minute * 60;
+      if (offset == 0 && start_s <= now_s)
+        continue;
+      return static_cast<int64_t>(offset) * 86400 + start_s - now_s;
+    }
+    return std::nullopt;
+  }
+
   /// The slots that run on the local day `now + offset`, sorted by start time, with their state.
   std::vector<DayRun> day_runs(int offset, const SlotConfig *cfg, size_t n) const {
     std::vector<DayRun> out;
