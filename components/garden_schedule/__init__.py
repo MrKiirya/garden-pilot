@@ -33,7 +33,6 @@ CONF_SKIP_IF = "skip_if"
 CONF_REASON = "reason"
 CONF_ON_RUN = "on_run"
 CONF_ZONE = "zone"
-CONF_INDEX = "index"
 
 # slot keys (shared with garden_schedule_slot)
 CONF_SCHEDULE = "schedule"
@@ -52,7 +51,6 @@ GardenSchedule = garden_schedule_ns.class_("GardenSchedule", cg.Component)
 RunTrigger = garden_schedule_ns.class_("RunTrigger", automation.Trigger.template(cg.uint32, cg.uint8, cg.uint8))
 ZoneDoneAction = garden_schedule_ns.class_("ZoneDoneAction", automation.Action)
 CancelPendingAction = garden_schedule_ns.class_("CancelPendingAction", automation.Action)
-ToggleSlotAction = garden_schedule_ns.class_("ToggleSlotAction", automation.Action)
 
 
 def _catch_up_window(value):
@@ -193,22 +191,3 @@ async def zone_done_to_code(config, action_id, template_arg, args):
 async def cancel_pending_to_code(config, action_id, template_arg, args):
     hub = await cg.get_variable(config[CONF_ID])
     return cg.new_Pvariable(action_id, template_arg, hub)
-
-
-@automation.register_action(
-    "garden_schedule.toggle_slot",
-    ToggleSlotAction,
-    cv.Schema(
-        {
-            cv.Required(CONF_ID): cv.use_id(GardenSchedule),
-            # 0-based position of the slot in include order; out of range = WARN and no-op
-            cv.Required(CONF_INDEX): cv.templatable(cv.int_range(min=0, max=MAX_SLOTS - 1)),
-        }
-    ),
-    synchronous=True,
-)
-async def toggle_slot_to_code(config, action_id, template_arg, args):
-    hub = await cg.get_variable(config[CONF_ID])
-    var = cg.new_Pvariable(action_id, template_arg, hub)
-    cg.add(var.set_index(await cg.templatable(config[CONF_INDEX], args, cg.size_t)))
-    return var

@@ -5,10 +5,11 @@ slots (`garden_schedule_slot:` list items) once per second and fires `on_run(zon
 slot is due. The YAML routes that to the `gp_*` layer (`packages/greenhouse/schedule.yaml`: `gp.enqueue_zones` +
 `gp.start_queue`), so the engine's safety (watchdog lockout, disabled zones, soil skip, service mode) applies
 unchanged. The rules live in the pure header `schedule_core.h`, unit tested with a fake clock
-(`tests/cpp/test_schedule.cpp`).
+(`tests/cpp/test_schedule.cpp`); the editor draft and the list texts of the on-device screens are the pure header
+`schedule_ui.h` (`tests/cpp/test_schedule_ui.cpp`).
 
 ## Slot (Home Assistant entities, all `entity_category: config`, restored from flash)
-For slot N of the greenhouse (`packages/greenhouse/schedule_slot.yaml`, one include per slot, 2 by default, max 8):
+For slot N of the greenhouse (`packages/greenhouse/schedule_slot.yaml`, one include per slot, 4 in the entry files, max 8):
 
 | Entity | Default |
 |---|---|
@@ -26,9 +27,14 @@ zone numbers above the group's zone count are dropped with a warning.
 
 ## Rules
 - **Clock:** no valid clock = nothing fires, nothing is marked. The clock is the first `time:` (Home Assistant or SNTP).
-- **One run per slot per local day.** Crossing the start time in local time fires; the day mark makes the repeated hour
-  of a DST fall-back harmless and the skipped hour of a spring-forward is crossed in one step. Editing the start time
-  after today's run does not run it again today.
+- **Run mark = (local day, start minute).** A slot counts as handled today only while its start is the one it ran
+  with, so it runs once per start and local day. Crossing the start time in local time fires; the mark makes the
+  repeated hour of a DST fall-back harmless (the clock crosses 01:30 twice, the mark blocks the second) and the
+  skipped hour of a spring-forward is crossed in one step. **Moving a slot to a later time than now** (the screen's
+  SAVE or Home Assistant) crosses the new start and runs it again the same day, also after a STOP settled the earlier
+  run; the new run replaces the mark and the pending zones. Saving or re-enabling the same start never clears a mark.
+  Moving a slot to a time that has already passed today does not run it (no crossing; only a boot or a clock jump
+  catches it up, inside the window). Catch-up, `next_run` and `day_runs` use the same rule.
 - **Catch-up:** the first valid tick after boot and every tick after a clock jump (more than 5 s off the monotonic
   timer) do not fire by crossing. A slot of today whose start has passed runs when it is at most `catch_up_window`
   late (default 60 min, `0s` = never, at most 6 h); otherwise it is logged as missed (warning) and marked for the day.
@@ -37,7 +43,8 @@ zone numbers above the group's zone count are dropped with a warning.
   its queue run ends normally (`garden_zones` group -> `gp` `on_zone_finished` -> `garden_schedule.zone_done`, not when
   it was stopped), and the marks are written to flash immediately. After a power cut inside the window only the
   zones still in the list run again (an interrupted zone runs its full duration again). The list of a past day is
-  dropped.
+  dropped, and so is the list of a run whose start was moved meanwhile (INFO log): the new start is then evaluated like
+  an unfired slot (window or missed), with the full zone mask.
   When a zone counts as done (`on_zone_finished completed`; pinned by the gp host scenario
   `tests/test_gp_layer.py`, step 9):
 
@@ -71,10 +78,18 @@ zone numbers above the group's zone count are dropped with a warning.
   day). The greenhouse uses `gp.inhibited` (service mode). A rain sensor or a rain-delay entity adds an item.
 - **Multiplier:** slot percent x global percent (`set_global_pct()`, fixed 100 today), clamped to 10-200 %. The `gp`
   layer cuts every run to the zone's run-duration maximum, so a multiplier can never exceed the watchdog limit.
+- A slot moved to a later time while its earlier run is still watering fires again at the new time: the core replaces
+  the mark and the pending mask, and `gp` does not queue a zone that is still queued or running, so only the zones that
+  have finished by then (or were not part of the earlier run) water again.
 - A zone that is already queued or running is not queued again. Zones the engine skips stay in its queue.
 - The run marks are stored by slot NUMBER (1..8), so commenting out or reordering a slot include does not move them.
 - A slot that is enabled, or moved to an earlier start, after its time passed today does not run while the device is up;
-  a reboot inside the catch-up window runs it.
+  a reboot inside the catch-up window runs it (a slot moved to a later start runs at that time, see the run mark).
+- **Persistence:** blob version 2 under the key `garden_schedule2:<hub id>` holds, per slot number, the mark's day, start
+  minute and pending zones. On a miss the version 1 blob (`garden_schedule:<hub id>`, no minute) is read once and
+  migrated with the minute `0xFFFF` ("any start"), so the day of the OTA behaves as before (no extra run). ESPHome
+  never reads a blob of another size (`esphome/components/esp32/preferences.cpp` `load()`: pending-save and NVS length
+  checks; `host/preferences.h` `load()`: `vec.size() != len`), so the two layouts cannot be confused.
 - A slot that is missed after a power cut outside the window is not run, but the engine queue (persisted by the
   engine) may still hold its unfinished zones: the next `gp.start_queue` (any `on_run`, or a manual start) runs them
   with the old durations. Clear the queue (`gp.stop_all` with `clear_queue`) if that is not wanted. The same applies
@@ -87,20 +102,25 @@ zone numbers above the group's zone count are dropped with a warning.
 sorted by start with `PENDING / FIRED / MISSED / SKIPPED`; `next_run_text()`. Durations for a timeline bar are not
 computed here (they need the engine's per-zone durations).
 
-The Schedules page (WATER tab, `packages/greenhouse/lvgl_schedules.yaml`) reads the hub through these, all one-liners
-for LVGL lambdas (the texts are pure functions in `schedule_format.h`, unit tested):
-- `slot_count()`, `master_on()`, `slot_view(i)` (number, enabled, start, days, zones, percent and today's state);
-- `row_when(i)` (`06:00`), `row_detail(i)` (`Mon-Fri  B1 B3  150%`: days `Daily` / `Mon-Fri` / `Sat Sun` / `Mon Wed Fri` /
-  `Never`; zones `All` or `B1 B3`, a count above 6), `row_today(i)` (`running` / `done` / `missed` / `skipped` /
-  `stopped` / empty), `row_enabled(i)` (the slot switch itself, so a tap shows at once);
-- `next_run_short()` (`06:00` today, `Tue 06:00`, `--:--`: the Home "NEXT" label);
+The Schedule screens (task 030, `packages/greenhouse/lvgl_schedules.yaml`) read the hub through one-line accessors; the
+texts and the editor model are pure functions in `schedule_ui.h` / `schedule_format.h`, unit tested:
+- list (design D08): `slot_count()`, `zone_count()`, `row_time(i)` (`06:00` / `--:--`), `row_label(i, group, noun)`
+  (`Greenhouse - all beds`, `- bed 2`, `- beds 1 3`, `- 4 beds`; `Slot N` for an OFF slot), `row_caption(i)` (`Every day
+  - 5 min each`, `Not set - tap to set up`; past 30 characters the days become `5 days`), `row_status_text(i)` /
+  `row_status_color(i)` (`OFF` dim, `DONE` dim, `ACTIVE` green, `SKIP` amber for skipped / missed / stopped, `NEXT` green,
+  empty), `next_run_short()` (`06:00`, `Tue 06:00`, `--:--`: the Home "NEXT" label). The caption durations come from
+  `set_zone_seconds(provider)`, set once from the YAML (the hub never reads `gp`);
 - `changed_since(seen)`: true when anything a schedule screen shows changed (the poller guard; `seen = 0` forces a
-  redraw), `page_step(page, per_page, delta)` / `page_label(page, per_page)` / `page_total(per_page)` for the PREV / NEXT
-  window of rows.
+  redraw);
+- editor (design D09): `begin_edit(i)` copies slot `i` from its entities into a RAM draft, `draft()` is the draft (hour /
+  minute with step 5, days, zones, factor 10-200 % in steps of 10, ON), `edit_title()` (`Schedule 2`), `can_save()`
+  (enabled needs a day and a zone), `save_edit()` writes **only the fields the user changed** to the slot entities (the ones
+  Home Assistant edits: switch `turn_on/off`, time / text / number `make_call()`), so nothing is written per tap and a
+  Home Assistant change made meanwhile survives; it logs one INFO line. `cancel_edit()` drops the draft. An index out
+  of range logs a WARN and does nothing.
 
-Action `garden_schedule.toggle_slot: {id, index}` flips the enabled switch of a slot by its 0-based position in include
-order (a template, so Home Assistant sees the change); an index out of range logs a WARN and does nothing. The screen
-is view only: no time, day or zone editor on the device.
+The screen shows the first 4 slots in include order (no paging); slots 5-8 are edited in Home Assistant. There is no
+master switch and no row toggle on the screen: enabling a slot is the editor's ON switch plus SAVE.
 
 ## Hub options
 `id`, `time_id` (default: first `time:`), `catch_up_window`, `zone_group` (gp group id: the default zone count counts only its `gp_zone` entries), `zone_count` (default: that count, else
