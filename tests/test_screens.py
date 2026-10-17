@@ -244,6 +244,7 @@ def test_device_only_packages_not_in_sim() -> None:
 
 TOKENIZED_TEXT_FILES = [SETUP, NETWORK, DIALOG, WIFI, BOOT, "packages/greenhouse/lvgl_valve_test.yaml",
                         "packages/lvgl/screensaver.yaml", "packages/greenhouse/screensaver_status.yaml",
+                        "packages/greenhouse/lvgl_history.yaml",
                         "packages/lvgl/page_schedules.yaml", "packages/greenhouse/lvgl_schedules.yaml"]
 
 
@@ -261,6 +262,11 @@ def test_screen_text_is_ascii(rel: str) -> None:
     assert not bad, f"{rel}: non-ASCII characters {bad!r}"
 
 
+def _button_glyphs() -> set[str]:
+    fonts = {f["id"]: f for f in _load("packages/lvgl/base.yaml")["font"]}
+    return set(fonts["gp_font_button_md"]["glyphs"])
+
+
 @pytest.mark.parametrize("rel", [GH_PAGE, NETWORK])
 def test_confirm_call_texts_are_ascii(rel: str) -> None:
     calls = [d["script.execute"] for d in _walk(_load(rel)) if isinstance(d.get("script.execute"), dict)
@@ -270,6 +276,8 @@ def test_confirm_call_texts_are_ascii(rel: str) -> None:
         for key in ("title", "body", "action"):
             assert call[key].isascii() and call[key].isprintable(), f"{rel}: non-ASCII {key}: {call[key]!r}"
             assert len(call[key]) > 0
+        glyphs = _button_glyphs()
+        assert set(call["action"]) <= glyphs, f"{rel}: action {call['action']!r} has glyphs missing from gp_font_button_md"
 
 
 
@@ -497,7 +505,8 @@ def test_no_page_declares_its_own_nav() -> None:
             continue
         text = _strip_comments(path.read_text(encoding="utf-8"))
         assert "nav_btn_" not in text.replace("nav_btn_sim", ""), f"{rel}: nav buttons belong in {NAV_BAR}"
-        assert "src: gp_icon_" not in text, f"{rel}: nav icons belong in {NAV_BAR}"
+        for icon in ("house", "leaf", "drop", "gear"):
+            assert f"src: gp_icon_{icon}" not in text, f"{rel}: nav icons belong in {NAV_BAR}"
         data = load_esphome_yaml(path)
         if isinstance(data, dict) and isinstance(data.get("lvgl"), dict):
             for _t, props in _widgets(data["lvgl"]):

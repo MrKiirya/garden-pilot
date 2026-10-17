@@ -26,6 +26,7 @@ CALLERS = [
     "packages/greenhouse/gp_lvgl_status.yaml",
     "packages/greenhouse/lvgl_valve_test.yaml",
     "packages/greenhouse/screensaver_status.yaml",
+    "packages/greenhouse/lvgl_history.yaml",
     "packages/greenhouse/lvgl_schedules.yaml",
 ]
 ENGINE_FILES = {
@@ -89,7 +90,7 @@ def test_callers_use_gp() -> None:
         for target in (d["gp.run_zone"] for d in _walk(data) if "gp.run_zone" in d):
             assert target["id"] == "gp_greenhouse", rel
         reads = re.findall(r"id\((gp_\w+)\)", code)
-        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_service_mode", "gp_confirm_result",
+        assert set(reads) <= {"gp_greenhouse", "gp_gh_seen", "gp_vt_seen", "gp_hist_seen", "gp_service_mode", "gp_confirm_result",
                      "gp_header_clock_text"}, (rel, reads)
 
 
@@ -191,7 +192,7 @@ def test_main_switch_through_gp() -> None:
     assert sw["platform"] == "template" and sw["id"] == "gp_greenhouse_main_switch"
     assert sw["restore_mode"] == "DISABLED", "ALWAYS_OFF would run the OFF action (a STOP) at every boot"
     assert not sw.get("optimistic", False)
-    assert sw["turn_on_action"] == [{"gp.full_cycle": "gp_greenhouse"}]
+    assert sw["turn_on_action"] == [{"gp.full_cycle": {"id": "gp_greenhouse", "source": "ha"}}]
     assert sw["turn_off_action"] == [{"gp.stop_all": "gp_greenhouse"}]
     assert "gp_greenhouse" in sw["lambda"]
 
@@ -219,7 +220,7 @@ def test_stop_and_deferred_start_are_documented_and_wired() -> None:
 
 @pytest.mark.unit
 def test_pure_headers() -> None:
-    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h", "deferred_start.h"):
+    for name in ("zone_model.h", "alerts.h", "format.h", "history.h", "engine.h", "deferred_start.h", "format_history.h"):
         text = (COMPONENT / name).read_text(encoding="utf-8")
         assert "esphome/" not in re.sub(r"namespace esphome::", "", text), f"{name} must stay free of ESPHome includes"
         assert not re.search(r'#include\s+"esphome/', text), name

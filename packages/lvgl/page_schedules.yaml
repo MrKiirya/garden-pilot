@@ -1,5 +1,6 @@
 # Schedule page (design D08, WATER nav slot labelled SCHEDULE): the generic shell. Header (title, clock, a HISTORY
-# action that stays hidden until the history task), an empty-state label and the bottom nav with SCHEDULE active. The
+# button that stays hidden until a domain history package shows it), an empty-state label and the bottom nav with
+# SCHEDULE active. The
 # rows and the editor page come from the schedule package of a domain, which extends this page:
 # packages/greenhouse/lvgl_schedules.yaml. Without it the page only says "No schedules configured".
 # Tokens only (design/tokens.json); ASCII only (built-in fonts). Widget ids are global, hence the sched_* prefix.
@@ -33,7 +34,8 @@ lvgl:
             text: "--:--"
             text_font: montserrat_12
             text_color: 0xe5e2e1
-        # History (a later task opens the history page here); hidden until then. Tappable height 20 px (design 18 px).
+        # History: hidden here, shown by the page of a domain that has a history (packages/greenhouse/lvgl_history.yaml
+        # extends `schedules_page` and the no-op script `sched_history_open` below). Tappable 20 px (design 18 px).
         - button:
             id: sched_btn_history
             x: 196
@@ -48,6 +50,8 @@ lvgl:
             shadow_width: 0
             pad_all: 0
             scrollable: false
+            on_click:
+              - script.execute: sched_history_open
             widgets:
               - label:
                   align: CENTER
@@ -79,6 +83,10 @@ lvgl:
           vars: {p: sched_, active: water}
 
 script:
+  # Opens the history of the domain; the domain's history package extends this no-op (pattern of touch_dot_overlay).
+  - id: sched_history_open
+    then:
+      - delay: 0ms
   - id: !extend gp_header_clock_update
     then:
       - lvgl.label.update:

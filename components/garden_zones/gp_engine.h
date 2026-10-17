@@ -48,6 +48,8 @@ class GardenZonesEngine final : public gp::Engine {
       z.skip_text = text;
       // the engine's own reason texts: "soil moisture X > Y" = too wet, "soil sensor unavailable" = a generic skip
       z.skip_wet = z.has_skip && std::strncmp(text, "soil moisture", 13) == 0;
+      if (z.skip_wet)
+        z.skip_limit = gp::parse_skip_limit(text);  // Y of "soil moisture X > Y"
     }
     in.active_count = 0;
     for (size_t zone : active) {

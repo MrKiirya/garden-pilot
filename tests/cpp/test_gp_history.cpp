@@ -1,5 +1,5 @@
-// Unit tests for the history result byte, skip entries and the History page texts
-// (components/gp/{history,zone_model,format_history}.h; host compiler, no ESPHome headers).
+// Unit tests for the history entry life cycle (open at start, close at end), sources, skips and the History page texts
+// (components/gp/{history,journal,zone_model,format_history}.h; host compiler, no ESPHome headers).
 #include "minitest.h"
 
 #include <cstring>
@@ -7,6 +7,7 @@
 
 #include "gp/format_history.h"
 #include "gp/history.h"
+#include "gp/journal.h"
 #include "gp/zone_model.h"
 namespace gp = esphome::gp;
 
@@ -49,6 +50,17 @@ TEST_CASE("history_layout_unchanged") {
   gp::PersistBlob fresh;
   CHECK(fresh.magic == 0x47503031u);
   CHECK(fresh.valid());
+  // the result byte covers 0..6, anything else reads as UNKNOWN
+  for (uint8_t r = 0; r <= 6; r++) {
+    gp::HistoryEntry e{};
+    e.result = r;
+    CHECK(static_cast<uint8_t>(gp::result_of(e)) == r);
+  }
+  for (uint8_t r : {7, 8, 77, 255}) {
+    gp::HistoryEntry e{};
+    e.result = r;
+    CHECK(gp::result_of(e) == gp::Result::UNKNOWN);
+  }
 }
 
 TEST_CASE("old_blob_still_loads") {
@@ -70,22 +82,13 @@ TEST_CASE("old_blob_still_loads") {
   CHECK(newest.zone == 2);
   CHECK(newest.result == 0);  // a zero byte reads as UNKNOWN
   CHECK(gp::result_of(newest) == gp::Result::UNKNOWN);
-  CHECK(std::strcmp(gp::fmt::result_word(newest), "test") == 0);  // source 3 = service
-  CHECK(std::strcmp(gp::fmt::result_word(loaded.history.at(1)), "-") == 0);
-  CHECK(gp::fmt::history_row(loaded.history.at(2), at(1, 1, 6, 0)) == "B1  1 Jan 06:00  5 min  -");
-}
-
-TEST_CASE("history_result_words") {
-  CHECK(std::strcmp(gp::fmt::result_word(entry(1, 1, 0, gp::Source::QUEUE, gp::Result::DONE)), "done") == 0);
-  CHECK(std::strcmp(gp::fmt::result_word(entry(1, 1, 0, gp::Source::MANUAL, gp::Result::STOPPED)), "stopped") == 0);
-  CHECK(std::strcmp(gp::fmt::result_word(entry(1, 0, 0, gp::Source::UNKNOWN, gp::Result::SKIPPED_WET)), "skipped wet") == 0);
-  CHECK(std::strcmp(gp::fmt::result_word(entry(1, 0, 0, gp::Source::UNKNOWN, gp::Result::SKIPPED)), "skipped") == 0);
-  CHECK(std::strcmp(gp::fmt::result_word(entry(1, 1, 0, gp::Source::QUEUE, gp::Result::UNKNOWN)), "-") == 0);
-  // a byte outside the enum reads as unknown, a service run is always "test"
-  gp::HistoryEntry odd = entry(1, 1, 0, gp::Source::QUEUE, gp::Result::DONE);
-  odd.result = 77;
-  CHECK(gp::result_of(odd) == gp::Result::UNKNOWN);
-  CHECK(std::strcmp(gp::fmt::result_word(entry(1, 8, 0, gp::Source::SERVICE, gp::Result::DONE)), "test") == 0);
+  CHECK(newest.detail == 0);
+  // an old entry renders like a finished one: its duration, source words as before
+  const gp::fmt::HistoryCells old_cells = gp::fmt::history_cells(loaded.history.at(2), at(1, 1, 6, 0), {}, "Bed 1");
+  CHECK(old_cells.text[3] == "5 min");
+  CHECK(old_cells.text[4] == "queue");
+  CHECK(old_cells.tone[3] == gp::fmt::Tone::TEXT);
+  CHECK(gp::fmt::history_cells(newest, at(1, 1, 6, 0), {}, "Bed 3").text[4] == "test");
 }
 
 TEST_CASE("tracker_records_skip_once") {
@@ -155,44 +158,463 @@ TEST_CASE("skip_and_run_records_come_in_order") {
   CHECK(!m.take_completed(rec));
 }
 
-TEST_CASE("history_row_texts") {
-  const gp::HistoryEntry done = entry(1, 300, 1, gp::Source::QUEUE, gp::Result::DONE);
-  CHECK(gp::fmt::history_row(done, at(13, 10, 6, 0)) == "B2  13 Oct 06:00  5 min  done");
-  CHECK(gp::fmt::history_row(entry(1, 45, 0, gp::Source::MANUAL, gp::Result::STOPPED), at(2, 3, 18, 7)) ==
-        "B1  2 Mar 18:07  45 s  stopped");
-  CHECK(gp::fmt::history_row(entry(1, 0, 2, gp::Source::UNKNOWN, gp::Result::SKIPPED_WET), at(13, 10, 6, 0)) ==
-        "B3  13 Oct 06:00  skipped wet");
-  CHECK(gp::fmt::history_row(entry(1, 0, 2, gp::Source::UNKNOWN, gp::Result::SKIPPED), at(31, 12, 23, 59)) ==
-        "B3  31 Dec 23:59  skipped");
-  // clock never valid: epoch 0, or a time that did not convert
-  CHECK(gp::fmt::history_row(entry(0, 300, 0, gp::Source::QUEUE, gp::Result::DONE), at(13, 10, 6, 0)) ==
-        "B1  --:--  5 min  done");
-  CHECK(gp::fmt::history_row(done, gp::fmt::LocalTime{}) == "B2  --:--  5 min  done");
-  // the longest realistic row stays far below the label limit and is ASCII
-  const std::string longest =
-      gp::fmt::history_row(entry(1, 99999, 15, gp::Source::SERVICE, gp::Result::SKIPPED_WET), at(28, 9, 12, 30));
-  CHECK(longest.size() < gp::fmt::LABEL_MAX);
-  CHECK(printable_ascii(longest));
-  CHECK(gp::fmt::duration_text(59) == "59 s");
-  CHECK(gp::fmt::duration_text(60) == "1 min");
-  CHECK(gp::fmt::duration_text(89) == "1 min");
-  CHECK(gp::fmt::duration_text(90) == "2 min");
+// ---------------------------------------------------------------------------------------------- run journal rig
+
+namespace {
+
+// model + journal + blob driven by a fake clock; `saves` counts the save requests the glue would make
+struct Rig {
+  gp::PersistBlob blob;
+  gp::GroupModel model;
+  gp::Journal journal{blob};
+  gp::GroupInput in;
+  uint32_t now_ms{1000};
+  uint32_t epoch{1000000};
+  uint32_t stop_ms{0};
+  int saves{0};
+  int finished{0};
+  bool last_completed{false};
+  gp::Result last_result{gp::Result::UNKNOWN};
+
+  Rig() {
+    in.zone_count = 4;
+    for (size_t i = 0; i < 4; i++)
+      in.zones[i].run_duration = 300;
+  }
+  void tick(uint32_t seconds) {
+    now_ms += seconds * 1000U;
+    if (epoch != 0)
+      epoch += seconds;
+    model.refresh(now_ms, epoch, in);
+    const bool changed = journal.process(model, now_ms, stop_ms, [this](const gp::RunRecord &rec, gp::Result result) {
+      if (!rec.is_skip()) {
+        finished++;
+        last_completed = rec.from_queue && result != gp::Result::STOPPED;
+        last_result = result;
+      }
+    });
+    if (changed)
+      saves++;
+  }
+  void start(size_t zone, uint32_t planned, gp::Source source = gp::Source::MANUAL, uint8_t detail = 0,
+             bool from_queue = false) {
+    in.zones[zone].running = true;
+    in.zones[zone].has_time_left = true;
+    in.zones[zone].time_left = planned;
+    in.start_source[zone] = source;
+    in.start_detail[zone] = detail;
+    in.start_from_queue[zone] = from_queue;
+  }
+  void end(size_t zone) {
+    in.zones[zone].running = false;
+    in.zones[zone].has_time_left = false;
+  }
+};
+
+}  // namespace
+
+TEST_CASE("book_open_then_close_done") {
+  Rig r;
+  r.tick(1);
+  r.start(1, 300, gp::Source::SCHEDULE, 2);
+  r.tick(1);
+  REQUIRE(r.blob.history.size() == 1u);
+  gp::HistoryEntry e = r.blob.history.at(0);
+  CHECK(e.result == static_cast<uint8_t>(gp::Result::OPEN));
+  CHECK(e.duration == 300u);  // planned
+  CHECK(e.zone == 1);
+  CHECK(e.source == static_cast<uint8_t>(gp::Source::SCHEDULE));
+  CHECK(e.detail == 2);
+  CHECK(e.epoch == r.epoch);
+  const uint32_t start_epoch = e.epoch;
+  CHECK(r.saves == 1);
+  for (int i = 0; i < 299; i++)
+    r.tick(1);
+  CHECK(r.saves == 1);  // nothing is written while the zone runs
+  CHECK(r.blob.history.size() == 1u);
+  r.end(0 + 1);
+  r.tick(1);
+  REQUIRE(r.blob.history.size() == 1u);  // the SAME entry
+  e = r.blob.history.at(0);
+  CHECK(e.result == static_cast<uint8_t>(gp::Result::DONE));
+  CHECK(e.duration >= 299u);
+  CHECK(e.duration <= 301u);
+  CHECK(e.epoch == start_epoch);
+  CHECK(r.saves == 2);
+  CHECK(r.finished == 1);
 }
 
-TEST_CASE("history_pager") {
-  CHECK(gp::fmt::history_pager(37, 0) == "1-6 of 37");
-  CHECK(gp::fmt::history_pager(37, 1) == "7-12 of 37");
-  CHECK(gp::fmt::history_pager(37, 6) == "37-37 of 37");
-  CHECK(gp::fmt::history_pager(37, 99) == "37-37 of 37");  // clamped
-  CHECK(gp::fmt::history_pager(37, -1) == "1-6 of 37");
-  CHECK(gp::fmt::history_pager(6, 0) == "1-6 of 6");
-  CHECK(gp::fmt::history_pager(7, 1) == "7-7 of 7");
-  CHECK(gp::fmt::history_pager(0, 0) == "No watering yet");
+TEST_CASE("book_parallel_open") {
+  Rig r;
+  r.tick(1);
+  r.start(0, 300);
+  r.start(1, 300);
+  r.tick(1);
+  CHECK(r.blob.history.size() == 2u);
+  // a skip of zone 2 lands between the open entries and the closes
+  r.in.zones[2].has_skip = true;
+  r.in.zones[2].skip_stamp = 5000;
+  r.in.zones[2].skip_wet = true;
+  r.in.zones[2].skip_limit = 60;
+  r.in.zones[2].skip_text = "soil moisture 80.0 > 60.0";
+  r.tick(10);
+  CHECK(r.blob.history.size() == 3u);
+  r.end(0);
+  r.tick(1);
+  REQUIRE(r.blob.history.size() == 3u);
+  CHECK(gp::book::find_open(r.blob.history, 0) == -1);  // zone 0 was closed in its own entry
+  CHECK(gp::book::find_open(r.blob.history, 1) >= 0);   // zone 1 is still open
+  CHECK(r.blob.history.at(2).zone == 0);
+  CHECK(r.blob.history.at(2).result == static_cast<uint8_t>(gp::Result::DONE));
+  CHECK(r.blob.history.at(0).zone == 2);  // the skip is still the newest
+}
+
+TEST_CASE("book_stopped") {
+  Rig r;
+  r.tick(1);
+  r.start(0, 300);
+  r.tick(60);
+  r.stop_ms = r.now_ms + 500;  // STOP pressed just before the end is seen
+  r.end(0);
+  r.tick(1);
+  CHECK(r.blob.history.at(0).result == static_cast<uint8_t>(gp::Result::STOPPED));
+  CHECK(!r.last_completed);
+  // a run that ends long after the last STOP is done; a watchdog end is done, too
+  r.start(1, 120);
+  r.tick(10);
+  r.end(1);
+  r.tick(1);
+  CHECK(r.blob.history.at(0).result == static_cast<uint8_t>(gp::Result::DONE));
+  CHECK(gp::ended_by_stop(10000, 8000));
+  CHECK(!gp::ended_by_stop(10000, 6999));
+  CHECK(!gp::ended_by_stop(10000, 0));
+  CHECK(gp::ended_by_stop(100, 4294967000u));  // wrapped millis
+}
+
+TEST_CASE("book_interrupted_after_boot") {
+  gp::PersistBlob blob;
+  gp::book::open(blob.history, 100, 300, 0, 1, 0);
+  gp::book::open(blob.history, 200, 120, 1, 4, 3);
+  gp::HistoryEntry done{300, 60, 2, 1, static_cast<uint8_t>(gp::Result::DONE), 0};
+  blob.history.push(done);
+  CHECK(gp::book::recover_after_boot(blob.history));
+  CHECK(blob.history.at(1).result == static_cast<uint8_t>(gp::Result::INTERRUPTED));
+  CHECK(blob.history.at(2).result == static_cast<uint8_t>(gp::Result::INTERRUPTED));
+  CHECK(blob.history.at(1).duration == 120u);  // planned kept
+  CHECK(blob.history.at(2).duration == 300u);
+  CHECK(blob.history.at(0).result == static_cast<uint8_t>(gp::Result::DONE));
+  CHECK(gp::book::find_open(blob.history, 0) == -1);
+  CHECK(!gp::book::recover_after_boot(blob.history));  // nothing open: no save
+  gp::Journal journal(blob);
+  CHECK(!journal.recover_after_boot());
+}
+
+TEST_CASE("book_epoch_backfill") {
+  Rig r;
+  r.epoch = 0;  // the clock is not valid yet
+  r.tick(1);
+  r.start(0, 300);
+  r.tick(1);
+  CHECK(r.blob.history.at(0).epoch == 0u);
+  r.tick(60);
+  r.epoch = 5000000;  // the clock became valid while the zone runs
+  r.tick(1);
+  r.end(0);
+  r.tick(1);
+  const gp::HistoryEntry e = r.blob.history.at(0);
+  CHECK(e.result == static_cast<uint8_t>(gp::Result::DONE));
+  CHECK(e.epoch != 0u);
+  CHECK(e.epoch == r.epoch - e.duration);
+}
+
+TEST_CASE("book_close_overwritten") {
+  Rig r;
+  r.tick(1);
+  r.start(0, 300);
+  r.tick(1);
+  for (size_t i = 0; i < gp::HISTORY_LENGTH; i++)
+    gp::book::open(r.blob.history, 1, 1, 3, 1, 0);  // 100 newer entries push the open one out
+  CHECK(gp::book::find_open(r.blob.history, 0) == -1);
+  r.tick(30);
+  r.end(0);
+  r.tick(1);
+  CHECK(r.blob.history.size() == gp::HISTORY_LENGTH);
+  const gp::HistoryEntry e = r.blob.history.at(0);
+  CHECK(e.zone == 0);
+  CHECK(e.result == static_cast<uint8_t>(gp::Result::DONE));
+  CHECK(e.epoch != 0u);
+}
+
+TEST_CASE("tracker_elapsed_live") {
+  gp::ZoneTracker t;
+  gp::ZoneView v;
+  gp::ZoneInput in;
+  t.update(0, 0, 0, in, gp::Source::MANUAL, v);
+  CHECK(!v.run_elapsed.has_value());
+  in.running = true;
+  t.update(1000, 0, 0, in, gp::Source::MANUAL, v);
+  CHECK(v.run_elapsed.value_or(99) == 0u);
+  t.update(11000, 0, 0, in, gp::Source::MANUAL, v);
+  CHECK(v.run_elapsed.value_or(0) == 10u);
+  in.running = false;  // PAUSED gap: a manual run took the lane
+  in.paused = true;
+  t.update(21000, 0, 0, in, gp::Source::MANUAL, v);  // the valve was open until this sample
+  CHECK(v.run_elapsed.value_or(0) == 20u);
+  t.update(41000, 0, 0, in, gp::Source::MANUAL, v);  // 20 s paused: not counted
+  CHECK(v.run_elapsed.value_or(0) == 20u);
+  in.paused = false;
+  in.running = true;
+  t.update(42000, 0, 0, in, gp::Source::MANUAL, v);
+  t.update(47000, 0, 0, in, gp::Source::MANUAL, v);
+  CHECK(v.run_elapsed.value_or(0) == 25u);
+  in.running = false;
+  t.update(48000, 0, 0, in, gp::Source::MANUAL, v);
+  CHECK(!v.run_elapsed.has_value());
+}
+
+TEST_CASE("pick_source_precedence") {
+  using gp::Source;
+  // intent > queued > cycle > queue > unknown
+  CHECK(gp::pick_source(Source::MANUAL, true, Source::SCHEDULE, true, Source::HA, true) == Source::MANUAL);
+  CHECK(gp::pick_source(Source::UNKNOWN, true, Source::SCHEDULE, true, Source::HA, true) == Source::SCHEDULE);
+  CHECK(gp::pick_source(Source::UNKNOWN, false, Source::UNKNOWN, true, Source::HA, true) == Source::HA);
+  CHECK(gp::pick_source(Source::UNKNOWN, false, Source::UNKNOWN, false, Source::HA, true) == Source::QUEUE);
+  CHECK(gp::pick_source(Source::UNKNOWN, false, Source::UNKNOWN, false, Source::UNKNOWN, false) == Source::UNKNOWN);
+  // an intent older than 15 s is ignored
+  gp::SourcePlan plan;
+  plan.note_intent(2, Source::MANUAL, 1000);
+  CHECK(plan.resolve(2, 1000 + 14999, false, false).source == Source::MANUAL);
+  CHECK(plan.resolve(2, 1000 + 15000, false, false).source == Source::UNKNOWN);
+  CHECK(plan.resolve(2, 1000 + 15000, false, true).source == Source::QUEUE);
+  // an intent beats a queued zone, but the run is then not from the queue
+  plan.queue(2, Source::SCHEDULE, 4);
+  const gp::StartInfo manual = plan.resolve(2, 2000, false, true);
+  CHECK(manual.source == Source::MANUAL);
+  CHECK(manual.detail == 0);
+  CHECK(!manual.from_queue);
+}
+
+TEST_CASE("queued_source_lifecycle") {
+  using gp::Source;
+  gp::SourcePlan plan;
+  plan.queue(1, Source::SCHEDULE, 2);
+  plan.queue(2, Source::HA, 0);
+  gp::StartInfo info = plan.resolve(1, 5000, false, true);
+  CHECK(info.source == Source::SCHEDULE);
+  CHECK(info.detail == 2);
+  CHECK(info.from_queue);
+  plan.consume(1);  // used up at the start
+  info = plan.resolve(1, 5000, false, true);
+  CHECK(info.source == Source::QUEUE);
+  CHECK(info.detail == 0);
+  plan.clear_queued(2);  // dequeue_zone
+  CHECK(plan.resolve(2, 5000, false, false).source == Source::UNKNOWN);
+  plan.queue(0, Source::SCHEDULE, 1);
+  plan.queue(3, Source::HA, 0);
+  plan.clear_all_queued();  // stop_all / clear_queue / service mode
+  CHECK(plan.resolve(0, 5000, false, false).source == Source::UNKNOWN);
+  CHECK(plan.resolve(3, 5000, false, false).source == Source::UNKNOWN);
+  // the whole path: a scheduled queue run opens an entry with SCHEDULE and the slot
+  Rig r;
+  r.tick(1);
+  r.start(1, 300, Source::SCHEDULE, 2, true);
+  r.tick(1);
+  CHECK(r.blob.history.at(0).source == static_cast<uint8_t>(Source::SCHEDULE));
+  CHECK(r.blob.history.at(0).detail == 2);
+}
+
+TEST_CASE("completed_flag_kept") {
+  Rig r;
+  r.tick(1);
+  // a scheduled queue run that ends by itself is completed
+  r.start(0, 100, gp::Source::SCHEDULE, 1, true);
+  r.tick(5);
+  r.end(0);
+  r.tick(1);
+  CHECK(r.finished == 1);
+  CHECK(r.last_completed);
+  // a plain queue run too
+  r.start(1, 100, gp::Source::QUEUE, 0, true);
+  r.tick(5);
+  r.end(1);
+  r.tick(1);
+  CHECK(r.last_completed);
+  // a run_zone run is not
+  r.start(2, 100, gp::Source::MANUAL, 0, false);
+  r.tick(5);
+  r.end(2);
+  r.tick(1);
+  CHECK(r.finished == 3);
+  CHECK(!r.last_completed);
+  // a stopped queue run is not
+  r.start(3, 100, gp::Source::HA, 0, true);
+  r.tick(5);
+  r.stop_ms = r.now_ms;
+  r.end(3);
+  r.tick(1);
+  CHECK(!r.last_completed);
+  CHECK(r.last_result == gp::Result::STOPPED);
+}
+
+TEST_CASE("skip_entry_source_and_limit") {
+  Rig r;
+  r.tick(1);
+  r.in.start_source[1] = gp::Source::SCHEDULE;
+  r.in.zones[1].has_skip = true;
+  r.in.zones[1].skip_stamp = 3000;
+  r.in.zones[1].skip_wet = true;
+  r.in.zones[1].skip_limit = 60;
+  r.in.zones[1].skip_text = "soil moisture 72.0 > 60.0";
+  r.tick(1);
+  gp::HistoryEntry e = r.blob.history.at(0);
+  CHECK(e.result == static_cast<uint8_t>(gp::Result::SKIPPED_WET));
+  CHECK(e.source == static_cast<uint8_t>(gp::Source::SCHEDULE));
+  CHECK(e.detail == 60);
+  CHECK(e.duration == 0u);
+  // the threshold could not be read
+  r.in.zones[2].has_skip = true;
+  r.in.zones[2].skip_stamp = 4000;
+  r.in.zones[2].skip_wet = true;
+  r.in.zones[2].skip_text = "soil moisture 72.0 > ?";
+  r.tick(1);
+  e = r.blob.history.at(0);
+  CHECK(e.detail == 255);
+  CHECK(gp::fmt::history_cells(e, at(1, 1, 6, 0), {}, "Bed 3").text[4] == "too wet");
+}
+
+// ---------------------------------------------------------------------------------------------- texts
+
+TEST_CASE("fmt_history_cells") {
+  using gp::fmt::Tone;
+  const gp::fmt::LocalTime when = at(16, 10, 6, 0);
+  const auto done = gp::fmt::history_cells(entry(1, 300, 0, gp::Source::SCHEDULE, gp::Result::DONE), when, {}, "Bed 1");
+  CHECK(done.text[0] == "16.10");
+  CHECK(done.text[1] == "06:00");
+  CHECK(done.text[2] == "Bed 1");
+  CHECK(done.text[3] == "5 min");
+  CHECK(done.text[4] == "schedule");
+  CHECK(done.tone[0] == Tone::DIM);
+  CHECK(done.tone[1] == Tone::TEXT);
+  CHECK(done.tone[2] == Tone::TEXT);
+  CHECK(done.tone[3] == Tone::TEXT);
+  CHECK(done.tone[4] == Tone::DIM);
+  // below one minute, and the 5 s tolerance of the sampling
+  CHECK(gp::fmt::history_cells(entry(1, 45, 0, gp::Source::MANUAL, gp::Result::DONE), when, {}, "Bed 1").text[3] == "45 s");
+  CHECK(gp::fmt::history_cells(entry(1, 299, 0, gp::Source::MANUAL, gp::Result::DONE), when, {}, "Bed 1").text[3] == "5 min");
+  CHECK(gp::fmt::duration_text(59) == "59 s");
+  CHECK(gp::fmt::duration_text(60) == "1 min");
+  CHECK(gp::fmt::duration_text(124) == "2 min");
+  CHECK(gp::fmt::duration_text(114) == "1 min");
+  CHECK(gp::fmt::duration_text(179) == "3 min");
+  // open and live
+  const auto live = gp::fmt::history_cells(entry(1, 300, 1, gp::Source::MANUAL, gp::Result::OPEN), when, 240u, "Bed 2");
+  CHECK(live.text[3] == "4 min...");
+  CHECK(live.text[4] == "manual");
+  CHECK(live.tone[0] == Tone::DIM);
+  CHECK(live.tone[1] == Tone::GREEN);
+  CHECK(live.tone[2] == Tone::GREEN);
+  CHECK(live.tone[3] == Tone::GREEN);
+  CHECK(live.tone[4] == Tone::DIM);
+  CHECK(gp::fmt::history_cells(entry(1, 300, 1, gp::Source::MANUAL, gp::Result::OPEN), when, 45u, "Bed 2").text[3] == "45 s...");
+  // an open entry whose zone is not live: like done, with the planned time
+  const auto stale = gp::fmt::history_cells(entry(1, 300, 1, gp::Source::MANUAL, gp::Result::OPEN), when, {}, "Bed 2");
+  CHECK(stale.text[3] == "5 min");
+  CHECK(stale.tone[1] == Tone::TEXT);
+  // stopped
+  const auto stopped = gp::fmt::history_cells(entry(1, 120, 0, gp::Source::HA, gp::Result::STOPPED), when, {}, "Bed 1");
+  CHECK(stopped.text[3] == "2 min");
+  CHECK(stopped.text[4] == "HA");
+  CHECK(stopped.tone[3] == Tone::AMBER);
+  CHECK(stopped.tone[1] == Tone::TEXT);
+  CHECK(stopped.tone[4] == Tone::DIM);
+  // interrupted
+  const auto cut = gp::fmt::history_cells(entry(1, 300, 0, gp::Source::QUEUE, gp::Result::INTERRUPTED), when, {}, "Bed 1");
+  CHECK(cut.text[3] == "<5 min");
+  CHECK(cut.tone[3] == Tone::AMBER);
+  CHECK(gp::fmt::history_cells(entry(1, 0, 0, gp::Source::QUEUE, gp::Result::INTERRUPTED), when, {}, "Bed 1").text[3] == "?");
+  CHECK(gp::fmt::history_cells(entry(1, 40, 0, gp::Source::QUEUE, gp::Result::INTERRUPTED), when, {}, "Bed 1").text[3] == "<40 s");
+  // skips
+  gp::HistoryEntry wet = entry(1, 0, 2, gp::Source::SCHEDULE, gp::Result::SKIPPED_WET);
+  wet.detail = 60;
+  const auto skip = gp::fmt::history_cells(wet, when, {}, "Bed 3");
+  CHECK(skip.text[3] == "skipped");
+  CHECK(skip.text[4] == "soil > 60%");
+  for (size_t c = 0; c < gp::fmt::HISTORY_COLS; c++)
+    CHECK(skip.tone[c] == Tone::DIM);
+  wet.detail = 255;
+  CHECK(gp::fmt::history_cells(wet, when, {}, "Bed 3").text[4] == "too wet");
+  const auto nosensor = gp::fmt::history_cells(entry(1, 0, 2, gp::Source::SCHEDULE, gp::Result::SKIPPED), when, {}, "Bed 3");
+  CHECK(nosensor.text[3] == "skipped");
+  CHECK(nosensor.text[4] == "no sensor");
+  // clock never valid
+  const auto none = gp::fmt::history_cells(entry(0, 300, 0, gp::Source::QUEUE, gp::Result::DONE), when, {}, "Bed 1");
+  CHECK(none.text[0] == "--.--");
+  CHECK(none.text[1] == "--:--");
+  CHECK(gp::fmt::history_cells(entry(1, 300, 0, gp::Source::QUEUE, gp::Result::DONE), gp::fmt::LocalTime{}, {}, "Bed 1").text[1] == "--:--");
+  // names and source words
+  CHECK(gp::fmt::history_cells(entry(1, 300, 4, gp::Source::QUEUE, gp::Result::DONE), when, {}, "").text[2] == "B5");
+  CHECK(gp::fmt::history_cells(entry(1, 300, 4, gp::Source::QUEUE, gp::Result::DONE), when, {}, nullptr).text[2] == "B5");
+  CHECK(std::string(gp::fmt::history_source_word(static_cast<uint8_t>(gp::Source::UNKNOWN))) == "-");
+  CHECK(std::string(gp::fmt::history_source_word(static_cast<uint8_t>(gp::Source::SERVICE))) == "test");
+  CHECK(std::string(gp::fmt::history_source_word(static_cast<uint8_t>(gp::Source::HA))) == "HA");
+  CHECK(std::string(gp::fmt::history_source_word(77)) == "-");
+  // every cell is ASCII and fits its column (date 5, time 5, TIME ON 8, SOURCE 11 characters)
+  const gp::Result results[] = {gp::Result::UNKNOWN, gp::Result::DONE,    gp::Result::STOPPED,     gp::Result::SKIPPED_WET,
+                                gp::Result::SKIPPED, gp::Result::OPEN,    gp::Result::INTERRUPTED};
+  for (gp::Result result : results) {
+    for (uint8_t source = 0; source <= 5; source++) {
+      for (uint8_t detail : {0, 60, 100, 255}) {
+        gp::HistoryEntry e = entry(1, 99999, 15, static_cast<gp::Source>(source), result);
+        e.detail = detail;
+        for (std::optional<uint32_t> live : {std::optional<uint32_t>{}, std::optional<uint32_t>{99999u}}) {
+          const auto cells = gp::fmt::history_cells(e, at(28, 12, 23, 59), live, "Bed 12");
+          for (size_t c = 0; c < gp::fmt::HISTORY_COLS; c++)
+            CHECK(printable_ascii(cells.text[c]));
+          CHECK(cells.text[0].size() <= 5u);
+          CHECK(cells.text[1].size() <= 5u);
+          CHECK(cells.text[3].size() <= 9u);
+          CHECK(cells.text[4].size() <= 11u);
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("fmt_history_zone_label") {
+  CHECK(gp::fmt::history_zone_label("Bed 2", 1) == "Bed 2");
+  CHECK(gp::fmt::history_zone_label("Greenhouse bed 1", 0) == "Bed 1");
+  CHECK(gp::fmt::history_zone_label("Front flower border", 3) == "Border");
+  CHECK(gp::fmt::history_zone_label("Lawn", 4) == "Lawn");
+  CHECK(gp::fmt::history_zone_label("Tomatoes and peppers", 5) == "Peppers");  // the tail fits
+  CHECK(gp::fmt::history_zone_label("Verylongname", 6) == "B7");
+  CHECK(gp::fmt::history_zone_label("", 7) == "B8");
+  CHECK(gp::fmt::history_zone_label(nullptr, 8) == "B9");
+}
+
+TEST_CASE("fmt_history_title") {
+  CHECK(gp::fmt::history_title(100, 0) == "History - 1/13");
+  CHECK(gp::fmt::history_title(100, 12) == "History - 13/13");
+  CHECK(gp::fmt::history_title(100, 99) == "History - 13/13");  // clamped
+  CHECK(gp::fmt::history_title(100, -1) == "History - 1/13");
+  CHECK(gp::fmt::history_title(8, 0) == "History - 1/1");
+  CHECK(gp::fmt::history_title(9, 1) == "History - 2/2");
+  CHECK(gp::fmt::history_title(0, 0) == "History");
   CHECK(gp::fmt::history_page_count(0) == 1u);
-  CHECK(gp::fmt::history_page_count(6) == 1u);
-  CHECK(gp::fmt::history_page_count(7) == 2u);
-  CHECK(gp::fmt::history_page_count(100) == 17u);
-  CHECK(gp::fmt::history_clamp_page(100, 17) == 16);
+  CHECK(gp::fmt::history_page_count(8) == 1u);
+  CHECK(gp::fmt::history_page_count(9) == 2u);
+  CHECK(gp::fmt::history_page_count(100) == 13u);
+  CHECK(gp::fmt::history_clamp_page(100, 13) == 12);
   CHECK(gp::fmt::history_clamp_page(0, 3) == 0);
   CHECK(gp::fmt::history_clamp_page(10, -4) == 0);
+}
+
+TEST_CASE("skip_limit_parsing") {
+  CHECK(gp::parse_skip_limit("soil moisture 72.0 > 60.0") == 60);
+  CHECK(gp::parse_skip_limit("soil moisture 72.0 > 59.6") == 60);
+  CHECK(gp::parse_skip_limit("soil moisture 99.0 > 100.0") == 100);
+  CHECK(gp::parse_skip_limit("soil moisture 99.0 > 250") == 100);
+  CHECK(gp::parse_skip_limit("soil sensor unavailable") == 255);
+  CHECK(gp::parse_skip_limit("soil moisture 72.0 > ?") == 255);
+  CHECK(gp::parse_skip_limit("") == 255);
+  CHECK(gp::parse_skip_limit(nullptr) == 255);
 }

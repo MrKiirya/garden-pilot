@@ -91,9 +91,9 @@ def test_shell_is_generic() -> None:
     page = _page(SHELL, "schedules_page")
     _by_id(page, "sched_empty_label")
     history = _by_id(page, "sched_btn_history")
-    assert history.get("hidden") is True, "HISTORY stays hidden until the history task"
+    assert history.get("hidden") is True, "HISTORY stays hidden until the history package shows it"
     assert history["height"] >= 20 and history["x"] + history["width"] <= 268, "left of the clock"
-    assert "on_click" not in history
+    assert history["on_click"] == [{"script.execute": "sched_history_open"}], "the domain extends this no-op script"
     # the nav is the shared component (tests/test_screens.py checks it): active SCHEDULE, target set by this package
     navs = [w for w in page["widgets"] if isinstance(w, dict) and w.get("__tag__") == "include"]
     assert [n["value"] for n in navs] == [{"file": "nav_bar.yaml", "vars": {"p": "sched_", "active": "water"}}]

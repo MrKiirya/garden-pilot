@@ -24,6 +24,12 @@ _spec.loader.exec_module(sim_ui)
 
 # Home bottom navigation button `nav_btn_setup` in packages/lvgl/page_home.yaml (x, y, width, height).
 SETUP_BTN = (244, 204, 72, 32)
+# The HISTORY header button of the Schedule page and the BACK button of the History page (task 027, design D20:
+# packages/lvgl/page_schedules.yaml, packages/greenhouse/lvgl_history.yaml); row 1 TIME ON cell of the History page.
+HISTORY_BTN = (196, 1, 72, 20)
+HISTORY_BACK_BTN = (8, 210, 92, 26)
+HISTORY_ROW1_ON = (158, 44, 66, 18)
+GREEN_TEXT = (0x78, 0xDC, 0x77)
 # Setup page nav button `setup_nav_btn_water` (packages/lvgl/page_setup.yaml): opens the Schedules page.
 WATER_BTN = (164, 204, 76, 32)
 # Schedule page (task 030): rows 1 and 4 of the greenhouse list (packages/greenhouse/lvgl_schedules.yaml); a tap on
@@ -159,6 +165,36 @@ def test_tap_target_is_the_setup_button() -> None:
         "width": button["width"], "height": button["height"],
     }
     assert (int(button["x"]), int(button["y"]), int(button["width"]), int(button["height"])) == SETUP_BTN
+
+
+def _find_widget(node: object, wid: str) -> dict | None:
+    if isinstance(node, dict):
+        if node.get("id") == wid:
+            return node
+        for value in node.values():
+            found = _find_widget(value, wid)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = _find_widget(value, wid)
+            if found:
+                return found
+    return None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "rel, wid, geometry",
+    [
+        ("packages/lvgl/page_schedules.yaml", "sched_btn_history", HISTORY_BTN),
+        ("packages/greenhouse/lvgl_history.yaml", "gh_hist_btn_back", HISTORY_BACK_BTN),
+    ],
+)
+def test_history_tap_targets_match_yaml(rel: str, wid: str, geometry: tuple[int, int, int, int]) -> None:
+    button = _find_widget(load_esphome_yaml(REPO_ROOT / rel), wid)
+    assert button, f"{wid} not found in {rel}: update the constants in tests/test_sim_ui.py"
+    assert (int(button["x"]), int(button["y"]), int(button["width"]), int(button["height"])) == geometry
 
 
 @pytest.mark.unit
@@ -328,6 +364,56 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         back_img = Image.open(REPO_ROOT / ".esphome" / "shots" / "schedule_back.png").convert("RGB")
         assert near(back_img.getpixel((rx + rw // 2, ry + rh - 4)), CARD_BG), "CANCEL did not return to the list"
         assert not near(back_img.getpixel((sx + 8, sy + sh // 2)), GREEN_FILL), "still on the editor after CANCEL"
+
+        # Task 027 (D20): Schedule page > HISTORY (empty) > a zone starts: row 1 is live and green > BACK.
+        def tap_and_shot(button: tuple[int, int, int, int], name: str) -> Image.Image:
+            bx, by, bw, bh = button
+            assert _sim_ui("tap", str(bx + bw // 2), str(by + bh // 2), env=env).returncode == 0
+            return shot_of(name)
+
+        def shot_of(name: str) -> Image.Image:
+            assert _sim_ui("shot", name, env=env).returncode == 0
+            image = Image.open(REPO_ROOT / ".esphome" / "shots" / f"{name}.png").convert("RGB")
+            assert image.size == (320, 240) and not sim_ui.looks_blank(image), name
+            return image
+
+        def changed_share(a: Image.Image, b: Image.Image) -> float:
+            mask = ImageChops.difference(a, b).convert("L").point(lambda v: 255 if v else 0)
+            return mask.histogram()[255] / (320 * 240)
+
+        def has_colour(image: Image.Image, box: tuple[int, int, int, int], rgb: tuple[int, int, int]) -> bool:
+            bx, by, bw, bh = box
+            return any(near(px, rgb) for px in image.crop((bx, by, bx + bw, by + bh)).getdata())
+
+        # The History BACK button (ghost: text-dim #becab9 outline and text) is drawn inside its box; a single pixel
+        # is fragile (RGB565 rounding, 1 px border), so look for the colour anywhere in the box.
+        def back_drawn(image: Image.Image) -> bool:
+            return has_colour(image, HISTORY_BACK_BTN, (0xBE, 0xCA, 0xB9))
+
+        history_img = tap_and_shot(HISTORY_BTN, "history")
+        assert changed_share(back_img, history_img) > 0.02, "tapping HISTORY did not change the screen"
+        assert back_drawn(history_img), "the History BACK button is not drawn"
+        assert not has_colour(history_img, HISTORY_ROW1_ON, GREEN_TEXT), "an empty history shows a live row"
+
+        # a zone starts (the zone switch is the Home Assistant path): row 1 is open, its TIME ON is green
+        started = subprocess.run(
+            ["sh", "script/sim-ctl", "switch", "Greenhouse bed 1", "on"], cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=120, check=False
+        )
+        assert started.returncode == 0, started.stderr
+        time.sleep(5)  # the engine opens the valve after its switching delay; the page polls every second
+        live_img = shot_of("history_live")
+        assert has_colour(live_img, HISTORY_ROW1_ON, GREEN_TEXT), "row 1 is not live (green TIME ON)"
+        time.sleep(2)
+        live_again = shot_of("history_live2")
+        assert has_colour(live_again, HISTORY_ROW1_ON, GREEN_TEXT), "the live row disappeared"
+        subprocess.run(
+            ["sh", "script/sim-ctl", "switch", "Greenhouse bed 1", "off"], cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=120, check=False
+        )
+
+        hback_img = tap_and_shot(HISTORY_BACK_BTN, "history_back")
+        assert changed_share(live_again, hback_img) > 0.02, "tapping BACK did not leave the History page"
+        assert not back_drawn(hback_img), "still on the History page"
+        assert near(hback_img.getpixel((rx + rw // 2, ry + rh - 4)), CARD_BG), "BACK did not return to the Schedule list"
     finally:
         _sim_ui("stop", env=env)
     assert pids, "start did not record any pids"

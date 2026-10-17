@@ -33,6 +33,7 @@ CONF_ON_ZONE_FINISHED = "on_zone_finished"
 CONF_ON_STOP = "on_stop"
 CONF_MASK = "mask"
 CONF_PCT = "pct"
+CONF_SLOT = "slot"
 
 gp_ns = cg.esphome_ns.namespace("gp")
 GpHub = gp_ns.class_("GpHub", cg.Component)
@@ -210,12 +211,14 @@ AlertActiveCondition = gp_ns.class_("AlertActiveCondition", automation.Condition
 
 _ZONE = {cv.Required(CONF_ZONE): cv.templatable(cv.positive_int)}
 _DURATION = {cv.Optional(CONF_DURATION): cv.templatable(cv.positive_time_period_seconds)}
+# who asked: stored with the history entry. `service` (the valve test) exists only on gp.run_zone.
+_SOURCE = {cv.Optional(CONF_SOURCE, default="manual"): cv.one_of("manual", "ha", "schedule", lower=True)}
 
 
 @automation.register_action(
     "gp.run_zone",
     RunZoneAction,
-    _target({**_ZONE, **_DURATION, cv.Optional(CONF_SOURCE, default="manual"): cv.one_of("manual", "service", lower=True)}),
+    _target({**_ZONE, **_DURATION, cv.Optional(CONF_SOURCE, default="manual"): cv.one_of("manual", "ha", "schedule", "service", lower=True)}),
     synchronous=True,
 )
 async def run_zone_to_code(config, action_id, template_arg, args):
@@ -228,10 +231,11 @@ async def run_zone_to_code(config, action_id, template_arg, args):
 
 
 @automation.register_action(
-    "gp.enqueue_zone", EnqueueZoneAction, _target({**_ZONE, **_DURATION}), synchronous=True
+    "gp.enqueue_zone", EnqueueZoneAction, _target({**_ZONE, **_DURATION, **_SOURCE}), synchronous=True
 )
 async def enqueue_zone_to_code(config, action_id, template_arg, args):
     var = await _new_action(config, action_id, template_arg, args)
+    cg.add(var.set_source(getattr(Source, config[CONF_SOURCE].upper())))
     cg.add(var.set_zone(await cg.templatable(config[CONF_ZONE], args, cg.size_t)))
     if CONF_DURATION in config:
         cg.add(var.set_duration(await cg.templatable(config[CONF_DURATION], args, cg.uint32)))
@@ -241,7 +245,15 @@ async def enqueue_zone_to_code(config, action_id, template_arg, args):
 @automation.register_action(
     "gp.enqueue_zones",
     EnqueueZonesAction,
-    _target({cv.Required(CONF_MASK): cv.templatable(cv.uint32_t), cv.Optional(CONF_PCT): cv.templatable(cv.int_range(min=1, max=255))}),
+    _target(
+        {
+            cv.Required(CONF_MASK): cv.templatable(cv.uint32_t),
+            cv.Optional(CONF_PCT): cv.templatable(cv.int_range(min=1, max=255)),
+            # schedule slot 1..8 stored with the history entry (0 = none)
+            cv.Optional(CONF_SLOT): cv.templatable(cv.int_range(min=0, max=8)),
+            **_SOURCE,
+        }
+    ),
     synchronous=True,
 )
 async def enqueue_zones_to_code(config, action_id, template_arg, args):
@@ -249,6 +261,9 @@ async def enqueue_zones_to_code(config, action_id, template_arg, args):
     cg.add(var.set_mask(await cg.templatable(config[CONF_MASK], args, cg.uint32)))
     if CONF_PCT in config:
         cg.add(var.set_pct(await cg.templatable(config[CONF_PCT], args, cg.uint8)))
+    if CONF_SLOT in config:
+        cg.add(var.set_slot(await cg.templatable(config[CONF_SLOT], args, cg.uint8)))
+    cg.add(var.set_source(getattr(Source, config[CONF_SOURCE].upper())))
     return var
 
 
@@ -268,9 +283,15 @@ async def inhibit_to_code(config, action_id, template_arg, args):
     return var
 
 
+@automation.register_action("gp.full_cycle", FullCycleAction, _target(_SOURCE), synchronous=True)
+async def full_cycle_to_code(config, action_id, template_arg, args):
+    var = await _new_action(config, action_id, template_arg, args)
+    cg.add(var.set_source(getattr(Source, config[CONF_SOURCE].upper())))
+    return var
+
+
 @automation.register_action("gp.clear_queue", ClearQueueAction, _target(), synchronous=True)
 @automation.register_action("gp.start_queue", StartQueueAction, _target(), synchronous=True)
-@automation.register_action("gp.full_cycle", FullCycleAction, _target(), synchronous=True)
 @automation.register_action("gp.reset_watchdog", ResetWatchdogAction, _target(), synchronous=True)
 async def simple_group_action_to_code(config, action_id, template_arg, args):
     return await _new_action(config, action_id, template_arg, args)
