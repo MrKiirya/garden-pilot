@@ -139,7 +139,7 @@ def test_rows_and_editor_shape() -> None:
     assert (summary["gh_sched_sum_label"]["x"], summary["gh_sched_sum_label"]["y"]) == (46, 27)
     inn = summary["gh_sched_sum_in"]
     assert (inn["x"], inn["y"], inn["width"], inn["text_align"], inn["text_color"]) == (212, 27, 100, "RIGHT", 0x78DC77)
-    assert any(p.get("text") == "NEXT" and (p["x"], p["y"]) == (8, 28) for _t, p in _widgets(_list_page(data)))
+    assert any(p.get("text") == "NEXT" and (p["x"], p["y"]) == (8, 30) for _t, p in _widgets(_list_page(data)))
     # editor page
     edit = _edit_page(data)
     assert _show_targets(_by_id(edit, "gh_sed_btn_cancel")) == ["schedules_page"]
@@ -358,3 +358,26 @@ def test_helper_files_use_tokens_and_ascii() -> None:
     for _t, props in _widgets(_rows_data()["lvgl"]):
         if props.get("text_font") in BUTTON_FONTS_IDS:
             assert set(props["text"]) <= set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-./:%"), props
+
+
+def test_step_buttons_repeat_on_hold() -> None:
+    """Every -/+ of the editor steps on a tap and keeps stepping while held (LVGL long press + repeat)."""
+    edit = _edit_page(_rows_data())
+    steps = {
+        "gh_sed_btn_hour_dec": "hour_down", "gh_sed_btn_hour_inc": "hour_up",
+        "gh_sed_btn_min_dec": "minute_hold_down", "gh_sed_btn_min_inc": "minute_hold_up",
+        "gh_sed_btn_pct_dec": "pct_down", "gh_sed_btn_pct_inc": "pct_up",
+    }
+    for wid, method in steps.items():
+        w = _by_id(edit, wid)
+        for trig in ("on_long_press", "on_long_press_repeat"):
+            assert trig in w, f"{wid} lacks {trig}"
+            text = " ".join(_lambdas(w[trig]))
+            assert f"{method}()" in text, (wid, trig, text)
+            assert "refresh" in json.dumps(w[trig]), (wid, trig)
+        # draft only: holding never writes to flash (SAVE does)
+        assert "save_edit" not in json.dumps([w["on_long_press"], w["on_long_press_repeat"]])
+    # the minute buttons restart the acceleration at every press
+    for wid in ("gh_sed_btn_min_dec", "gh_sed_btn_min_inc"):
+        w = _by_id(edit, wid)
+        assert "hold_begin()" in " ".join(_lambdas(w["on_long_press"])), wid

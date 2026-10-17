@@ -278,6 +278,16 @@ caption `row_countdown`), new status `LATER` (text tone) instead of the empty wo
 the `changed_since` hash so the list redraws each minute. A countdown never reads "in 0m" (floor, minimum 1m). Checked on
 this machine: unit tests, C++ 101 cases, lint, config of the device entry; not compiled for ESP32 / host.
 
+## Author follow-up 2026-10-17
+
+Tested on the device: the minute step is now 1 (was 5) and holding any editor -/+ auto-repeats.
+- `ScheduleDraft::minute_up/down` step 1 (wrap 59 <-> 0). Hold: `hold_begin()` + `minute_hold_up/down()`, step 1 for the first `HOLD_FAST_AFTER` (10) repeats, then 5 (snaps to multiples of 5, wraps); `hold_minute_step()` is the pure helper. Draft only: no flash writes while holding, SAVE writes once.
+- Every -/+ button (hour, minute, RUN TIME) has `on_long_press` (first step; the minute buttons call `hold_begin()` first) and `on_long_press_repeat` (same step), each followed by `gh_sed_refresh`. `on_click` stays a single step.
+- Timing is the ESPHome LVGL default of the touchscreen (`long_press_time` 400 ms, `long_press_repeat_time` 100 ms, in `lvgl/touchscreens.py`); nothing is set explicitly. In LVGL 9 `CLICKED` is not sent after `LONG_PRESSED` was sent, so a hold adds no extra click step at release. `on_long_press` / `on_long_press_repeat` are old ESPHome triggers (LONG_PRESSED / LONG_PRESSED_REPEAT); see the minimum-version check in the status line.
+- Not checked on the device after this change: feel of the 100 ms repeat and the switch to step 5.
+
+Baseline alignment (same day): labels of different fonts now share a baseline (top y + line_height - base_line: montserrat_10 = 11 - 2, 12 = 15 - 3). The summary "NEXT" caption moved from y 28 to 30; the per-row status word from y 3 to 6 (same baseline as the row label). The D09 "ON" caption was checked and left (its ink centre is within 1 px of the pill). Not checked on the device.
+
 ## Follow-ups
 - Compile on ESP32 / host and check the hub glue and flash budget (main session).
 - Lawn zones in the editor; HISTORY button target (>= 20 px already).
