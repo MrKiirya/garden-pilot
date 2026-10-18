@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -27,6 +28,8 @@
 #include "esphome/core/preferences.h"
 
 #include "schedule_core.h"
+#include "schedule_format.h"
+#include "schedule_ui.h"
 
 namespace esphome::garden_schedule {
 
@@ -42,10 +45,21 @@ struct SlotEntities {
   number::Number *multiplier{nullptr};
 };
 
-/// Persisted marks: the local day of each slot's last run and the zones of that run still to do.
+/// Persisted marks (version 2): the local day and start minute of each slot's last run and the zones of that run
+/// still to do. Stored under the key "garden_schedule2:<hub id>"; a blob of another size never loads (ESPHome checks the
+/// stored length: esp32/preferences.cpp load(), host/preferences.h load()).
 struct PersistBlob {
-  uint8_t version{1};
+  uint8_t version{2};
   int32_t last_fired_day[MAX_SLOTS]{NEVER, NEVER, NEVER, NEVER, NEVER, NEVER, NEVER, NEVER};
+  uint16_t last_fired_minute[MAX_SLOTS]{ANY_MINUTE, ANY_MINUTE, ANY_MINUTE, ANY_MINUTE,
+                                        ANY_MINUTE, ANY_MINUTE, ANY_MINUTE, ANY_MINUTE};
+  uint32_t pending[MAX_SLOTS]{};
+};
+
+/// The version 1 blob (no start minute), key "garden_schedule:<hub id>"; read once to migrate the marks.
+struct PersistBlobV1 {
+  uint8_t version{1};
+  int32_t last_fired_day[MAX_SLOTS]{};
   uint32_t pending[MAX_SLOTS]{};
 };
 
@@ -80,18 +94,31 @@ class GardenSchedule : public Component {
   float get_setup_priority() const override { return setup_priority::LATE; }
 
   void setup() override {
-    this->pref_ = global_preferences->make_preference<PersistBlob>(fnv1_hash("garden_schedule:" + this->key_));
+    this->pref_ = global_preferences->make_preference<PersistBlob>(fnv1_hash("garden_schedule2:" + this->key_));
     PersistBlob blob;
-    if (this->pref_.load(&blob) && blob.version == 1) {
+    if (this->pref_.load(&blob) && blob.version == 2) {
       this->blob_ = blob;
-      // marks are keyed by the slot NUMBER (1..8), so reordering or removing an include never moves them
-      for (size_t i = 0; i < this->slots_.size() && i < MAX_SLOTS; i++) {
-        const size_t k = this->slots_[i].number - 1u;
-        if (k < MAX_SLOTS)
-          this->core_.restore(i, blob.last_fired_day[k], blob.pending[k]);
+    } else {
+      // an upgrade from version 1: the old marks match any start minute, so the upgrade day behaves as before
+      ESPPreferenceObject old =
+          global_preferences->make_preference<PersistBlobV1>(fnv1_hash("garden_schedule:" + this->key_));
+      PersistBlobV1 v1;
+      if (!old.load(&v1) || v1.version != 1)
+        return;
+      for (size_t k = 0; k < MAX_SLOTS; k++) {
+        this->blob_.last_fired_day[k] = v1.last_fired_day[k];
+        this->blob_.last_fired_minute[k] = ANY_MINUTE;
+        this->blob_.pending[k] = v1.pending[k];
       }
-      ESP_LOGI(TAG, "restored the run marks of %u slot(s)", (unsigned) this->slots_.size());
+      ESP_LOGI(TAG, "migrated the run marks from version 1");
     }
+    // marks are keyed by the slot NUMBER (1..8), so reordering or removing an include never moves them
+    for (size_t i = 0; i < this->slots_.size() && i < MAX_SLOTS; i++) {
+      const size_t k = this->slots_[i].number - 1u;
+      if (k < MAX_SLOTS)
+        this->core_.restore(i, this->blob_.last_fired_day[k], this->blob_.last_fired_minute[k], this->blob_.pending[k]);
+    }
+    ESP_LOGI(TAG, "restored the run marks of %u slot(s)", (unsigned) this->slots_.size());
   }
 
   void dump_config() override {
@@ -141,6 +168,192 @@ class GardenSchedule : public Component {
   }
   const std::string &next_run_text() const { return this->next_text_value_; }
   uint8_t slot_number(size_t index) const { return index < this->slots_.size() ? this->slots_[index].number : 0; }
+  // ---- data for the screens (task 026; the texts are the pure helpers of schedule_format.h) ----
+  size_t slot_count() const { return this->slots_.size(); }
+  bool master_on() const { return this->core_.master(); }
+  /// What a screen shows about slot `index` (0-based, include order); a default view when out of range.
+  SlotView slot_view(size_t index) const {
+    SlotView v;
+    if (index >= this->slots_.size())
+      return v;
+    const SlotConfig &c = this->cfg_[index];
+    v.number = this->slots_[index].number;
+    v.enabled = c.enabled;
+    v.start_minute = c.start_minute;
+    v.days_mask = c.days_mask;
+    v.zone_mask = c.zone_mask;
+    v.pct = c.pct;
+    v.today = this->today_(index);
+    return v;
+  }
+  size_t zone_count() const { return this->zone_count_; }
+  /// The zone run durations the list captions use ("5 min each"), set once from the YAML (the hub never reads `gp`).
+  void set_zone_seconds(std::function<uint32_t(size_t)> &&provider) { this->zone_seconds_ = std::move(provider); }
+
+  // ---- the D08 list rows (the texts come from schedule_ui.h; they read the 1 s copy of the slot entities) ----
+  std::string row_time(size_t index) const {
+    if (index >= this->slots_.size())
+      return std::string();
+    return ::esphome::garden_schedule::row_time(this->cfg_[index].enabled, this->cfg_[index].start_minute);
+  }
+  std::string row_label(size_t index, const char *group, const char *noun) const {
+    if (index >= this->slots_.size())
+      return std::string();
+    const SlotConfig &c = this->cfg_[index];
+    if (!c.enabled)
+      return "Slot " + std::to_string(this->slots_[index].number);
+    return zones_label(group, noun, c.zone_mask, this->zone_count_);
+  }
+  std::string row_caption(size_t index) const {
+    if (index >= this->slots_.size())
+      return std::string();
+    const SlotConfig &c = this->cfg_[index];
+    return ::esphome::garden_schedule::row_caption(
+        c.enabled, c.days_mask, duration_text(c.zone_mask, this->zone_count_, this->zone_seconds_, c.pct));
+  }
+  StatusWord row_status(size_t index) const {
+    if (index >= this->slots_.size())
+      return StatusWord{};
+    const optional<NextRun> next = this->next_run();
+    DayRunState state = DayRunState::PENDING;
+    for (const DayRun &run : this->core_.day_runs(0, this->cfg_, this->slots_.size())) {
+      if (run.slot == index)
+        state = run.state;
+    }
+    return status_word(this->cfg_[index].enabled, this->core_.master(), state, this->core_.state(index).pending != 0,
+                       next.has_value() && next->slot == index);
+  }
+  std::string row_status_text(size_t index) const { return this->row_status(index).text; }
+  uint32_t row_status_color(size_t index) const { return this->row_status(index).color; }
+  uint32_t row_text_color(size_t index) const {
+    return index < this->slots_.size() && this->cfg_[index].enabled ? TONE_TEXT : TONE_DIM;
+  }
+  /// Right column of a row: "in 3h 28m" (time to the slot's next run, also for a slot done today), "-" for an OFF slot.
+  std::string row_countdown(size_t index) const {
+    if (index >= this->slots_.size())
+      return std::string();
+    const optional<int64_t> s = this->core_.seconds_to_next(index, this->cfg_, this->slots_.size());
+    return countdown_text(s.has_value() ? *s : NO_COUNTDOWN);
+  }
+  /// Summary line under the header: "18:00 - Greenhouse" (the next run of any slot), "No run planned" when none.
+  std::string summary_label(const char *group) const {
+    const optional<NextRun> next = this->next_run();
+    if (!next.has_value())
+      return "No run planned";
+    return this->next_run_short() + " - " + group;
+  }
+  std::string summary_countdown() const {
+    const optional<NextRun> next = this->next_run();
+    if (!next.has_value())
+      return std::string();
+    const optional<int64_t> s = this->core_.seconds_to_next(next->slot, this->cfg_, this->slots_.size());
+    return s.has_value() ? countdown_text(*s) : std::string();
+  }
+  /// Home "next": "06:00" / "Tue 06:00" / "--:--".
+  std::string next_run_short() const {
+    const optional<NextRun> next = this->next_run();
+    return next_short(next.has_value(), next.has_value() ? next->day : 0, next.has_value() ? next->start_minute : 0,
+                      this->core_.today());
+  }
+  /// True when anything a schedule screen shows changed since `seen` (updated); `seen == 0` always redraws.
+  bool changed_since(uint32_t &seen) const {
+    std::vector<SlotView> views;
+    for (size_t i = 0; i < this->slots_.size(); i++)
+      views.push_back(this->slot_view(i));
+    uint32_t seconds = 2166136261u;  // the captions show the zone durations
+    if (this->zone_seconds_) {
+      for (size_t z = 0; z < this->zone_count_; z++)
+        seconds = (seconds ^ this->zone_seconds_(z)) * 16777619u;
+    }
+    for (size_t i = 0; i < this->slots_.size(); i++) {  // the countdowns change every minute
+      for (char c : this->row_countdown(i))
+        seconds = (seconds ^ static_cast<uint8_t>(c)) * 16777619u;
+    }
+    for (char c : this->summary_countdown())
+      seconds = (seconds ^ static_cast<uint8_t>(c)) * 16777619u;
+    const uint32_t hash = view_hash(views, this->core_.master(), this->next_run_short(), seconds);
+    if (hash == seen)
+      return false;
+    seen = hash;
+    return true;
+  }
+
+  // ---- the editor (Schedule N page): a RAM draft, the entities are written only by save_edit() ----
+  /// Starts editing slot `index` (0-based, include order) from the entities (not the 1 s copy); out of range: WARN, no-op.
+  void begin_edit(size_t index) {
+    if (index >= this->slots_.size()) {
+      ESP_LOGW(TAG, "begin_edit: no slot at index %u", (unsigned) index);
+      return;
+    }
+    const SlotEntities &e = this->slots_[index];
+    ScheduleDraft d;
+    d.index = static_cast<uint8_t>(index);
+    d.enabled = e.enabled != nullptr && e.enabled->state;
+    d.hour = static_cast<uint8_t>(e.start->hour % 24);
+    d.minute = static_cast<uint8_t>(e.start->minute % 60);
+    uint8_t days = 0;
+    for (size_t k = 0; k < 7; k++) {
+      if (e.days[k] != nullptr && e.days[k]->state)
+        days |= static_cast<uint8_t>(1u << k);
+    }
+    d.days_mask = days;
+    const optional<uint32_t> mask = parse_zones(e.zones != nullptr ? e.zones->state : std::string(), this->zone_count_);
+    d.zone_mask = mask.has_value() ? *mask : 0;
+    float m = e.multiplier != nullptr ? e.multiplier->state : 100.0f;
+    if (m != m)
+      m = 100.0f;
+    m = m < 10.0f ? 10.0f : m > 200.0f ? 200.0f : m;
+    d.pct = static_cast<uint8_t>(m + 0.5f);
+    this->original_ = d;
+    this->draft_ = d;
+    this->editing_ = true;
+  }
+  ScheduleDraft &draft() { return this->draft_; }
+  bool editing() const { return this->editing_; }
+  std::string edit_title() const { return "Schedule " + std::to_string(this->slot_number(this->draft_.index)); }
+  // one-line helpers of the editor buttons (day 0..6 = Mon..Sun, zone 0-based)
+  void edit_toggle_day(size_t day) { this->draft_.toggle_day(static_cast<uint8_t>(day)); }
+  void edit_toggle_zone(size_t zone) { this->draft_.toggle_zone(zone, this->zone_count_); }
+  bool edit_day_on(size_t day) const { return day < 7 && (this->draft_.days_mask & (1u << day)) != 0; }
+  bool edit_zone_on(size_t zone) const { return zone < 32 && (this->draft_.zone_mask & (1u << zone)) != 0; }
+  bool edit_day_visible(size_t day) const { return day < 7; }
+  bool edit_zone_visible(size_t zone) const { return zone < this->zone_count_; }
+  bool can_save() const { return this->editing_ && this->draft_.can_save(); }
+  /// Writes the changed fields of the draft to the slot entities (the ones Home Assistant edits) and closes the editor.
+  /// Returns false, writing nothing, when no edit is open or the draft cannot be saved. Fields the user did not change
+  /// are not written, so a change made from Home Assistant meanwhile survives.
+  bool save_edit() {
+    if (!this->editing_ || this->draft_.index >= this->slots_.size() || !this->draft_.can_save())
+      return false;
+    const SlotEntities &e = this->slots_[this->draft_.index];
+    const Diff diff = this->draft_.diff(this->original_);
+    if (diff.enabled && e.enabled != nullptr) {
+      if (this->draft_.enabled)
+        e.enabled->turn_on();
+      else
+        e.enabled->turn_off();
+    }
+    if (diff.start && e.start != nullptr)
+      e.start->make_call().set_time(this->draft_.hour, this->draft_.minute, 0).perform();
+    for (size_t k = 0; k < 7; k++) {
+      if ((diff.days & (1u << k)) == 0 || e.days[k] == nullptr)
+        continue;
+      if ((this->draft_.days_mask & (1u << k)) != 0)
+        e.days[k]->turn_on();
+      else
+        e.days[k]->turn_off();
+    }
+    const std::string zones = this->draft_.zones_text(this->zone_count_);
+    if (diff.zones && !zones.empty() && e.zones != nullptr)
+      e.zones->make_call().set_value(zones).perform();
+    if (diff.pct && e.multiplier != nullptr)
+      e.multiplier->make_call().set_value(static_cast<float>(this->draft_.pct)).perform();
+    ESP_LOGI(TAG, "slot %u saved from the screen%s", (unsigned) e.number, diff.any() ? "" : " (no change)");
+    this->editing_ = false;
+    this->read_config_();  // the list shows the saved values at once, not after the next 1 s tick
+    return true;
+  }
+  void cancel_edit() { this->editing_ = false; }
   /// Sets the global run-time factor in percent (100 = unchanged); slot multipliers are scaled by it.
   void set_global_pct(uint8_t pct) { this->core_.set_global_pct(pct); }
 
@@ -151,6 +364,26 @@ class GardenSchedule : public Component {
     Condition<> *condition;
     std::string reason;
   };
+
+  Today today_(size_t index) const {
+    for (const DayRun &run : this->core_.day_runs(0, this->cfg_, this->slots_.size())) {
+      if (run.slot != index)
+        continue;
+      switch (run.state) {
+        case DayRunState::FIRED:
+          return this->core_.state(index).pending != 0 ? Today::RUNNING : Today::DONE;
+        case DayRunState::MISSED:
+          return Today::MISSED;
+        case DayRunState::SKIPPED:
+          return Today::SKIPPED;
+        case DayRunState::STOPPED:
+          return Today::STOPPED;
+        default:
+          return Today::NONE;
+      }
+    }
+    return Today::NONE;
+  }
 
   Tick read_clock_(uint32_t now_ms) const {
     Tick t;
@@ -227,6 +460,9 @@ class GardenSchedule : public Component {
       std::snprintf(note, sizeof(note), "missed (%u min late)", (unsigned) m.minutes_late);
       this->publish_result_(m.slot, note);
     }
+    for (uint8_t slot : events.dropped)
+      ESP_LOGI(TAG, "slot %u: its start changed while it was pending, the old zones are dropped",
+               (unsigned) this->slots_[slot].number);
     for (const Fire &f : events.fires)
       this->handle_fire_(f);
     if (events.state_changed || !events.fires.empty() || !events.missed.empty())
@@ -265,6 +501,7 @@ class GardenSchedule : public Component {
       if (k >= MAX_SLOTS)
         continue;
       blob.last_fired_day[k] = this->core_.state(i).last_fired_day;
+      blob.last_fired_minute[k] = this->core_.state(i).last_fired_minute;
       blob.pending[k] = this->core_.state(i).pending;
     }
     if (!this->pref_.save(&blob))
@@ -319,6 +556,9 @@ class GardenSchedule : public Component {
   std::string key_{"hub"};
   std::string next_iso_value_, next_text_value_;
   size_t zone_count_{16};
+  std::function<uint32_t(size_t)> zone_seconds_;
+  ScheduleDraft draft_, original_;
+  bool editing_{false};
   uint32_t last_tick_{0};
   bool started_{false};
   bool next_published_{false};

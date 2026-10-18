@@ -127,7 +127,7 @@ documented as recommendations, the builder decides; the author's own build is do
 
 **Schedules** live on the device and run without Home Assistant or Wi-Fi once the clock was set (HA time or SNTP);
 HA is optional (it can edit and trigger them). Task 019 (`components/garden_schedule/`, MIT, engine-agnostic): each
-group has 2 slots by default (max 8). A slot = start time, 7 day switches, a zone list ("all" or bed numbers) and one
+group has 4 slots by default (max 8; the device screen edits the first 4). A slot = start time, 7 day switches, a zone list ("all" or bed numbers) and one
 run-time multiplier (10-200 % of each zone's own run duration). A due slot queues its zones through `gp.enqueue_zones`
 and `gp.start_queue`, so the watchdog lockout, disabled zones and service mode apply unchanged. Rules: one run per slot
 per local day (DST safe); a slot missed by a power cut or a late clock still runs when the device is back within the
@@ -159,8 +159,8 @@ The clock id `ha_time` is the only one features use. `packages/core/time.yaml` (
 `packages/core/time_sntp.yaml` (`time: sntp`, id `sntp_time`, task 016) both write the same system clock, so the
 device has valid time with Home Assistant offline as long as Wi-Fi reaches an NTP server. SNTP is on by default
 (comment out `core_time_sntp` for HA-only time); servers are the `sntp_server_1..3` substitutions, default
-`0/1/2.pool.ntp.org`. An SNTP sync does not fire `ha_time.on_time_sync`, so readers poll (the Home clock lags at
-most 30 s). **Timezone:** the `timezone` substitution
+`0/1/2.pool.ntp.org`. An SNTP sync does not fire `ha_time.on_time_sync`, so readers poll (the header clock lags at
+most 2 s). **Timezone:** the `timezone` substitution
 (default `UTC`, an IANA name such as `Europe/Berlin` or a POSIX string) is applied as `timezone: ${timezone}` to both
 `ha_time` and `sntp_time`, so the zone is known after a reboot without Home Assistant. Because a timezone is set,
 Home Assistant no longer overrides the zone: users must set their own zone in the entry file (`substitutions:`),
@@ -273,8 +273,8 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
    The API has `reboot_timeout: 0s` there (the default would end the program after 15 min without a client).
    `web_server` is not available on the host platform (`cv.only_on` ESP32/ESP8266/BK72XX/LN882X/RP2/RTL87XX), and no
    third-party shim is used: manual control of simulated values goes through the native API (`script/sim-ctl`) and
-   an on-screen "SIM board" page, both in task 007 (implemented, below). `on_time_sync` does not fire on host; the Home clock refreshes
-   from its 30 s interval. The host build is compiled in CI (`compile (pinned|minimum)`, same jobs as the device).
+   an on-screen "SIM board" page, both in task 007 (implemented, below). `on_time_sync` does not fire on host; the header clock refreshes
+   from the shared 2 s poller. The host build is compiled in CI (`compile (pinned|minimum)`, same jobs as the device).
    The sim entry file needs SDL2 dev files even for `esphome config` (the devcontainer image has them; tests skip
    the SDL rows without `sdl2-config` unless `GP_REQUIRE_SDL=1`, which CI sets).
    **Simulated sensors and SIM board (task 007, implemented; PC check and CI pending):** `packages/sim/` (never included by the device): template
@@ -301,13 +301,18 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
 - The live design lives in claude.ai artifacts (author's account): the design system and the screens canvas
   (pages "Screens": Home / Greenhouse / Lawn, and "Drafts": D01–D25). The repo keeps a snapshot of what the
   firmware depends on; token changes are synced into the repo by PR.
+- **Type scale C** (task 029, synced 2026-10-16): `caption` 10, `label` 12, `value` 14, `value-lg` 16 (LVGL
+  `montserrat_10/12/14/16`), plus the repo-only button styles `button-md` 10 (transport buttons) and `button-sm` 8
+  (in-card buttons, nav labels) and the custom `clock` 40. LVGL built-in fonts have one weight, so 600/700 are not
+  reproduced on the device. Flash grows by one built-in font (`montserrat_16`, boot title); `tests/test_design_tokens.py`
+  keeps the page fonts on the tokens. The greenhouse, lawn and touch-test pages are rebuilt in scale C by later tasks.
 - **UI language** is chosen at build time (a substitution in the entry file, `en` / `ru`): only one language
   and its glyphs are baked into flash.
 - **Boot screen** (`boot_page`, D17): the first page; "Connecting to Wi-Fi..." with a spinner (no fake progress), valves
   stay closed. It shows Home on Wi-Fi connect (`wifi: on_connect`, device only) or after `boot_offline_timeout`
   (30 s; 3 s in the emulator, which has no Wi-Fi). It never touches an actuator. Home Assistant is not awaited.
 - **Valve test and service mode** (`valve_test_page`, D18; Setup > SERVICE): TEST opens one greenhouse valve (beds 1-3)
-  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the lane opens the valve ~2 s after the tap (switching delay, unchanged by task 014), so it is open ~8 s and the countdown stops near 2 s; since task 014 TEST runs `garden_zones.run_zone` on the group `gh_zones`, a bed locked by the watchdog is refused and its row stays "closed"); every start
+  for at most `valve_test_max_time` (10 s hard limit counted from the tap: `run_duration` plus an independent guard script; the valve opens at once when the group is idle (the start stops the group first only when something runs: stopping an idle lane costs ~2 s of engine delay), so it is open up to the full limit; since task 014 TEST runs `garden_zones.run_zone` on the group `gh_zones`, a bed locked by the watchdog is refused and its row stays "closed"); every start
   shuts down the previous valve first. While the page is open `gp_service_mode` is on: the queue is cleared and any
   run not started by the test (Home Assistant, queue) is shut down within 1 s with a WARN log. Service mode ends by
   EXIT SERVICE, by leaving the page, after 10 minutes without a test, or by a reboot (not restored). Blocking Home
@@ -315,6 +320,7 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
 - **Screensaver** (D23, `packages/lvgl/screensaver.yaml`): a top-layer overlay, not a page, shown after
   `screensaver_timeout` (5 min; 1 min in the emulator) without input: 40 px clock (token `clock`, custom font
   `gp_font_clock` baked from the vendored Montserrat Bold with only `0123456789:-`), a status line ("24C - soil 58%"),
+  a date line ("Friday - 16 Oct", `gp::fmt::saver_date`, 14 px; ASCII `-` instead of the artboard's middle dot),
   "Bed N" with a green dot while a bed runs, "Touch to wake". Any touch hides it and is swallowed by the overlay. It never
   shows on the boot screen, over a confirm dialog or in service mode. No backlight dimming yet (needs a backlight pin
   in the board profile) and no "next run" part (no schedules).
@@ -324,17 +330,31 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
   fit helper; available widgets come from the enabled packages, their order is set in SETUP and stored on the
   device.
 - Built today: `home_page`, `setup_page` (draft D10), `network_page` (D11) and the confirm dialog (D14, top
+  layer, `gp_confirm`) follow the tokens, and so does `schedules_page` (WATER tab, task 026: master row, three slot rows per page
+  with PREV / NEXT, view only). `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
+  LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → schedules (`lawn_page` stays included but has no entry point until the lawn task or the Home widgets give it one), SETUP → setup (its DISPLAY tile opens the
+  touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). STOP on the Greenhouse page and RESTART on the Network page ask
+  through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
+  only, so UI texts are ASCII (`-`, `...`). Version, uptime, Wi-Fi and the restart button are `internal: true`.
+- The Home "NEXT" label shows the next scheduled run (`06:00` today, `Tue 06:00`, `--:--`), written by the Schedules
+  page package from the schedule hub (task 026). The now/next + timeline widget is a stage 9 screen task.
+- The Home clock updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
+  ready (same pattern as the `number.on_value` gotcha in `CLAUDE.md`). Since task 004 this code lives in
+  `packages/lvgl/page_home.yaml` (`!extend ha_time`), so `packages/core/` no longer depends on the Home page.
   layer, `gp_confirm`) follow the tokens. `greenhouse_page`, `lawn_page` and `touch_test_page` still use the default
-  LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, WATER → lawn, SETUP → setup (its DISPLAY tile opens the
+  LVGL theme. Bottom nav: DASH → home, ZONES → greenhouse, SCHEDULE (was WATER) → lawn, SETUP → setup (its DISPLAY tile opens the
   touch test, SERVICE the valve test; CYCLE / SENSORS are "Soon"). STOP on the Greenhouse page and RESTART on the Network page ask
   through the confirm dialog (30 s without an answer = cancel). Built-in Montserrat fonts are ASCII + LVGL symbols
   only, so UI texts are ASCII (`-`, `...`). Version, uptime, Wi-Fi and the restart button are `internal: true`.
 - Known UI defects: the Home "NEXT" label shows the remaining queue time (hours dropped), not the next scheduled
   run. Task 019 provides the data ("Greenhouse next run" / "next run text" and `next_run()` / `day_runs()` on the
   schedule hub); the label and the now/next + timeline widget are stage 9 screen tasks.
-- The Home clock updates `home_clock_label` from `time.on_time_sync`, which can fire before LVGL is
-  ready (same pattern as the `number.on_value` gotcha in `CLAUDE.md`). Since task 004 this code lives in
-  `packages/lvgl/page_home.yaml` (`!extend ha_time`), so `packages/core/` no longer depends on the Home page.
+- **Header clock** (task 029): every page header shows the time at the right (`<page>_clock_label`: Home, Setup,
+  Network, valve test, SIM board). `packages/lvgl/base.yaml` holds the global `gp_header_clock_text`, the script
+  `gp_header_clock_update` (computes the text once) and a 2 s `interval` that runs it; each page appends one
+  `lvgl.label.update` with `script: [{id: !extend gp_header_clock_update, ...}]`. LVGL is written only from that
+  poller, never from `on_time_sync` (which can fire before LVGL is ready, the `number.on_value` gotcha in
+  `CLAUDE.md`), so `packages/core/` does not depend on any page.
 
 ## 9. Roadmap
 1. **Process scaffold** (task 001): agent guide, agents, task templates, this spec, uv + pinned ESPHome,
@@ -371,8 +391,7 @@ Speed (task 022): `script/test` runs pytest in parallel (`pytest-xdist`, `-n ${G
    at build time. On top of the stage 8 `gp_*` layer: bed card slots and Home widgets (§8, decided in §10.2).
 10. **Time without HA:** SNTP fallback (done, task 016, `packages/core/time_sntp.yaml`, §4.1a); RTC chip if needed
     (follow-up) so schedules work offline.
-11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the WATER tab editor
-    and the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens)
+11. **Schedules:** engine, entities, HA editing and next-run data on the device are done (task 019); the on-device Schedule list and editor are done (tasks 026, 030; the run mark is keyed by day and start minute), the now/next + day timeline widget are stage 9 screen tasks. **Bed heating** (thermostats + heating screens)
     with the heating widget, alerts.
 12. **Screenshot checks in CI:** headless SDL screenshots, BMP comparison against references and `aioesphomeapi`
     scenarios against the host build. Screenshots and taps under Xvfb exist (task 015, `script/sim-ui`, CI job

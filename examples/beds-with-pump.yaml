@@ -48,6 +48,7 @@ packages:
   lvgl_page_home: !include ../packages/lvgl/page_home.yaml
   lvgl_page_touch_test: !include ../packages/lvgl/page_touch_test.yaml
   lvgl_page_lawn: !include ../packages/lvgl/page_lawn.yaml
+  lvgl_page_schedules: !include ../packages/lvgl/page_schedules.yaml
   lvgl_dialog_confirm: !include ../packages/lvgl/dialog_confirm.yaml
   lvgl_screensaver: !include ../packages/lvgl/screensaver.yaml
   lvgl_page_setup: !include ../packages/lvgl/page_setup.yaml
@@ -77,8 +78,20 @@ packages:
   gh_gp_lvgl: !include ../packages/greenhouse/gp_lvgl_status.yaml
   gh_valve_test: !include ../packages/greenhouse/lvgl_valve_test.yaml
 
-  # Device-side watering schedule: a hub and one slot (slots are off until switched on in Home Assistant).
+  # Device-side watering schedule: a hub and 4 slots (slots are off until switched on, on the Schedule screen or in
+  # Home Assistant).
   gh_schedule: !include ../packages/greenhouse/schedule.yaml
   gh_schedule_slot_1: !include
     file: ../packages/greenhouse/schedule_slot.yaml
     vars: {slot: "1", start: "06:00:00"}
+  gh_schedule_slot_2: !include
+    file: ../packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "2", start: "07:00:00"}
+  gh_schedule_slot_3: !include
+    file: ../packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "3", start: "18:00:00"}
+  gh_schedule_slot_4: !include
+    file: ../packages/greenhouse/schedule_slot.yaml
+    vars: {slot: "4", start: "19:00:00"}
+  # Schedules page rows (WATER tab) and the Home "next" label; needs lvgl_page_schedules and gh_schedule.
+  gh_lvgl_schedules: !include ../packages/greenhouse/lvgl_schedules.yaml

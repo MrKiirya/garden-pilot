@@ -27,7 +27,8 @@ def _seconds(value: object) -> float:
 
 
 def _scripts() -> dict[str, dict]:
-    return {s["id"]: s for s in _load(FILE)["script"]}
+    # `!extend` items (the header clock action, task 029) carry a tagged dict as id: skip them
+    return {s["id"]: s for s in _load(FILE)["script"] if isinstance(s["id"], str)}
 
 
 def _actions(node: object, key: str) -> list:
@@ -59,7 +60,14 @@ def test_valve_test_limit() -> None:
     gated = next(d for d in start["then"] if "if" in d)["if"]["then"]
     order = [next(iter(s)) for s in gated]
     assert {"script.execute": "gp_valve_test_guard"} in gated
-    assert order.index("gp.stop_all") < order.index("gp.run_zone")
+    # One valve at a time: a running group is stopped first. An idle group is NOT stopped: shutdown() on an idle lane
+    # enters the engine's STOPPING state and delays the valve by about 2 s (rig feedback, task 029).
+    stop = next(s for s in gated if "if" in s)["if"]
+    assert "summary().running" in str(stop["condition"])
+    assert {"script.is_running": "gp_valve_test_guard"} in stop["condition"]["or"], "two quick taps: one valve at a time"
+    assert stop["then"] == [{"gp.stop_all": GROUP}] and "else" not in stop
+    assert order.index("if") < order.index("gp.run_zone")
+    assert not any("gp.stop_all" in s for s in gated), "no unconditional stop before the start (2 s delay)"
     assert order.index("script.execute") < order.index("gp.run_zone"), "guard starts first"
 
 

@@ -22,7 +22,7 @@ GP_API = ["core_gp", "core_gp_api", "gh_gp"]
 BEDS_2 = [*CORE, "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP_API]
 SIM_BEDS_3 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", "gh_bed_3", *GP]
 SIM_BEDS_2 = ["hardware", "gh_irrigation", "gh_bed_1", "gh_bed_2", *GP]
-SCHEDULE = ["gh_schedule", "gh_schedule_slot_1", "gh_schedule_slot_2"]
+SCHEDULE = ["gh_schedule", "gh_schedule_slot_1", "gh_schedule_slot_2", "gh_schedule_slot_3", "gh_schedule_slot_4"]
 SIM = "hardware/sim.yaml"
 SIM_ENTRY = "garden-pilot-sim.yaml"
 SIM_API_ONLY = [
@@ -96,6 +96,9 @@ VARIANTS: dict[str, Variant] = {
         edits=(('vars: {slot: "2", start: "07:00:00"}', 'vars: {slot: "9", start: "07:00:00"}'),),
         fails_with=("slot", "8"),
     ),
+    # the Schedules page without any schedule package (task 026): the shell shows "No schedules configured"
+    "no_schedules_lvgl": Variant("without", [*SCHEDULE, "gh_lvgl_schedules"]),
+    "sim_no_schedules": Variant("without", [*SCHEDULE, "gh_lvgl_schedules"], source=SIM_ENTRY),
     "sim_beds_3": Variant("keep", SIM_BEDS_3, hardware=SIM),
     "sim_beds_1": Variant("keep", ["hardware", "gh_irrigation", "gh_bed_1", *GP], hardware=SIM),
     "sim_beds_2": Variant("keep", SIM_BEDS_2, hardware=SIM),

@@ -107,7 +107,7 @@ def test_gp_root_default() -> None:
             source = item["source"]
             if not (isinstance(source, str) and re.match(r"(github|https?)://", source)):
                 local.append(source)
-        for font in data.get("font") or []:
+        for font in (data.get("font") or []) + (data.get("image") or []):
             if isinstance(font.get("file"), str):
                 local.append(font["file"])
         if not local:
@@ -115,7 +115,7 @@ def test_gp_root_default() -> None:
         seen += 1
         assert all(s.startswith("${gp_root}/") for s in local), f"{path}: {local}"
         assert data["substitutions"]["gp_root"] == ".", f"{path}: define gp_root: \".\""
-    assert seen == 5, "irrigation, irrigation_pump, schedule, gp (components) and screensaver (font)"
+    assert seen == 6, "irrigation, irrigation_pump, schedule, gp (components), screensaver and lvgl base (fonts)"
     assert "gp_root" not in (_load(REPO_ROOT / "garden-pilot.yaml")["substitutions"]), "root entry uses the default"
 
 
@@ -125,6 +125,8 @@ def _rank(key: str) -> int:
         return fixed.index(key)
     if key.startswith("lvgl_"):
         return 20
+    if key == "gh_lvgl_schedules":  # extends the schedules page; needs the hub and its slots
+        return 62
     if key == "gh_irrigation":
         return 30
     if re.fullmatch(r"gh_bed_\d+(_soil)?", key):

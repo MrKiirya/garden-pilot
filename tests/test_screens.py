@@ -23,6 +23,12 @@ BOOT_WIFI = "packages/lvgl/boot_wifi.yaml"
 HOME = "packages/lvgl/page_home.yaml"
 GH_PAGE = "packages/greenhouse/lvgl_page.yaml"
 NAV_NAMES = ["dash", "zones", "water", "setup"]
+NAV_SPEC = {  # name: (x, width, label, icon id, icon file)
+    "dash": (4, 76, "DASH", "gp_icon_house", "house"),
+    "zones": (84, 76, "ZONES", "gp_icon_leaf", "leaf"),
+    "water": (164, 76, "SCHEDULE", "gp_icon_drop", "drop"),
+    "setup": (244, 72, "SETUP", "gp_icon_gear", "gear"),
+}
 SYMBOLS = {"", "", "", "", "", ""}  # LVGL symbols used in text
 
 
@@ -82,7 +88,7 @@ def _page_ids(files: list[str]) -> set[str]:
     for f in files:
         d = load_esphome_yaml(REPO_ROOT / f)
         if isinstance(d, dict) and isinstance(d.get("lvgl"), dict):
-            ids |= {p["id"] for p in d["lvgl"].get("pages") or []}
+            ids |= {p["id"] for p in d["lvgl"].get("pages") or [] if isinstance(p["id"], str)}  # `!extend` ids are dicts
     return ids
 
 
@@ -106,7 +112,7 @@ def test_page_ids_unique() -> None:
         ids: list[str] = []
         lv = data.get("lvgl")
         if isinstance(lv, dict):
-            ids += [p["id"] for p in lv.get("pages") or []]
+            ids += [p["id"] for p in lv.get("pages") or [] if isinstance(p["id"], str)]  # `!extend` ids are dicts
             ids += [p["id"] for _t, p in _widgets(lv) if isinstance(p.get("id"), str)]
         for wid in ids:
             rel = str(path.relative_to(REPO_ROOT))
@@ -116,17 +122,11 @@ def test_page_ids_unique() -> None:
 
 def test_setup_nav() -> None:
     home = _page(HOME, "home_page")
-    assert _show_targets(_by_id(home, "nav_btn_setup")) == ["setup_page"]
     setup = _page(SETUP, "setup_page")
     assert _show_targets(_by_id(setup, "setup_tile_network")) == ["network_page"]
     assert _show_targets(_by_id(setup, "setup_tile_display")) == ["touch_test_page"]
     network = _page(NETWORK, "network_page")
     assert _show_targets(_by_id(network, "network_btn_back")) == ["setup_page"]
-    for name in NAV_NAMES:
-        assert _show_targets(_by_id(setup, f"setup_nav_btn_{name}")) == _show_targets(_by_id(home, f"nav_btn_{name}")) or (
-            name == "setup"
-        )
-    assert _show_targets(_by_id(setup, "setup_nav_btn_setup")) == ["setup_page"]
 
 
 def test_confirm_dialog_shape() -> None:
@@ -243,7 +243,8 @@ def test_device_only_packages_not_in_sim() -> None:
 
 
 TOKENIZED_TEXT_FILES = [SETUP, NETWORK, DIALOG, WIFI, BOOT, "packages/greenhouse/lvgl_valve_test.yaml",
-                        "packages/lvgl/screensaver.yaml", "packages/greenhouse/screensaver_status.yaml"]
+                        "packages/lvgl/screensaver.yaml", "packages/greenhouse/screensaver_status.yaml",
+                        "packages/lvgl/page_schedules.yaml", "packages/greenhouse/lvgl_schedules.yaml"]
 
 
 @pytest.mark.parametrize("rel", TOKENIZED_TEXT_FILES)
@@ -260,6 +261,11 @@ def test_screen_text_is_ascii(rel: str) -> None:
     assert not bad, f"{rel}: non-ASCII characters {bad!r}"
 
 
+def _button_glyphs() -> set[str]:
+    fonts = {f["id"]: f for f in _load("packages/lvgl/base.yaml")["font"]}
+    return set(fonts["gp_font_button_md"]["glyphs"])
+
+
 @pytest.mark.parametrize("rel", [GH_PAGE, NETWORK])
 def test_confirm_call_texts_are_ascii(rel: str) -> None:
     calls = [d["script.execute"] for d in _walk(_load(rel)) if isinstance(d.get("script.execute"), dict)
@@ -269,6 +275,8 @@ def test_confirm_call_texts_are_ascii(rel: str) -> None:
         for key in ("title", "body", "action"):
             assert call[key].isascii() and call[key].isprintable(), f"{rel}: non-ASCII {key}: {call[key]!r}"
             assert len(call[key]) > 0
+        glyphs = _button_glyphs()
+        assert set(call["action"]) <= glyphs, f"{rel}: action {call['action']!r} has glyphs missing from gp_font_button_md"
 
 
 
@@ -313,3 +321,212 @@ def test_boot_wifi_device_only() -> None:
     assert sim["substitutions"]["boot_offline_timeout"] == "3s"
     dev = load_esphome_yaml(REPO_ROOT / "garden-pilot.yaml")
     assert "boot_offline_timeout" not in dev["substitutions"]
+
+
+# --- Header clock (task 029): one shared poller in base.yaml, one label.update per page ----------------------------
+BASE = "packages/lvgl/base.yaml"
+CLOCK_PAGES = {
+    "home": HOME,
+    "setup": SETUP,
+    "network": NETWORK,
+    "valve_test": "packages/greenhouse/lvgl_valve_test.yaml",
+    "sim_board": "packages/sim/page_board.yaml",
+    "sched": "packages/lvgl/page_schedules.yaml",
+    "gh_sed": "packages/greenhouse/lvgl_schedules.yaml",
+}
+
+
+def _ids_of(node: object) -> list[str]:
+    return [p["id"] for _t, p in _widgets(node) if isinstance(p.get("id"), str)]
+
+
+@pytest.mark.parametrize("name", CLOCK_PAGES)
+def test_header_clock(name: str) -> None:
+    rel = CLOCK_PAGES[name]
+    data = _load(rel)
+    wid = f"{name}_clock_label"
+    assert _ids_of(data["lvgl"]).count(wid) == 1, f"{rel}: exactly one {wid}"
+    label = _by_id(data["lvgl"], wid)
+    assert label["align"] == "TOP_RIGHT" and label["y"] == 4
+    assert label["x"] == (-6 if name == "home" else -8)
+    assert label["text_font"] == "montserrat_12" and label["text"] == "--:--"
+    assert label["text_color"] == 0xE5E2E1
+    scripts = [s for s in data["script"] if isinstance(s.get("id"), dict) and s["id"]["value"] == "gp_header_clock_update"]
+    assert len(scripts) == 1 and scripts[0]["id"]["__tag__"] == "extend"
+    steps = scripts[0]["then"]
+    updates = [d["lvgl.label.update"] for d in _walk(steps) if "lvgl.label.update" in d]
+    assert len(steps) == 1 and len(updates) == 1
+    assert updates[0]["id"] == wid
+    assert "id(gp_header_clock_text)" in updates[0]["text"]["value"]
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    code = _strip_comments(text)
+    assert not re.search(r"time_format|strftime|on_time_sync", code), rel
+
+
+def test_header_clock_poller() -> None:
+    data = _load(BASE)
+    glob = {g["id"]: g for g in data["globals"]}["gp_header_clock_text"]
+    assert glob["type"] == "std::string" and glob["restore_value"] is False
+    script = {s["id"]: s for s in data["script"]}["gp_header_clock_update"]
+    assert script["mode"] == "restart"
+    assert len([d for d in _walk(script["then"]) if "lambda" in d]) == 1
+    intervals = [i for i in data["interval"] if {"script.execute": "gp_header_clock_update"} in i["then"]]
+    assert len(intervals) == 1 and int(str(intervals[0]["interval"]).rstrip("s")) <= 5
+    for path in _yaml_files("packages"):
+        code = _strip_comments(path.read_text(encoding="utf-8"))
+        if "gp_header_clock_text" in code and "strftime" in code:
+            assert str(path.relative_to(REPO_ROOT)).replace("\\", "/") == BASE
+    assert "strftime" in _strip_comments((REPO_ROOT / BASE).read_text(encoding="utf-8"))
+    assert "time" not in _load(HOME), "page_home.yaml has no time: block"
+
+
+def test_untouched_legacy_pages() -> None:
+    for rel in (GH_PAGE, "packages/lvgl/page_lawn.yaml", "packages/lvgl/page_touch_test.yaml"):
+        assert "text_font" not in (REPO_ROOT / rel).read_text(encoding="utf-8"), rel
+
+
+NAV_BAR = "packages/lvgl/nav_bar.yaml"
+NAV_TARGETS = {  # button -> substitution that holds its page id (defaults in base.yaml)
+    "dash": ("gp_nav_dash_page", "home_page"),
+    "zones": ("gp_nav_zones_page", "greenhouse_page"),
+    "water": ("gp_nav_schedule_page", "lawn_page"),
+    "setup": ("gp_nav_setup_page", "setup_page"),
+}
+NAV_USERS = [(HOME, "home_page", "home_", "dash"), (SETUP, "setup_page", "setup_", "setup")]
+
+
+def _render_nav(prefix: str, active: str) -> dict:
+    """The component as one widget dict, with the include vars applied (a minimal copy of ESPHome's substitution)."""
+    import jinja2
+    import yaml
+
+    text = (REPO_ROOT / NAV_BAR).read_text(encoding="utf-8")
+    env = {"p": prefix, "active": active}
+
+    def sub(m: re.Match) -> str:
+        expr = m.group(1).strip()
+        if expr.startswith("gp_nav_"):
+            return m.group(0)  # a page target: stays a substitution
+        return str(jinja2.Environment().compile_expression(expr)(**env))
+
+    return yaml.safe_load(re.sub(r"\$\{([^}]*)\}", sub, text))
+
+
+def _abs_nav_buttons(nav: dict) -> dict[str, dict]:
+    """name -> {x, y, w, h, props} in screen coordinates (children start inside the 1 px top border)."""
+    obj = nav["obj"]
+    border = obj["border_width"] if "TOP" in obj["border_side"] else 0
+    out = {}
+    for item in obj["widgets"]:
+        props = item["button"]
+        name = props["id"].rsplit("nav_btn_", 1)[1]
+        out[name] = {
+            "x": obj["x"] + props["x"], "y": obj["y"] + border + props["y"],
+            "w": props["width"], "h": props["height"], "props": props,
+        }
+    return out
+
+
+@pytest.mark.parametrize("active", NAV_NAMES)
+def test_nav_matches_design_navbar(active: str) -> None:
+    """Design NavBar: band y 201 h 39 `status` + 1 px `border` top; buttons y 204 h 32; icon 12 px, gap 2, label."""
+    nav = _render_nav("t_", active)
+    band = nav["obj"]
+    assert (band["x"], band["y"], band["width"], band["height"]) == (0, 201, 320, 39)
+    assert (band["bg_color"], band["border_width"], band["border_color"]) == (0x201F1F, 1, 0x3F4A3C)
+    assert band["border_side"] == ["TOP"] and band["pad_all"] == 0
+    buttons = _abs_nav_buttons(nav)
+    assert list(buttons) == NAV_NAMES
+    for name, (x, width, label, icon_id, _icon_file) in NAV_SPEC.items():
+        b = buttons[name]
+        btn = b["props"]
+        assert (b["x"], b["y"], b["w"], b["h"]) == (x, 204, width, 32)
+        assert btn["id"] == f"t_nav_btn_{name}"
+        on = name == active
+        assert btn["bg_color"] == (0x4CAF50 if on else 0x201F1F)
+        ink = 0x003C0B if on else 0xBECAB9
+        image = next(p for t, p in _widgets(btn) if t == "image")
+        assert image["src"] == icon_id
+        assert (image["align"], image["y"]) == ("TOP_MID", 4)  # 12 px icon, centre y 10
+        assert image["image_recolor"] == ink and image["image_recolor_opa"] == "COVER"
+        text = next(p for t, p in _widgets(btn) if t == "label")
+        assert (text["text"], text["text_color"], text["text_font"]) == (label, ink, "gp_font_button_sm")
+        assert (text["align"], text["y"], text["text_align"]) == ("TOP_MID", 19, "CENTER")  # ~10 px line: centre y 24
+        assert not any(ord(c) >= 0xE000 for c in text["text"])
+
+
+@pytest.mark.parametrize("active", NAV_NAMES)
+def test_nav_children_stay_inside_buttons(active: str) -> None:
+    """Zero padding, centred column; no child reaches past its button, no button past x 320."""
+    buttons = _abs_nav_buttons(_render_nav("t_", active))
+    ICON, LINE = 12, 10  # icon size; line height of the 8 px label font (upper bound)
+    for name, b in buttons.items():
+        props = b["props"]
+        assert props["pad_all"] == 0 and props["border_width"] == 0 and props["shadow_width"] == 0, name
+        assert b["x"] >= 0 and b["x"] + b["w"] <= 320, f"{name} reaches past the screen edge"
+        image = next(p for t, p in _widgets(props) if t == "image")
+        text = next(p for t, p in _widgets(props) if t == "label")
+        label_w = text.get("width", 0)
+        assert 0 < label_w <= b["w"], f"{name}: label wider than its button"
+        # TOP_MID children are centred in the button: left edge = (w - child w) / 2 >= 0, so right edge <= w
+        assert (b["w"] - ICON) / 2 >= 0 and (b["w"] - label_w) / 2 >= 0
+        assert image["y"] + ICON <= b["h"] and text["y"] + LINE <= b["h"], f"{name}: child below the button"
+        assert abs((image["y"] + ICON / 2) - 10) <= 1 and abs((text["y"] + LINE / 2) - 24) <= 1
+        assert image["y"] + ICON <= text["y"], "icon above label"
+
+
+def test_nav_targets_are_substitutions_with_defaults() -> None:
+    nav = _render_nav("t_", "dash")
+    subs = _load(BASE)["substitutions"]
+    for item in nav["obj"]["widgets"]:
+        props = item["button"]
+        name = props["id"].rsplit("nav_btn_", 1)[1]
+        sub, default = NAV_TARGETS[name]
+        assert props["on_click"] == [{"lvgl.page.show": "${" + sub + "}"}]
+        assert subs[sub] == default, f"{sub} default"
+
+
+@pytest.mark.parametrize(("rel", "page_id", "prefix", "active"), NAV_USERS)
+def test_nav_pages_include_the_component(rel: str, page_id: str, prefix: str, active: str) -> None:
+    page = _page(rel, page_id)
+    incs = [w["__tag__"] and w for w in page["widgets"] if isinstance(w, dict) and w.get("__tag__") == "include"]
+    nav = [i for i in incs if i["value"].get("file") == "nav_bar.yaml"]
+    assert len(nav) == 1, f"{rel} must include nav_bar.yaml exactly once"
+    assert nav[0]["value"]["vars"] == {"p": prefix, "active": active}
+
+
+def test_no_page_declares_its_own_nav() -> None:
+    """Nav buttons exist only in the component: no other file has nav_btn_* ids or a gp_icon_* image widget, and no
+    page navigates to a nav target by a hard-coded id from a button of the 201..240 band."""
+    for path in _yaml_files("packages"):
+        rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+        if rel == NAV_BAR:
+            continue
+        text = _strip_comments(path.read_text(encoding="utf-8"))
+        assert "nav_btn_" not in text.replace("nav_btn_sim", ""), f"{rel}: nav buttons belong in {NAV_BAR}"
+        assert "src: gp_icon_" not in text, f"{rel}: nav icons belong in {NAV_BAR}"
+        data = load_esphome_yaml(path)
+        if isinstance(data, dict) and isinstance(data.get("lvgl"), dict):
+            for _t, props in _widgets(data["lvgl"]):
+                if props.get("y") == 201 and props.get("width") == 320:
+                    raise AssertionError(f"{rel}: a nav band outside {NAV_BAR}")
+    assert "lawn_page" not in (REPO_ROOT / HOME).read_text(encoding="utf-8")
+    assert "lawn_page" not in (REPO_ROOT / SETUP).read_text(encoding="utf-8")
+    nav_text = (REPO_ROOT / NAV_BAR).read_text(encoding="utf-8")
+    assert nav_text.count("lvgl.page.show") == 4 and "lawn_page" not in nav_text
+
+
+def test_nav_icons_are_vendored_images() -> None:
+    from PIL import Image
+
+    images = {i["id"]: i for i in _load("packages/lvgl/base.yaml")["image"]}
+    assert set(images) == {v[3] for v in NAV_SPEC.values()}
+    for _x, _w, _label, icon_id, icon_file in NAV_SPEC.values():
+        item = images[icon_id]
+        assert item["file"] == f"${{gp_root}}/packages/lvgl/icons/{icon_file}.png"
+        assert item["type"] == "RGB565" and item["transparency"] == "alpha_channel"
+        png = REPO_ROOT / "packages/lvgl/icons" / f"{icon_file}.png"
+        with Image.open(png) as im:
+            assert im.size == (12, 12) and im.mode == "RGBA"
+            assert im.getchannel("A").getbbox() is not None, "empty icon"
+        assert (REPO_ROOT / "design/icons" / f"{icon_file}.svg").is_file(), "source SVG"

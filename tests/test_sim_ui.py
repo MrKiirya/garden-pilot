@@ -24,6 +24,17 @@ _spec.loader.exec_module(sim_ui)
 
 # Home bottom navigation button `nav_btn_setup` in packages/lvgl/page_home.yaml (x, y, width, height).
 SETUP_BTN = (244, 204, 72, 32)
+# Setup page nav button `setup_nav_btn_water` (packages/lvgl/page_setup.yaml): opens the Schedules page.
+WATER_BTN = (164, 204, 76, 32)
+# Schedule page (task 030): rows 1 and 4 of the greenhouse list (packages/greenhouse/lvgl_schedules.yaml); a tap on
+# row 1 opens the editor, CANCEL (and SAVE) are its bottom buttons.
+SCHED_ROW1 = (8, 44, 304, 34)
+SCHED_ROW4 = (8, 158, 304, 34)
+EDIT_CANCEL = (8, 210, 150, 26)
+EDIT_SAVE = (162, 210, 150, 26)
+GREEN_FILL = (0x4C, 0xAF, 0x50)
+CARD_BG = (0x1C, 0x1B, 0x1B)
+PAGE_BG = (0x13, 0x13, 0x13)
 
 
 # ---------------------------------------------------------------------------------------------- unit
@@ -140,26 +151,47 @@ def test_outputs_stay_in_esphome_dir() -> None:
 @pytest.mark.unit
 def test_tap_target_is_the_setup_button() -> None:
     # Keeps the host scenario honest: the button must still be where the test taps.
-    home = load_esphome_yaml(REPO_ROOT / "packages" / "lvgl" / "page_home.yaml")
+    nav = load_esphome_yaml(REPO_ROOT / "packages" / "lvgl" / "nav_bar.yaml")  # the shared nav: band at y 201, 1 px border
+    band = nav["obj"]
+    button = next(w["button"] for w in band["widgets"] if w["button"]["id"] == "${p}nav_btn_setup")
+    button = {
+        "x": band["x"] + button["x"], "y": band["y"] + band["border_width"] + button["y"],
+        "width": button["width"], "height": button["height"],
+    }
+    assert (int(button["x"]), int(button["y"]), int(button["width"]), int(button["height"])) == SETUP_BTN
 
-    def find(node: object) -> dict | None:
+
+@pytest.mark.unit
+def test_schedule_tap_targets_match_yaml() -> None:
+    """The scenario taps SCHEDULE on the Setup page, a list row and CANCEL, and inspects the pixels of rows 1 and 4."""
+
+    def geometry(node: object, wid: str) -> tuple[int, int, int, int] | None:
         if isinstance(node, dict):
-            if node.get("id") == "nav_btn_setup":
-                return node
+            if node.get("id") == wid and "width" in node:
+                return (int(node["x"]), int(node["y"]), int(node["width"]), int(node["height"]))
             for value in node.values():
-                found = find(value)
+                found = geometry(value, wid)
                 if found:
                     return found
         elif isinstance(node, list):
             for value in node:
-                found = find(value)
+                found = geometry(value, wid)
                 if found:
                     return found
         return None
 
-    button = find(home)
-    assert button, "nav_btn_setup not found in page_home.yaml: update SETUP_BTN in tests/test_sim_ui.py"
-    assert (int(button["x"]), int(button["y"]), int(button["width"]), int(button["height"])) == SETUP_BTN
+    nav = load_esphome_yaml(REPO_ROOT / "packages" / "lvgl" / "nav_bar.yaml")  # shared nav, children inside the border
+    band = nav["obj"]
+    x, y, w, h = geometry(nav, "${p}nav_btn_water")
+    assert (band["x"] + x, band["y"] + band["border_width"] + y, w, h) == WATER_BTN
+    setup = load_esphome_yaml(REPO_ROOT / "packages" / "lvgl" / "page_setup.yaml")
+    from test_screens_schedules import _rows_data  # the rows and buttons come from small includes with vars
+
+    rows = _rows_data()
+    assert geometry(rows, "gh_sched_row1") == SCHED_ROW1
+    assert geometry(rows, "gh_sched_row4") == SCHED_ROW4
+    assert geometry(rows, "gh_sed_btn_cancel") == EDIT_CANCEL
+    assert geometry(rows, "gh_sed_btn_save") == EDIT_SAVE
 
 
 @pytest.mark.unit
@@ -254,6 +286,50 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         diff = ImageChops.difference(home_img, setup_img).convert("L").point(lambda v: 255 if v else 0)
         changed = diff.histogram()[255] / (320 * 240)
         assert changed > 0.02, f"only {changed:.1%} of pixels changed after tapping SETUP"
+
+        # Setup -> SCHEDULE: the list shows the four slot rows (all OFF)
+        wx, wy, ww, wh = WATER_BTN
+        tapped = _sim_ui("tap", str(wx + ww // 2), str(wy + wh // 2), env=env)
+        assert tapped.returncode == 0, tapped.stderr
+        time.sleep(1.5)  # the rows are drawn by the 1 s poller
+        shot = _sim_ui("shot", "schedules", env=env)
+        assert shot.returncode == 0, shot.stderr
+        sched_img = Image.open(REPO_ROOT / ".esphome" / "shots" / "schedules.png").convert("RGB")
+        assert not sim_ui.looks_blank(sched_img)
+        diff = ImageChops.difference(setup_img, sched_img).convert("L").point(lambda v: 255 if v else 0)
+        assert diff.histogram()[255] / (320 * 240) > 0.02, "the Schedule page looks like the Setup page"
+
+        def near(pixel: tuple[int, ...], want: tuple[int, int, int]) -> bool:
+            return all(abs(a - b) <= 8 for a, b in zip(pixel, want))
+
+        for rx, ry, rw, rh in (SCHED_ROW1, SCHED_ROW4):
+            assert near(sched_img.getpixel((rx + rw // 2, ry + rh - 4)), CARD_BG), f"slot row at y={ry} is not drawn"
+
+        # row 1 -> the editor (SAVE is green-fill: a slot that is off can always be saved)
+        rx, ry, rw, rh = SCHED_ROW1
+        tapped = _sim_ui("tap", str(rx + rw // 2), str(ry + rh // 2), env=env)
+        assert tapped.returncode == 0, tapped.stderr
+        time.sleep(0.5)
+        shot = _sim_ui("shot", "schedule_edit", env=env)
+        assert shot.returncode == 0, shot.stderr
+        edit_img = Image.open(REPO_ROOT / ".esphome" / "shots" / "schedule_edit.png").convert("RGB")
+        diff = ImageChops.difference(sched_img, edit_img).convert("L").point(lambda v: 255 if v else 0)
+        assert diff.histogram()[255] / (320 * 240) > 0.02, "the editor looks like the list"
+        sx, sy, sw, sh = EDIT_SAVE
+        assert near(edit_img.getpixel((sx + 8, sy + sh // 2)), GREEN_FILL), "SAVE is not green-fill"
+
+        # CANCEL -> back on the list
+        cx, cy, cw, ch = EDIT_CANCEL
+        tapped = _sim_ui("tap", str(cx + cw // 2), str(cy + ch // 2), env=env)
+        assert tapped.returncode == 0, tapped.stderr
+        time.sleep(0.5)
+        shot = _sim_ui("shot", "schedule_back", env=env)
+        assert shot.returncode == 0, shot.stderr
+        back_img = Image.open(REPO_ROOT / ".esphome" / "shots" / "schedule_back.png").convert("RGB")
+        assert near(back_img.getpixel((rx + rw // 2, ry + rh - 4)), CARD_BG), "CANCEL did not return to the list"
+        # probe the right end of SAVE: on the list that spot is the inactive SETUP nav button (the left end of SAVE
+        # overlaps the active, green SCHEDULE nav button)
+        assert not near(back_img.getpixel((sx + sw - 30, sy + sh // 2)), GREEN_FILL), "still on the editor after CANCEL"
     finally:
         _sim_ui("stop", env=env)
     assert pids, "start did not record any pids"
