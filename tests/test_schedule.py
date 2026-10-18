@@ -104,7 +104,7 @@ def test_schedule_package_shape() -> None:
     for node in _walk(hub["on_run"]):
         for value in node.values():
             if isinstance(value, dict) and value.get("__tag__") == "lambda":
-                assert value["value"] in ("return zone_mask;", "return multiplier_pct;"), value
+                assert value["value"] in ("return zone_mask;", "return multiplier_pct;", "return slot;"), value
     # entities
     master, = config["switch"]
     assert master["id"] == "gh_schedules_on" and master["name"] == "Greenhouse schedules"
@@ -141,13 +141,17 @@ def test_entry_includes_schedule() -> None:
         keys = list(packages)
         assert packages["gh_schedule"]["value"] == SCHEDULE_PKG
         slots = [k for k in keys if k.startswith("gh_schedule_slot_")]
-        assert slots == ["gh_schedule_slot_1", "gh_schedule_slot_2"], entry
+        assert slots == [f"gh_schedule_slot_{n}" for n in range(1, 5)], entry
         numbers = [packages[k]["value"]["vars"]["slot"] for k in slots]
-        assert numbers == ["1", "2"] and len(set(numbers)) == len(numbers)
+        assert numbers == ["1", "2", "3", "4"] and len(set(numbers)) == len(numbers)
+        starts = [packages[k]["value"]["vars"]["start"] for k in slots]
+        assert starts == ["06:00:00", "07:00:00", "18:00:00", "19:00:00"], entry
         for k in slots:
             assert packages[k]["value"]["file"] == SLOT_PKG
         # after the gp_* layer, before the optional touch overlay; the slots follow the hub in order
-        assert keys.index("gh_gp") < keys.index("gh_schedule") < keys.index("gh_schedule_slot_1") < keys.index("gh_schedule_slot_2")
+        assert keys.index("gh_gp") < keys.index("gh_schedule") < keys.index("gh_schedule_slot_1")
+        assert keys.index(slots[-1]) < keys.index("gh_lvgl_schedules"), "the screens come after the last slot"
+        assert keys.index("lvgl_page_lawn") < keys.index("lvgl_page_schedules"), entry
         assert keys.index("gh_valve_test") < keys.index("gh_schedule")
 
 
@@ -196,7 +200,7 @@ def test_pure_core_and_licences() -> None:
 @pytest.mark.unit
 def test_ui_texts_are_ascii() -> None:
     """The next-run text goes to 26 px LVGL labels: built-in fonts have ASCII only."""
-    for name in ("garden_schedule.h", "schedule_core.h"):
+    for name in ("garden_schedule.h", "schedule_core.h", "schedule_format.h", "schedule_ui.h"):
         text = (HUB / name).read_text(encoding="utf-8")
         for literal in re.findall(r'"([^"]*)"', text):
             assert literal.isascii(), (name, literal)
@@ -230,7 +234,7 @@ def test_schedule_scenario_config_shape() -> None:
 def test_schedule_codegen(version: str, tmp_path: Path) -> None:
     main_cpp = _generate(version, tmp_path)
     assert len(re.findall(r"garden_schedule::GardenSchedule\(", main_cpp)) == 1
-    assert len(re.findall(r"gh_schedule->add_slot\(", main_cpp)) == 2
+    assert len(re.findall(r"gh_schedule->add_slot\(", main_cpp)) == 4
     assert "garden_schedule::RunTrigger(" in main_cpp
     assert "gp::EnqueueZonesAction" in main_cpp and "gp::InhibitedCondition" in main_cpp
     assert "garden_schedule::ZoneDoneAction" in main_cpp

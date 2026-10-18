@@ -1,0 +1,619 @@
+# Greenhouse schedule screens (design D08 list + D09 editor), the "Schedule" page of the WATER nav slot.
+# Needs packages/lvgl/page_schedules.yaml (the page this extends) and packages/greenhouse/schedule.yaml (hub
+# gh_schedule)
+# plus its slots; also writes the Home "NEXT" label (gh_home_next_label) from the schedule.
+#
+# List: one card per slot (the hub's first 4 slots in include order; slots 5-8 are Home Assistant only): start time,
+# group +
+# beds, days + run time, a coloured status word and a chevron. A tap opens the editor `gh_sched_edit_page` (Schedule N):
+# ON switch, hour and minute with -/+, seven day buttons, the bed buttons of the group, the RUN TIME factor, CANCEL
+# / SAVE.
+# The editor edits a RAM draft in the hub; only SAVE writes the changed slot entities (the ones Home Assistant
+# edits), so a
+# tap never writes flash. LVGL is touched only by the click handlers and by a 1 s poller guarded by the hub's
+# `changed_since` (never from a hub trigger). The texts come from the pure helpers of the schedule component
+# (components/garden_schedule/schedule_ui.h), so every lambda is one line.
+#
+# One row, one toggle button and their refresh scripts are the small includes lvgl_schedules_row*.yaml /
+# lvgl_schedules_toggle*.yaml (an `!include` with vars works as an item of `widgets:` and of `script:`).
+# The zone run durations of the captions are read from the gp read model once at boot (the hub never depends on gp).
+
+esphome:
+  on_boot:
+    - priority: 600
+      then:
+        - lambda: "id(gh_schedule)->set_zone_seconds([](size_t z) { return id(gp_greenhouse)->zone(z).run_duration; });"
+
+lvgl:
+  pages:
+    - id: !extend schedules_page
+      widgets:
+        # summary line: the next run of any slot and the time to it
+        - label:
+            x: 8
+            y: 30  # same baseline as the 12 px labels (27 + 15 - 3 = 30 + 11 - 2)
+            text: "NEXT"
+            text_font: montserrat_10
+            text_color: 0x78dc77
+        - label:
+            id: gh_sched_sum_label
+            x: 46
+            y: 27
+            width: 164
+            long_mode: DOT
+            text: ""
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            id: gh_sched_sum_in
+            x: 212
+            y: 27
+            width: 100
+            text_align: RIGHT
+            text: ""
+            text_font: montserrat_12
+            text_color: 0x78dc77
+        - !include
+          file: lvgl_schedules_row.yaml
+          vars: {n: "1", i: "0", y: "44"}
+        - !include
+          file: lvgl_schedules_row.yaml
+          vars: {n: "2", i: "1", y: "82"}
+        - !include
+          file: lvgl_schedules_row.yaml
+          vars: {n: "3", i: "2", y: "120"}
+        - !include
+          file: lvgl_schedules_row.yaml
+          vars: {n: "4", i: "3", y: "158"}
+    - id: gh_sched_edit_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
+      widgets:
+        - label:
+            id: gh_sed_title
+            x: 8
+            y: 4
+            text: "Schedule"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            id: gh_sed_clock_label
+            align: TOP_RIGHT
+            x: -8
+            y: 4
+            text: "--:--"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        # ON / OFF: the label is only drawn; the whole 56 x 22 area (x 196..252) is the tap target, the pill is only
+        # drawn
+        - label:
+            id: gh_sed_on_label
+            x: 200
+            y: 6
+            text: "OFF"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - button:
+            id: gh_sed_btn_enable
+            x: 196
+            y: 0
+            width: 56
+            height: 22
+            bg_opa: TRANSP
+            border_width: 0
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - lambda: "id(gh_schedule)->draft().toggle_enabled();"
+              - script.execute: gh_sed_refresh
+            widgets:
+              - switch:
+                  id: gh_sed_switch
+                  align: CENTER
+                  width: 28
+                  height: 14
+                  clickable: false
+                  bg_color: 0x353534
+                  bg_opa: COVER
+                  border_width: 0
+                  radius: 7
+                  indicator:
+                    bg_opa: TRANSP
+                    checked:
+                      bg_color: 0x4caf50
+                      bg_opa: COVER
+                  knob:
+                    bg_color: 0xe5e2e1
+                    bg_opa: COVER
+        - label:
+            x: 44
+            y: 28
+            width: 68
+            text_align: CENTER
+            text: "HOUR"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - label:
+            x: 208
+            y: 28
+            width: 68
+            text_align: CENTER
+            text: "MINUTE"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - button:
+            id: gh_sed_btn_hour_dec
+            x: 8
+            y: 40
+            width: 36
+            height: 26
+            bg_color: 0x131313
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - lambda: "id(gh_schedule)->draft().hour_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().hour_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().hour_down();"
+              - script.execute: gh_sed_refresh
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "-"
+                  text_font: gp_font_button_md
+                  text_color: 0xbecab9
+        - label:
+            id: gh_sed_hour_label
+            x: 44
+            y: 46
+            width: 68
+            text_align: CENTER
+            text: "00"
+            text_font: montserrat_16
+            text_color: 0xe5e2e1
+        - button:
+            id: gh_sed_btn_hour_inc
+            x: 112
+            y: 40
+            width: 36
+            height: 26
+            bg_color: 0x131313
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - lambda: "id(gh_schedule)->draft().hour_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().hour_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().hour_up();"
+              - script.execute: gh_sed_refresh
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "+"
+                  text_font: gp_font_button_md
+                  text_color: 0xbecab9
+        - label:
+            x: 148
+            y: 46
+            width: 24
+            text_align: CENTER
+            text: ":"
+            text_font: montserrat_16
+            text_color: 0xe5e2e1
+        - button:
+            id: gh_sed_btn_min_dec
+            x: 172
+            y: 40
+            width: 36
+            height: 26
+            bg_color: 0x131313
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - lambda: "id(gh_schedule)->draft().minute_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().hold_begin(); id(gh_schedule)->draft().minute_hold_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().minute_hold_down();"
+              - script.execute: gh_sed_refresh
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "-"
+                  text_font: gp_font_button_md
+                  text_color: 0xbecab9
+        - label:
+            id: gh_sed_min_label
+            x: 208
+            y: 46
+            width: 68
+            text_align: CENTER
+            text: "00"
+            text_font: montserrat_16
+            text_color: 0xe5e2e1
+        - button:
+            id: gh_sed_btn_min_inc
+            x: 276
+            y: 40
+            width: 36
+            height: 26
+            bg_color: 0x131313
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - lambda: "id(gh_schedule)->draft().minute_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().hold_begin(); id(gh_schedule)->draft().minute_hold_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().minute_hold_up();"
+              - script.execute: gh_sed_refresh
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "+"
+                  text_font: gp_font_button_md
+                  text_color: 0xbecab9
+        - label:
+            x: 8
+            y: 74
+            text: "DAYS"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: day, n: "1", i: "0", x: "8", y: "86", w: "40", text: "M"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: day, n: "2", i: "1", x: "52", y: "86", w: "40", text: "T"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: day, n: "3", i: "2", x: "96", y: "86", w: "40", text: "W"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: day, n: "4", i: "3", x: "140", y: "86", w: "40", text: "T"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: day, n: "5", i: "4", x: "184", y: "86", w: "40", text: "F"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: day, n: "6", i: "5", x: "228", y: "86", w: "40", text: "S"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: day, n: "7", i: "6", x: "272", y: "86", w: "40", text: "S"}
+        - label:
+            x: 8
+            y: 114
+            text: "ZONES"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: zone, n: "1", i: "0", x: "8", y: "126", w: "56", text: "BED 1"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: zone, n: "2", i: "1", x: "70", y: "126", w: "56", text: "BED 2"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: zone, n: "3", i: "2", x: "132", y: "126", w: "56", text: "BED 3"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: zone, n: "4", i: "3", x: "194", y: "126", w: "56", text: "BED 4"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: zone, n: "5", i: "4", x: "256", y: "126", w: "56", text: "BED 5"}
+        - !include
+          file: lvgl_schedules_toggle.yaml
+          vars: {kind: zone, n: "6", i: "5", x: "8", y: "152", w: "56", text: "BED 6"}
+        - label:
+            x: 8
+            y: 185
+            text: "RUN TIME"
+            text_font: montserrat_10
+            text_color: 0xbecab9
+        - button:
+            id: gh_sed_btn_pct_dec
+            x: 168
+            y: 179
+            width: 36
+            height: 22
+            bg_color: 0x131313
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - lambda: "id(gh_schedule)->draft().pct_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().pct_down();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().pct_down();"
+              - script.execute: gh_sed_refresh
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "-"
+                  text_font: gp_font_button_sm
+                  text_color: 0xbecab9
+        - label:
+            id: gh_sed_pct_label
+            x: 204
+            y: 183
+            width: 72
+            text_align: CENTER
+            text: "x1.0"
+            text_font: montserrat_14
+            text_color: 0xe5e2e1
+        - button:
+            id: gh_sed_btn_pct_inc
+            x: 276
+            y: 179
+            width: 36
+            height: 22
+            bg_color: 0x131313
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - lambda: "id(gh_schedule)->draft().pct_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press:
+              - lambda: "id(gh_schedule)->draft().pct_up();"
+              - script.execute: gh_sed_refresh
+            on_long_press_repeat:
+              - lambda: "id(gh_schedule)->draft().pct_up();"
+              - script.execute: gh_sed_refresh
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "+"
+                  text_font: gp_font_button_sm
+                  text_color: 0xbecab9
+        - button:
+            id: gh_sed_btn_cancel
+            x: 8
+            y: 210
+            width: 150
+            height: 26
+            bg_color: 0x131313
+            bg_opa: COVER
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - lambda: "id(gh_schedule)->cancel_edit();"
+              - lvgl.page.show: schedules_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "CANCEL"
+                  text_font: gp_font_button_md
+                  text_color: 0xbecab9
+        - button:
+            id: gh_sed_btn_save
+            x: 162
+            y: 210
+            width: 150
+            height: 26
+            bg_color: 0x4caf50
+            bg_opa: COVER
+            border_width: 0
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - if:
+                  condition:
+                    lambda: "return id(gh_schedule)->can_save();"
+                  then:
+                    - lambda: "id(gh_schedule)->save_edit();"
+                    - script.execute: gh_sched_list_refresh
+                    - lvgl.page.show: schedules_page
+            widgets:
+              - label:
+                  id: gh_sed_save_label
+                  align: CENTER
+                  text: "SAVE"
+                  text_font: gp_font_button_md
+                  text_color: 0x003c0b
+
+globals:
+  # the hub's last drawn view of the list (0 = redraw at the next poll)
+  - id: gh_sched_seen
+    type: uint32_t
+    initial_value: "0"
+    restore_value: false
+
+script:
+  # the list: rows, the empty state and the Home "NEXT" label
+  - id: gh_sched_list_refresh
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: "return id(gh_schedule)->slot_count() == 0;"
+          then:
+            - lvgl.widget.show: sched_empty_label
+          else:
+            - lvgl.widget.hide: sched_empty_label
+      - lvgl.label.update:
+          id: gh_sched_sum_label
+          text: !lambda "return id(gh_schedule)->summary_label(\"Greenhouse\");"
+      - lvgl.label.update:
+          id: gh_sched_sum_in
+          text: !lambda "return id(gh_schedule)->summary_countdown();"
+      - lvgl.label.update:
+          id: gh_home_next_label
+          text: !lambda "return id(gh_schedule)->next_run_short();"
+      - script.execute: gh_sched_row1_refresh
+      - script.execute: gh_sched_row2_refresh
+      - script.execute: gh_sched_row3_refresh
+      - script.execute: gh_sched_row4_refresh
+  # the editor: every label and button state from the draft
+  - id: gh_sed_refresh
+    mode: restart
+    then:
+      - lvgl.label.update:
+          id: gh_sed_title
+          text: !lambda "return id(gh_schedule)->edit_title();"
+      - lvgl.label.update:
+          id: gh_sed_hour_label
+          text: !lambda "return id(gh_schedule)->draft().hour_text();"
+      - lvgl.label.update:
+          id: gh_sed_min_label
+          text: !lambda "return id(gh_schedule)->draft().minute_text();"
+      - lvgl.label.update:
+          id: gh_sed_pct_label
+          text: !lambda "return id(gh_schedule)->draft().factor_text();"
+      - lvgl.widget.update:
+          id: gh_sed_switch
+          state:
+            checked: !lambda "return id(gh_schedule)->draft().enabled;"
+      - lvgl.label.update:
+          id: gh_sed_on_label
+          text: !lambda "return std::string(id(gh_schedule)->draft().enabled ? \"ON\" : \"OFF\");"
+          text_color: !lambda "return id(gh_schedule)->draft().enabled
+            ? lv_color_hex(0x78dc77) : lv_color_hex(0xbecab9);"
+      - lvgl.widget.update:
+          id: gh_sed_btn_save
+          bg_color: !lambda "return id(gh_schedule)->can_save() ? lv_color_hex(0x4caf50) : lv_color_hex(0x353534);"
+      - lvgl.label.update:
+          id: gh_sed_save_label
+          text_color: !lambda "return id(gh_schedule)->can_save() ? lv_color_hex(0x003c0b) : lv_color_hex(0xbecab9);"
+      - script.execute: gh_sed_day1_refresh
+      - script.execute: gh_sed_day2_refresh
+      - script.execute: gh_sed_day3_refresh
+      - script.execute: gh_sed_day4_refresh
+      - script.execute: gh_sed_day5_refresh
+      - script.execute: gh_sed_day6_refresh
+      - script.execute: gh_sed_day7_refresh
+      - script.execute: gh_sed_zone1_refresh
+      - script.execute: gh_sed_zone2_refresh
+      - script.execute: gh_sed_zone3_refresh
+      - script.execute: gh_sed_zone4_refresh
+      - script.execute: gh_sed_zone5_refresh
+      - script.execute: gh_sed_zone6_refresh
+  - !include
+    file: lvgl_schedules_row_refresh.yaml
+    vars: {n: "1", i: "0"}
+  - !include
+    file: lvgl_schedules_row_refresh.yaml
+    vars: {n: "2", i: "1"}
+  - !include
+    file: lvgl_schedules_row_refresh.yaml
+    vars: {n: "3", i: "2"}
+  - !include
+    file: lvgl_schedules_row_refresh.yaml
+    vars: {n: "4", i: "3"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: day, n: "1", i: "0"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: day, n: "2", i: "1"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: day, n: "3", i: "2"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: day, n: "4", i: "3"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: day, n: "5", i: "4"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: day, n: "6", i: "5"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: day, n: "7", i: "6"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: zone, n: "1", i: "0"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: zone, n: "2", i: "1"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: zone, n: "3", i: "2"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: zone, n: "4", i: "3"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: zone, n: "5", i: "4"}
+  - !include
+    file: lvgl_schedules_toggle_refresh.yaml
+    vars: {kind: zone, n: "6", i: "5"}
+  # header clock of the editor page: one action on the shared poller (packages/lvgl/base.yaml)
+  - id: !extend gp_header_clock_update
+    then:
+      - lvgl.label.update:
+          id: gh_sed_clock_label
+          text: !lambda "return id(gp_header_clock_text);"
+
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: "return id(gh_schedule)->changed_since(id(gh_sched_seen));"
+          then:
+            - script.execute: gh_sched_list_refresh

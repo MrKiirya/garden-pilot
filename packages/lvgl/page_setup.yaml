@@ -18,7 +18,15 @@ lvgl:
             x: 8
             y: 4
             text: "Setup"
-            text_font: montserrat_10
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            id: setup_clock_label
+            align: TOP_RIGHT
+            x: -8
+            y: 4
+            text: "--:--"
+            text_font: montserrat_12
             text_color: 0xe5e2e1
         - obj:
             x: 0
@@ -52,20 +60,20 @@ lvgl:
                   x: 6
                   y: 6
                   text: "NETWORK"
-                  text_font: montserrat_8
+                  text_font: montserrat_10
                   text_color: 0xbecab9
               - label:
                   id: setup_network_value
                   x: 6
                   y: 20
                   text: "HA offline"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xbecab9
               - label:
                   x: 132
                   y: 20
                   text: "\uF054"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xbecab9
         - obj:
             id: setup_tile_time
@@ -87,14 +95,14 @@ lvgl:
                   x: 6
                   y: 6
                   text: "TIME"
-                  text_font: montserrat_8
+                  text_font: montserrat_10
                   text_color: 0xbecab9
               - label:
                   id: setup_time_value
                   x: 6
                   y: 20
                   text: "--:-- not set"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xbecab9
         - button:
             id: setup_tile_display
@@ -117,20 +125,20 @@ lvgl:
                   x: 6
                   y: 6
                   text: "DISPLAY"
-                  text_font: montserrat_8
+                  text_font: montserrat_10
                   text_color: 0xbecab9
               - label:
                   id: setup_display_value
                   x: 6
                   y: 20
                   text: "Touch test"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xe5e2e1
               - label:
                   x: 132
                   y: 20
                   text: "\uF054"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xbecab9
         - obj:
             id: setup_tile_cycle
@@ -152,14 +160,14 @@ lvgl:
                   x: 6
                   y: 6
                   text: "CYCLE"
-                  text_font: montserrat_8
+                  text_font: montserrat_10
                   text_color: 0xbecab9
               - label:
                   id: setup_cycle_value
                   x: 6
                   y: 20
                   text: "Soon"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xbecab9
         - obj:
             id: setup_tile_sensors
@@ -181,14 +189,14 @@ lvgl:
                   x: 6
                   y: 6
                   text: "SENSORS"
-                  text_font: montserrat_8
+                  text_font: montserrat_10
                   text_color: 0xbecab9
               - label:
                   id: setup_sensors_value
                   x: 6
                   y: 20
                   text: "Soon"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xbecab9
         # SERVICE opens the valve test (packages/greenhouse/lvgl_valve_test.yaml). That page is a greenhouse package,
         # so this tile needs it: fine while the greenhouse is the only zone group (both entry files include it).
@@ -213,136 +221,26 @@ lvgl:
                   x: 6
                   y: 6
                   text: "SERVICE"
-                  text_font: montserrat_8
+                  text_font: montserrat_10
                   text_color: 0xbecab9
               - label:
                   id: setup_service_value
                   x: 6
                   y: 20
                   text: "Valve test"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xffb870
               - label:
                   x: 132
                   y: 20
                   text: "\uF054"
-                  text_font: montserrat_10
+                  text_font: montserrat_12
                   text_color: 0xbecab9
 
-        # --- Bottom nav (same as Home, SETUP active) ---
-        - obj:
-            x: 0
-            y: 201
-            width: 320
-            height: 39
-            bg_color: 0x201f1f
-            bg_opa: COVER
-            border_width: 1
-            border_color: 0x3f4a3c
-            border_side: [TOP]
-            pad_all: 0
-            scrollable: false
-            clickable: false
-        - button:
-            id: setup_nav_btn_dash
-            x: 4
-            y: 204
-            width: 76
-            height: 32
-            bg_color: 0x201f1f
-            bg_opa: COVER
-            radius: 3
-            scrollable: false
-            widgets:
-              - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF015"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "DASH"
-                  text_font: montserrat_8
-                  text_color: 0xbecab9
-            on_click:
-              - lvgl.page.show: home_page
-        - button:
-            id: setup_nav_btn_zones
-            x: 84
-            y: 204
-            width: 76
-            height: 32
-            bg_color: 0x201f1f
-            bg_opa: COVER
-            radius: 3
-            scrollable: false
-            widgets:
-              - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF06C"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "ZONES"
-                  text_font: montserrat_8
-                  text_color: 0xbecab9
-            on_click:
-              - lvgl.page.show: greenhouse_page
-        - button:
-            id: setup_nav_btn_water
-            x: 164
-            y: 204
-            width: 76
-            height: 32
-            bg_color: 0x201f1f
-            bg_opa: COVER
-            radius: 3
-            scrollable: false
-            widgets:
-              - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF043"
-                  text_font: montserrat_14
-                  text_color: 0xbecab9
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "WATER"
-                  text_font: montserrat_8
-                  text_color: 0xbecab9
-            on_click:
-              - lvgl.page.show: lawn_page
-        - button:
-            id: setup_nav_btn_setup
-            x: 244
-            y: 204
-            width: 72
-            height: 32
-            bg_color: 0x4caf50
-            bg_opa: COVER
-            radius: 3
-            scrollable: false
-            widgets:
-              - label:
-                  align: CENTER
-                  y: -3
-                  text: "\uF013"
-                  text_font: montserrat_14
-                  text_color: 0x003c0b
-              - label:
-                  align: CENTER
-                  y: 9
-                  text: "SETUP"
-                  text_font: montserrat_8
-                  text_color: 0x003c0b
-            on_click:
-              - lvgl.page.show: setup_page
+        # --- Bottom nav: shared component (packages/lvgl/nav_bar.yaml) ---
+        - !include
+          file: nav_bar.yaml
+          vars: {p: setup_, active: setup}
 
 interval:
   - interval: 1s
@@ -366,12 +264,18 @@ interval:
           then:
             - lvgl.label.update:
                 id: setup_time_value
-                text:
-                  time_format: "%H:%M"
-                  time: ha_time
+                text: !lambda "return id(gp_header_clock_text);"
                 text_color: 0xe5e2e1
           else:
             - lvgl.label.update:
                 id: setup_time_value
                 text: "--:-- not set"
                 text_color: 0xbecab9
+
+# Header clock: one action on the shared poller (packages/lvgl/base.yaml).
+script:
+  - id: !extend gp_header_clock_update
+    then:
+      - lvgl.label.update:
+          id: setup_clock_label
+          text: !lambda "return id(gp_header_clock_text);"

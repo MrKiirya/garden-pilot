@@ -560,8 +560,22 @@ def test_substitutions_resolve() -> None:
         BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(BED_SOIL_FILE))),
         SIM_BED_SOIL: set().union(*(set(i["vars"]) for i in _entry_includes(SIM_BED_SOIL_FILE, SIM_ENTRY))),
         BED_SOIL_SKIP: set().union(*(set(p["vars"]) for e in EXAMPLES for p in _entry_packages(e).values() if p["path"] == BED_SOIL_SKIP_FILE)),
+        REPO_ROOT / "packages/lvgl/nav_bar.yaml": {"p", "active"},  # include vars of the shared nav
         SCHEDULE_SLOT: set().union(*(set(i["vars"]) for i in _entry_includes(SCHEDULE_SLOT_FILE))),
     }
+    # small includes with vars that a package file includes itself (the Schedule screens, task 030)
+    for owner in ("lvgl_schedules.yaml", "lvgl_history.yaml"):
+        stack = [load_esphome_yaml(REPO_ROOT / "packages" / "greenhouse" / owner)]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                value = node.get("value")
+                if node.get("__tag__") == "include" and isinstance(value, dict):
+                    target = Path(os.path.normpath(REPO_ROOT / "packages" / "greenhouse" / value["file"]))
+                    supplied.setdefault(target, set()).update(value.get("vars") or {})
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
     missing = set()
     for path in package_files:
         for name in re.findall(r"\$\{(\w+)\}", _strip_comments(path.read_text(encoding="utf-8"))):
@@ -739,7 +753,8 @@ def test_sim_entry_file() -> None:
     keys = list(files)
     required = ["core_api", "core_time_host", "display_sdl", "lvgl_base", "lvgl_page_boot", "lvgl_page_home", "gh_irrigation",
                 "gh_bed_1", "gh_bed_2", "gh_bed_3", "core_gp", "core_gp_api", "gh_gp", "gh_lvgl_page", "gh_gp_lvgl",
-                "core_diagnostics", "lvgl_dialog_confirm", "lvgl_page_setup", "lvgl_page_network", "gh_valve_test"]
+                "core_diagnostics", "lvgl_dialog_confirm", "lvgl_page_setup", "lvgl_page_network", "gh_valve_test",
+                "gh_lvgl_history"]
     assert set(required) <= set(keys), sorted(set(required) - set(keys))
     first_page = [k for k in keys if k.startswith("lvgl_page_")][0]
     assert first_page == "lvgl_page_boot"
@@ -907,7 +922,8 @@ def test_sim_board_page() -> None:
     top = data["lvgl"]["top_layer"]["widgets"]
     assert [w["button"]["id"] for w in top] == ["nav_btn_sim"]
     assert top[0]["button"]["on_click"] == [{"lvgl.page.show": "sim_board_page"}]
-    assert set(re.findall(r"text_font: (\w+)", code)) <= {"montserrat_8", "montserrat_10", "montserrat_12", "montserrat_14"}
+    assert set(re.findall(r"text_font: (\w+)", code)) <= {
+        "montserrat_10", "montserrat_12", "montserrat_14", "montserrat_16", "gp_font_button_md", "gp_font_button_sm"}
     for name in SIM_DISPLAY_FREE:  # no lvgl.* in any on_value of a number/switch (anywhere in packages/sim)
         for entity in (_sim_pkg(name).get("number") or []) + (_sim_pkg(name).get("switch") or []):
             assert "lvgl" not in _actions_text(entity.get("on_value")), entity["id"]

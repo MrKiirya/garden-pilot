@@ -1,0 +1,94 @@
+# Schedule page (design D08, WATER nav slot labelled SCHEDULE): the generic shell. Header (title, clock, a HISTORY
+# button that stays hidden until a domain history package shows it), an empty-state label and the bottom nav with
+# SCHEDULE active. The
+# rows and the editor page come from the schedule package of a domain, which extends this page:
+# packages/greenhouse/lvgl_schedules.yaml. Without it the page only says "No schedules configured".
+# Tokens only (design/tokens.json); ASCII only (built-in fonts). Widget ids are global, hence the sched_* prefix.
+# Header clock: one action on the shared poller (packages/lvgl/base.yaml). Needs lvgl_base (button fonts, nav icons).
+
+# This package owns the page, so it points the shared nav's SCHEDULE button at it (nav_bar.yaml).
+substitutions:
+  gp_nav_schedule_page: schedules_page
+
+lvgl:
+  pages:
+    - id: schedules_page
+      bg_color: 0x131313
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x3f4a3c
+      border_side: [TOP, BOTTOM, LEFT, RIGHT]
+      scrollable: false
+      widgets:
+        - label:
+            x: 8
+            y: 4
+            text: "Schedule"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        - label:
+            id: sched_clock_label
+            align: TOP_RIGHT
+            x: -8
+            y: 4
+            text: "--:--"
+            text_font: montserrat_12
+            text_color: 0xe5e2e1
+        # History: hidden here, shown by the page of a domain that has a history (packages/greenhouse/lvgl_history.yaml
+        # extends `schedules_page` and the no-op script `sched_history_open` below). Tappable 20 px (design 18 px).
+        - button:
+            id: sched_btn_history
+            x: 196
+            y: 1
+            width: 72
+            height: 20
+            hidden: true
+            bg_opa: TRANSP
+            border_width: 1
+            border_color: 0xbecab9
+            radius: 3
+            shadow_width: 0
+            pad_all: 0
+            scrollable: false
+            on_click:
+              - script.execute: sched_history_open
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "HISTORY"
+                  text_font: gp_font_button_sm
+                  text_color: 0xbecab9
+        - obj:
+            x: 0
+            y: 22
+            width: 320
+            height: 1
+            bg_color: 0x3f4a3c
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        - label:
+            id: sched_empty_label
+            align: CENTER
+            y: -10
+            text: "No schedules configured"
+            text_font: montserrat_12
+            text_color: 0xbecab9
+
+        # --- Bottom nav: shared component (packages/lvgl/nav_bar.yaml) ---
+        - !include
+          file: nav_bar.yaml
+          vars: {p: sched_, active: water}
+
+script:
+  # Opens the history of the domain; the domain's history package extends this no-op (pattern of touch_dot_overlay).
+  - id: sched_history_open
+    then:
+      - delay: 0ms
+  - id: !extend gp_header_clock_update
+    then:
+      - lvgl.label.update:
+          id: sched_clock_label
+          text: !lambda "return id(gp_header_clock_text);"

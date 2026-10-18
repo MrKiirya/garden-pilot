@@ -1,0 +1,155 @@
+# Shared bottom nav (design NavBar) - the ONE definition of the nav geometry, icons, labels and targets.
+# Included as a single widget in `widgets:` of every page that has a nav:
+#   - !include
+#       file: nav_bar.yaml            # path relative to the including file (packages/lvgl/)
+#       vars: {p: home_, active: dash}  # p = widget id prefix (ids are global), active = dash|zones|water|setup
+# Page targets are substitutions (defaults in packages/lvgl/base.yaml), so a package or an entry file retargets a button
+# without touching any page: gp_nav_dash_page, gp_nav_zones_page, gp_nav_schedule_page, gp_nav_setup_page.
+# Geometry: band x 0 y 201 w 320 h 39 (1 px top border, so children start 1 px lower); buttons absolute y 204, h 32,
+# x 4/84/164/244, w 76/76/76/72, zero padding, border and shadow. Each button is a flex COLUMN centred on every axis
+# (12 px icon above the label, pad_row 2): LVGL centres the content, nothing is placed by hand (no x/y/align).
+# Active: green-fill + on-green; inactive: status + text-dim.
+obj:
+  id: ${p}nav_bar
+  x: 0
+  y: 201
+  width: 320
+  height: 39
+  bg_color: 0x201f1f
+  bg_opa: COVER
+  border_width: 1
+  border_color: 0x3f4a3c
+  border_side: [TOP]
+  pad_all: 0
+  radius: 0
+  shadow_width: 0
+  scrollable: false
+  widgets:
+    - button:
+        id: ${p}nav_btn_dash
+        x: 4
+        y: 2
+        width: 76
+        height: 32
+        bg_color: ${ '0x4caf50' if active == 'dash' else '0x201f1f' }
+        bg_opa: COVER
+        radius: 3
+        border_width: 0
+        shadow_width: 0
+        pad_all: 0
+        scrollable: false
+        layout:
+          type: flex
+          flex_flow: COLUMN
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          flex_align_track: CENTER
+          pad_row: 2
+        widgets:
+          - image:
+              src: gp_icon_house
+              image_recolor: ${ '0x003c0b' if active == 'dash' else '0xbecab9' }
+              image_recolor_opa: COVER
+          - label:
+              text_align: CENTER
+              text: "DASH"
+              text_font: gp_font_button_sm
+              text_color: ${ '0x003c0b' if active == 'dash' else '0xbecab9' }
+        on_click:
+          - lvgl.page.show: ${gp_nav_dash_page}
+    - button:
+        id: ${p}nav_btn_zones
+        x: 84
+        y: 2
+        width: 76
+        height: 32
+        bg_color: ${ '0x4caf50' if active == 'zones' else '0x201f1f' }
+        bg_opa: COVER
+        radius: 3
+        border_width: 0
+        shadow_width: 0
+        pad_all: 0
+        scrollable: false
+        layout:
+          type: flex
+          flex_flow: COLUMN
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          flex_align_track: CENTER
+          pad_row: 2
+        widgets:
+          - image:
+              src: gp_icon_leaf
+              image_recolor: ${ '0x003c0b' if active == 'zones' else '0xbecab9' }
+              image_recolor_opa: COVER
+          - label:
+              text_align: CENTER
+              text: "ZONES"
+              text_font: gp_font_button_sm
+              text_color: ${ '0x003c0b' if active == 'zones' else '0xbecab9' }
+        on_click:
+          - lvgl.page.show: ${gp_nav_zones_page}
+    - button:
+        id: ${p}nav_btn_water
+        x: 164
+        y: 2
+        width: 76
+        height: 32
+        bg_color: ${ '0x4caf50' if active == 'water' else '0x201f1f' }
+        bg_opa: COVER
+        radius: 3
+        border_width: 0
+        shadow_width: 0
+        pad_all: 0
+        scrollable: false
+        layout:
+          type: flex
+          flex_flow: COLUMN
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          flex_align_track: CENTER
+          pad_row: 2
+        widgets:
+          - image:
+              src: gp_icon_drop
+              image_recolor: ${ '0x003c0b' if active == 'water' else '0xbecab9' }
+              image_recolor_opa: COVER
+          - label:
+              text_align: CENTER
+              text: "SCHEDULE"
+              text_font: gp_font_button_sm
+              text_color: ${ '0x003c0b' if active == 'water' else '0xbecab9' }
+        on_click:
+          - lvgl.page.show: ${gp_nav_schedule_page}
+    - button:
+        id: ${p}nav_btn_setup
+        x: 244
+        y: 2
+        width: 72
+        height: 32
+        bg_color: ${ '0x4caf50' if active == 'setup' else '0x201f1f' }
+        bg_opa: COVER
+        radius: 3
+        border_width: 0
+        shadow_width: 0
+        pad_all: 0
+        scrollable: false
+        layout:
+          type: flex
+          flex_flow: COLUMN
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          flex_align_track: CENTER
+          pad_row: 2
+        widgets:
+          - image:
+              src: gp_icon_gear
+              image_recolor: ${ '0x003c0b' if active == 'setup' else '0xbecab9' }
+              image_recolor_opa: COVER
+          - label:
+              text_align: CENTER
+              text: "SETUP"
+              text_font: gp_font_button_sm
+              text_color: ${ '0x003c0b' if active == 'setup' else '0xbecab9' }
+        on_click:
+          - lvgl.page.show: ${gp_nav_setup_page}

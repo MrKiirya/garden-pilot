@@ -1,0 +1,27 @@
+# Refresh script of one History row, included into `script:` with vars {p, n, group, page}: `group` is the gp group id,
+# `page` the global holding the 0-based page shown (see packages/lvgl/history_row.yaml for the widgets). Every text and
+# colour comes from the gp glue (history_cell / history_colour), so each lambda is one line. A row past the end of the
+# history gets empty texts (empty labels draw nothing).
+
+id: ${p}_hist_r${n}_refresh
+then:
+  - lvgl.label.update:
+      id: ${p}_hist_r${n}_date
+      text: !lambda "return id(${group})->history_cell(id(${page}), ${n} - 1, 0);"
+      text_color: !lambda "return lv_color_hex(id(${group})->history_colour(id(${page}), ${n} - 1, 0));"
+  - lvgl.label.update:
+      id: ${p}_hist_r${n}_time
+      text: !lambda "return id(${group})->history_cell(id(${page}), ${n} - 1, 1);"
+      text_color: !lambda "return lv_color_hex(id(${group})->history_colour(id(${page}), ${n} - 1, 1));"
+  - lvgl.label.update:
+      id: ${p}_hist_r${n}_zone
+      text: !lambda "return id(${group})->history_cell(id(${page}), ${n} - 1, 2);"
+      text_color: !lambda "return lv_color_hex(id(${group})->history_colour(id(${page}), ${n} - 1, 2));"
+  - lvgl.label.update:
+      id: ${p}_hist_r${n}_on
+      text: !lambda "return id(${group})->history_cell(id(${page}), ${n} - 1, 3);"
+      text_color: !lambda "return lv_color_hex(id(${group})->history_colour(id(${page}), ${n} - 1, 3));"
+  - lvgl.label.update:
+      id: ${p}_hist_r${n}_src
+      text: !lambda "return id(${group})->history_cell(id(${page}), ${n} - 1, 4);"
+      text_color: !lambda "return lv_color_hex(id(${group})->history_colour(id(${page}), ${n} - 1, 4));"
