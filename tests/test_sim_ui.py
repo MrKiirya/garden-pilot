@@ -363,7 +363,9 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         assert shot.returncode == 0, shot.stderr
         back_img = Image.open(REPO_ROOT / ".esphome" / "shots" / "schedule_back.png").convert("RGB")
         assert near(back_img.getpixel((rx + rw // 2, ry + rh - 4)), CARD_BG), "CANCEL did not return to the list"
-        assert not near(back_img.getpixel((sx + 8, sy + sh // 2)), GREEN_FILL), "still on the editor after CANCEL"
+        # probe the right end of SAVE: on the list that spot is the inactive SETUP nav button (the left end of SAVE
+        # overlaps the active, green SCHEDULE nav button)
+        assert not near(back_img.getpixel((sx + sw - 30, sy + sh // 2)), GREEN_FILL), "still on the editor after CANCEL"
 
         # Task 027 (D20): Schedule page > HISTORY (empty) > a zone starts: row 1 is live and green > BACK.
         def tap_and_shot(button: tuple[int, int, int, int], name: str) -> Image.Image:
@@ -390,7 +392,10 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         def back_drawn(image: Image.Image) -> bool:
             return has_colour(image, HISTORY_BACK_BTN, (0xBE, 0xCA, 0xB9))
 
-        history_img = tap_and_shot(HISTORY_BTN, "history")
+        # tap the right end of HISTORY: the emulator-only SIM button on the top layer covers the header centre
+        hx, hy, hw, hh = HISTORY_BTN
+        assert _sim_ui("tap", str(hx + hw - 6), str(hy + hh // 2), env=env).returncode == 0
+        history_img = shot_of("history")
         assert changed_share(back_img, history_img) > 0.02, "tapping HISTORY did not change the screen"
         assert back_drawn(history_img), "the History BACK button is not drawn"
         assert not has_colour(history_img, HISTORY_ROW1_ON, GREEN_TEXT), "an empty history shows a live row"
