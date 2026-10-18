@@ -327,7 +327,9 @@ def test_sim_headless_shot_and_tap(tmp_path: Path) -> None:
         assert shot.returncode == 0, shot.stderr
         back_img = Image.open(REPO_ROOT / ".esphome" / "shots" / "schedule_back.png").convert("RGB")
         assert near(back_img.getpixel((rx + rw // 2, ry + rh - 4)), CARD_BG), "CANCEL did not return to the list"
-        assert not near(back_img.getpixel((sx + 8, sy + sh // 2)), GREEN_FILL), "still on the editor after CANCEL"
+        # probe the right end of SAVE: on the list that spot is the inactive SETUP nav button (the left end of SAVE
+        # overlaps the active, green SCHEDULE nav button)
+        assert not near(back_img.getpixel((sx + sw - 30, sy + sh // 2)), GREEN_FILL), "still on the editor after CANCEL"
     finally:
         _sim_ui("stop", env=env)
     assert pids, "start did not record any pids"
