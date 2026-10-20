@@ -31,7 +31,7 @@ logger:
 packages:
   # Board profile: pins, display/touch orientation and calibration, esp32:. Pick exactly one.
   # (hardware/sim.yaml validates irrigation + beds only, see its header.)
-  hardware: !include hardware/test-rig.yaml  # TEST BRANCH: rig wiring
+  hardware: !include hardware/lilygo-t-relay-s3.yaml  # TEST BRANCH: LilyGO T-Relay-S3, relays 1-6 on the main board
 
   # Core: connectivity and clock. Need nothing else (no display, no LVGL).
   core_api: !include packages/core/api.yaml
@@ -97,10 +97,11 @@ packages:
   gh_gp: !include packages/greenhouse/gp.yaml
   gh_lvgl_page: !include packages/greenhouse/lvgl_page.yaml
   gh_lvgl_history: !include packages/greenhouse/lvgl_history.yaml
-  gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml
-  gh_sensors_soil: !include packages/greenhouse/sensors_soil.yaml
+  # TEST BRANCH (LilyGO): no DHT / ADC pins on this board, so no sensors and no screensaver status line.
+  # gh_sensors_air: !include packages/greenhouse/sensors_air_dht.yaml
+  # gh_sensors_soil: !include packages/greenhouse/sensors_soil.yaml
   gh_gp_lvgl: !include packages/greenhouse/gp_lvgl_status.yaml
-  gh_screensaver_status: !include packages/greenhouse/screensaver_status.yaml
+  # gh_screensaver_status: !include packages/greenhouse/screensaver_status.yaml
   # Setup > SERVICE > Valve test (opens real valves for at most 10 s; service mode stops other watering).
   gh_valve_test: !include packages/greenhouse/lvgl_valve_test.yaml
 
