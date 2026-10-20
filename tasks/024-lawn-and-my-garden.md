@@ -192,7 +192,7 @@ Five new `esphome config` rows at roughly 2 s each; no new host or cpp build.
       stays under 15 min (implementer notes the measured local time and, after push, the CI job time).
 - [x] `GP_SECRETS=example script/config examples/my-garden.yaml` -> OK; `GP_SECRETS=example GP_ESPHOME=minimum
       script/config examples/my-garden.yaml` -> OK (result noted in Implementation notes).
-- [ ] `GP_SECRETS=example script/compile examples/my-garden.yaml` (pinned) builds once locally (two gp groups + two
+- [x] `GP_SECRETS=example script/compile examples/my-garden.yaml` (pinned) builds once locally (two gp groups + two
       engine groups compile); result and firmware size noted. Not a CI job.
 - [ ] `GP_SECRETS=example script/compile` (root `garden-pilot.yaml`) still builds; the normalized `esphome config`
       output of `garden-pilot.yaml` is unchanged by this task (the lawn is commented out).

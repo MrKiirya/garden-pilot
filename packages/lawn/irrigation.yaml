@@ -18,7 +18,7 @@
 #   lawn_name             entity-name prefix in Home Assistant (default "Lawn"); the gp group key stays `lawn`.
 #   lawn_max_parallel     must stay "1": other values are not supported by this package yet.
 #                         (Also: a queue built from Home Assistant can hold more zones or repeats than the session
-#                         check assumes and then exceed lawn_pump_max_on_time (the pump watchdog locks the group).
+#                         check assumes and then exceed lawn_pump_max_on_time; the pump watchdog then locks the group.)
 #   lawn_max_on_time      watchdog limit of every zone valve (default 60min, `never` disables it, see
 #                         components/garden_zones/README.md). Raise it together with lawn_zone_run_max.
 #   lawn_zone_run_max     maximum of the zone run-duration numbers, minutes. Must satisfy

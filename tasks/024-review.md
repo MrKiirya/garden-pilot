@@ -81,3 +81,49 @@ Windows host, Git Bash + uv, pinned ESPHome 2026.9.1 unless noted:
 6. Cosmetic: with `lawn_name: "Lawn"` and a zone named "Lawn", HA shows "Lawn" (zone switch) next to "Lawn irrigation"
    (group main switch). Valid, but a zone name like "Lawn zone" in `garden-pilot.yaml` / `my-garden.yaml` would read
    clearer. Author's call (open question 10).
+
+# 024 — Review (round 2)
+
+Verdict: APPROVE
+
+Range reviewed: `git diff origin/master...HEAD` (commits `957da73`, `14c3319`, `f3ab06f`, `409a993`); round 2 checks
+only the blocker fix and the applied suggestions.
+
+## Checks run
+- `uv run pytest -m unit` → `6 failed, 763 passed, 110 deselected in 35.15s`. The 6 failures are the known Windows-only
+  ones (`test_ci.py::test_esphome_selector_resolves`, 4 executable-bit tests in `test_devcontainer.py`,
+  `test_sim_ui.py::test_start_xvfb_deadline_holds_when_xvfb_hangs`); none is touched by the diff.
+- The ESP32 compile was not re-run by the reviewer (no toolchain on this host); the result is taken from the
+  implementer's record.
+
+## Round 1 required items
+1. ESP32 compile of `examples/my-garden.yaml` — **resolved**. `tasks/024-lawn-and-my-garden.md` "ESP32 compile (review
+   round 1 blocker)" (commit `409a993`): devcontainer image, pinned ESPHome, SUCCESS, RAM 38.4%, Flash 67.5%. Two gp
+   groups + two `garden_zones` groups (one with a pump) compile and link.
+
+## Round 1 suggestions
+1. `README.ru.md:129` comma — applied.
+2. `examples/README.md` "one or two watering schedule slots" — applied.
+3. `tests/test_lawn.py::test_no_entry_overrides_lawn_max_parallel` — added; asserts no lawn entry overrides
+   `lawn_max_parallel`.
+4. HA-built queue vs pump limit — sentence added to the `packages/lawn/irrigation.yaml` header.
+5. No lawn STOP on the screen — listed as a review follow-up in the task notes (fine, out of scope).
+6. Zone name "Lawn" — kept, author's call; noted in the task follow-ups.
+
+## Findings
+### Required
+None.
+
+### Suggestions
+1. `tasks/024-lawn-and-my-garden.md:195` — the acceptance box for the `my-garden.yaml` compile is still `[ ]` although
+   the result is recorded at the end of the file; tick it (with a pointer to the note) so the checklist matches.
+2. `packages/lawn/irrigation.yaml:20-21` — the "(Also: ..." parenthesis is never closed; drop the opening "(" or close
+   it after "locks the group".
+
+## Open items (not blocking the code review)
+- CI `checks`: the previous run was cancelled at the 25-min job timeout. The implementer measured the new tests at
+  ~17 s locally with no new host build; a re-run is in progress. Merge only after it is green (and if it times out
+  again, investigate the job duration in a separate task).
+- `script/compile` of the root `garden-pilot.yaml` is left to the CI `compile` jobs (device config changed only in
+  comments).
+- Hardware checklist: optional, author only.
