@@ -11,7 +11,7 @@ dependencies = []
 # Installed by a plain `uv sync`. ESPHome is pinned exactly: the same version runs locally,
 # in the devcontainer and in CI. Bump it in a dedicated `chore(deps):` PR (see CLAUDE.md).
 dev = [
-    "esphome==2026.9.1",
+    "esphome==2026.10.0",
     "pytest>=8",
     "pytest-xdist>=3",
     "pyyaml>=6",
